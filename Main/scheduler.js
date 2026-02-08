@@ -41,7 +41,7 @@ function __applyLfoPresetFxOverrides(songStep, absStep){
 
   const overrides = [];
 
-  const stepInSong = (state.mode === "song") ? songStep : (absStep ?? songStep);
+  const stepInSong = songStep;
   const spb = state.stepsPerBar;
 
   for(const tr of project.playlist.tracks){
