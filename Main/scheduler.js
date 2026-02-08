@@ -98,10 +98,16 @@ function __applyLfoPresetFxOverrides(songStep){
       if(scope === "master"){
         chIndex1 = 1;
       }else{
-        // prefer explicit bind.channelId (numeric mixer channel index1)
+        // prefer explicit bind.channelId (numeric mixer channel index1 or mixer channel id)
         const explicit = Number(bind.channelId);
-        if(Number.isFinite(explicit) && explicit > 0) chIndex1 = Math.floor(explicit);
-        else{
+        if(Number.isFinite(explicit) && explicit > 0){
+          chIndex1 = Math.floor(explicit);
+        }else if(bind.channelId){
+          const idx = (project.mixer?.channels || []).findIndex(c => String(c.id) === String(bind.channelId));
+          if(idx >= 0) chIndex1 = idx + 1;
+        }
+
+        if(!chIndex1){
           // fallback: current active instrument channel mixOut
           try{
             const ac = (typeof activeChannel==="function") ? activeChannel() : null;
