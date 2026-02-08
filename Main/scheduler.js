@@ -125,14 +125,20 @@ function __applyLfoPresetFxOverrides(songStep){
       }
 
       // build override state
-      const enabled = (bind.enabled != null) ? !!bind.enabled : (pat.preset?.enabled != null ? !!pat.preset.enabled : true);
-      const params = (bind.params && typeof bind.params==="object") ? bind.params : (pat.preset?.params || {});
+      const snapshot = pat.preset?.snapshot || null;
+      const enabled = (bind.enabled != null)
+        ? !!bind.enabled
+        : (snapshot?.enabled != null ? !!snapshot.enabled : (pat.preset?.enabled != null ? !!pat.preset.enabled : true));
+      const params = (bind.params && typeof bind.params==="object")
+        ? bind.params
+        : ((snapshot && typeof snapshot.params === "object") ? snapshot.params : (pat.preset?.params || {}));
 
       // signature to avoid redundant apply
       const sig = JSON.stringify({enabled, params});
       if(__lfoRT.lastSig.get(key) !== sig){
         fx.enabled = enabled;
-        fx.params = { ...(fx.params||{}), ...(params||{}) };
+        // LFO preset should drive full FX state, not merge with mixer table params.
+        fx.params = { ...(params||{}) };
         __lfoRT.lastSig.set(key, sig);
 
         // push to audio engine (only when changes)
