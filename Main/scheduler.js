@@ -77,9 +77,6 @@ function __applyLfoPresetFxOverrides(songStep){
   const spb = state.stepsPerBar;
 
   for(const tr of project.playlist.tracks){
-    const ttype = (tr.type||"").toString().toLowerCase();
-    if(ttype !== "lfo") continue;
-
     for(const clip of (tr.clips||[])){
       const pat = project.patterns.find(p => p.id === clip.patternId);
       if(!pat) continue;
