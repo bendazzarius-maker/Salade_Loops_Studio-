@@ -125,8 +125,13 @@ function __applyLfoPresetFxOverrides(songStep){
       }
 
       // build override state
-      const enabled = (bind.enabled != null) ? !!bind.enabled : (pat.preset?.enabled != null ? !!pat.preset.enabled : true);
-      const params = (bind.params && typeof bind.params==="object") ? bind.params : (pat.preset?.params || {});
+      const snapshot = pat.preset?.snapshot || null;
+      const enabled = (bind.enabled != null)
+        ? !!bind.enabled
+        : (snapshot?.enabled != null ? !!snapshot.enabled : (pat.preset?.enabled != null ? !!pat.preset.enabled : true));
+      const params = (bind.params && typeof bind.params==="object")
+        ? bind.params
+        : ((snapshot && typeof snapshot.params === "object") ? snapshot.params : (pat.preset?.params || {}));
 
       // signature to avoid redundant apply
       const sig = JSON.stringify({enabled, params});
