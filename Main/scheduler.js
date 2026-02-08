@@ -137,7 +137,8 @@ function __applyLfoPresetFxOverrides(songStep){
       const sig = JSON.stringify({enabled, params});
       if(__lfoRT.lastSig.get(key) !== sig){
         fx.enabled = enabled;
-        fx.params = { ...(fx.params||{}), ...(params||{}) };
+        // LFO preset should drive full FX state, not merge with mixer table params.
+        fx.params = { ...(params||{}) };
         __lfoRT.lastSig.set(key, sig);
 
         // push to audio engine (only when changes)
