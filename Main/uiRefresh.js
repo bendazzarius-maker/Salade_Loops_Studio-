@@ -716,4 +716,9 @@ function updateLfoInspector(){
     paramSel.appendChild(op);
     paramSel.value = bind.param || "mix";
   }
+
+  // If the floating clone editor is open, keep it in sync when switching presets.
+  if(window.__lfoFxCloneState?.open){
+    try{ _updateLfoFxCloneWindow(); }catch(_e){}
+  }
 }
