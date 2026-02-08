@@ -34,15 +34,14 @@ function __getMixerFx(scope, chIndex1, fxIndex, mix){
   }catch(_){ return null; }
 }
 
-function __applyLfoPresetFxOverrides(songStep){
+function __applyLfoPresetFxOverrides(songStep, absStep){
   // Apply overrides aligned to playhead (no lookahead)
   if(!state.playing) return;
-  if(state.mode !== "song") return;
   if(!project || !project.playlist || !Array.isArray(project.playlist.tracks)) return;
 
   const overrides = [];
 
-  const stepInSong = songStep; // ensure defined (fixes ReferenceError)
+  const stepInSong = (state.mode === "song") ? songStep : (absStep ?? songStep);
   const spb = state.stepsPerBar;
 
   for(const tr of project.playlist.tracks){
@@ -325,7 +324,7 @@ function tick() {
   pb.uiSongStep = uiStep;
 
   // LFO preset overrides must be aligned to playhead (NOT scheduling lookahead)
-  try{ __applyLfoPresetFxOverrides(pb.uiSongStep); }catch(_){ }
+  try{ __applyLfoPresetFxOverrides(pb.uiSongStep, pb.uiAbsStep); }catch(_){ }
 
 
   try {
