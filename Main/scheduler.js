@@ -22,6 +22,16 @@ const __lfoRT = {
   lastSig: new Map(),
 };
 
+function __deepClone(obj){
+  try{
+    if (typeof structuredClone === "function") return structuredClone(obj);
+  }catch(_){}
+  try{ return JSON.parse(JSON.stringify(obj)); }catch(_){}
+  // last resort (shallow)
+  if(obj && typeof obj === "object") return { ...obj };
+  return obj;
+}
+
 function __fxKey(scope, chIndex1, fxIndex){
   const s = (scope||"").toLowerCase()==="master" ? "master" : `ch${chIndex1||1}`;
   return `${s}:fx${fxIndex||0}`;
@@ -77,9 +87,6 @@ function __applyLfoPresetFxOverrides(songStep){
   const spb = state.stepsPerBar;
 
   for(const tr of project.playlist.tracks){
-    const ttype = (tr.type||"").toString().toLowerCase();
-    if(ttype !== "lfo") continue;
-
     for(const clip of (tr.clips||[])){
       const pat = project.patterns.find(p => p.id === clip.patternId);
       if(!pat) continue;
@@ -98,10 +105,14 @@ function __applyLfoPresetFxOverrides(songStep){
       if(scope === "master"){
         chIndex1 = 1;
       }else{
-        // prefer explicit bind.channelId (numeric mixer channel index1)
+        // prefer explicit bind.channelId (numeric mixer channel index1 or mixer channel id)
         const explicit = Number(bind.channelId);
-        if(Number.isFinite(explicit) && explicit > 0) chIndex1 = Math.floor(explicit);
-        else{
+        if(Number.isFinite(explicit) && explicit > 0){
+          chIndex1 = Math.floor(explicit);
+        }else if(bind.channelId){
+          const idx = (project.mixer?.channels || []).findIndex(c => String(c.id) === String(bind.channelId));
+          if(idx >= 0) chIndex1 = idx + 1;
+        }else{
           // fallback: current active instrument channel mixOut
           try{
             const ac = (typeof activeChannel==="function") ? activeChannel() : null;
@@ -125,14 +136,28 @@ function __applyLfoPresetFxOverrides(songStep){
       }
 
       // build override state
-      const enabled = (bind.enabled != null) ? !!bind.enabled : (pat.preset?.enabled != null ? !!pat.preset.enabled : true);
-      const params = (bind.params && typeof bind.params==="object") ? bind.params : (pat.preset?.params || {});
+      // Support both schemas:
+      //  - pat.preset.{enabled, params}
+      //  - pat.preset.snapshot.{enabled, params}
+      const snap = (pat.preset && pat.preset.snapshot && typeof pat.preset.snapshot === "object") ? pat.preset.snapshot : (pat.preset || {});
+      const enabled = (snap.enabled != null) ? !!snap.enabled : ((bind.enabled != null) ? !!bind.enabled : true);
 
-      // signature to avoid redundant apply
-      const sig = JSON.stringify({enabled, params});
+      let params =
+        (snap.params && typeof snap.params==="object") ? snap.params :
+        ((bind.params && typeof bind.params==="object") ? bind.params : {});
+
+      params = __deepClone(params || {});
+
+      // signature to avoid redundant apply (include pattern id so switching presets forces apply)
+      const sig = JSON.stringify({patId: pat.id, enabled, params});
       if(__lfoRT.lastSig.get(key) !== sig){
+        const base = __lfoRT.orig.get(key) || { enabled: fx.enabled, params: __deepClone(fx.params||{}) };
+
         fx.enabled = enabled;
-        fx.params = { ...(fx.params||{}), ...(params||{}) };
+
+        // IMPORTANT: apply from base snapshot to avoid param carry-over between presets
+        fx.params = { ...(base.params||{}), ...(params||{}) };
+
         __lfoRT.lastSig.set(key, sig);
 
         // push to audio engine (only when changes)
