@@ -218,7 +218,7 @@
 
 /* --- FX param editor --- */
 .fxParams{ margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,.08); }
-.fxGrid{ display:grid; grid-template-columns: repeat(8, minmax(0,1fr)); gap:6px; margin-top:8px; }
+.fxGrid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(44px,1fr)); gap:6px; margin-top:8px; max-height:240px; overflow:auto; padding:2px; }
 .fxCell{ padding:6px 4px; font-size:11px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.25); color:var(--text); cursor:pointer; }
 .fxCell.on{ background:rgba(39,224,163,.18); border-color:rgba(39,224,163,.35); }
 .fxCell.off{ opacity:.7; }

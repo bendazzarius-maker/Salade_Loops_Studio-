@@ -16,45 +16,83 @@ const pb = {
 };
 // ---------------- LFO preset runtime override (non-destructive) ----------------
 const __lfoRT = {
-  // last applied signature to avoid redundant applyMixerModel
+  // key -> { enabled, params } original snapshot to restore when LFO not active
+  orig: new Map(),
+  // key -> last applied signature to avoid redundant applyMixerModel
   lastSig: new Map(),
 };
+
 
 function __deepClone(obj){
   try{
     if (typeof structuredClone === "function") return structuredClone(obj);
   }catch(_){}
   try{ return JSON.parse(JSON.stringify(obj)); }catch(_){}
-  // last resort (shallow)
   if(obj && typeof obj === "object") return { ...obj };
   return obj;
 }
+
 
 function __fxKey(scope, chIndex1, fxIndex){
   const s = (scope||"").toLowerCase()==="master" ? "master" : `ch${chIndex1||1}`;
   return `${s}:fx${fxIndex||0}`;
 }
 
-function __getMixerFx(scope, chIndex1, fxIndex, mix){
+// Restore any FX not overridden on this tick
+function __lfoRestoreMissing(activeKeys){
+  for(const [key, snap] of __lfoRT.orig.entries()){
+    if(activeKeys.has(key)) continue;
+    const info = __lfoDecodeKey(key);
+    if(!info) continue;
+    const fx = __getMixerFx(info.scope, info.chIndex1, info.fxIndex);
+    if(!fx) continue;
+    // restore
+    if(snap.enabled != null) fx.enabled = snap.enabled;
+    if(snap.params && typeof snap.params === "object"){
+      fx.params = { ...snap.params };
+    }
+    __lfoRT.lastSig.delete(key);
+    __lfoRT.orig.delete(key);
+  }
+}
+
+function __lfoDecodeKey(key){
+  // "master:fx0" or "ch2:fx1"
   try{
-    const source = mix || project.mixer;
+    const [a,b] = key.split(":");
+    const fxIndex = parseInt((b||"fx0").replace("fx",""),10)||0;
+    if(a==="master") return {scope:"master", chIndex1:1, fxIndex};
+    const m = /^ch(\d+)$/.exec(a||"");
+    if(!m) return null;
+    return {scope:"channel", chIndex1: parseInt(m[1],10)||1, fxIndex};
+  }catch(_){ return null; }
+}
+
+function __getMixerFx(scope, chIndex1, fxIndex){
+  try{
     const isMaster = (scope||"").toLowerCase()==="master";
-    const list = isMaster ? (source?.master?.fx||[]) : ((source?.channels||[])[Math.max(0,(chIndex1||1)-1)]?.fx||[]);
+    const list = isMaster ? (project.mixer?.master?.fx||[]) : ((project.mixer?.channels||[])[Math.max(0,(chIndex1||1)-1)]?.fx||[]);
     return list[fxIndex] || null;
   }catch(_){ return null; }
 }
 
-function __applyLfoPresetFxOverrides(songStep, absStep){
+function __applyLfoPresetFxOverrides(songStep){
   // Apply overrides aligned to playhead (no lookahead)
   if(!state.playing) return;
+  if(state.mode !== "song") return;
   if(!project || !project.playlist || !Array.isArray(project.playlist.tracks)) return;
 
-  const overrides = [];
-
-  const stepInSong = songStep;
+  const activeKeys = new Set();
+  const stepInSong = songStep; // playhead-aligned step
   const spb = state.stepsPerBar;
 
+  let didApply = false;
+  let didRestore = false;
+
   for(const tr of project.playlist.tracks){
+    const ttype = (tr.type||"").toString().toLowerCase();
+    if(ttype !== "lfo") continue;
+
     for(const clip of (tr.clips||[])){
       const pat = project.patterns.find(p => p.id === clip.patternId);
       if(!pat) continue;
@@ -65,25 +103,16 @@ function __applyLfoPresetFxOverrides(songStep, absStep){
       const clipEndStep   = ((clip.startBar||0) + (clip.lenBars||0)) * spb;
       if(stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
-      // Determine target in mixer
-      const bind = pat.preset || {};
+      const bind = (pat.preset && typeof pat.preset === "object") ? pat.preset : {};
       const scope = (bind.scope||"channel").toString().toLowerCase();
       let chIndex1 = 1;
 
       if(scope === "master"){
         chIndex1 = 1;
       }else{
-        // prefer explicit bind.channelId (numeric mixer channel index1 or mixer channel id)
         const explicit = Number(bind.channelId);
-        if(Number.isFinite(explicit) && explicit > 0){
-          chIndex1 = Math.floor(explicit);
-        }else if(bind.channelId){
-          const idx = (project.mixer?.channels || []).findIndex(c => String(c.id) === String(bind.channelId));
-          if(idx >= 0) chIndex1 = idx + 1;
-        }
-
-        if(!chIndex1){
-          // fallback: current active instrument channel mixOut
+        if(Number.isFinite(explicit) && explicit > 0) chIndex1 = Math.floor(explicit);
+        else{
           try{
             const ac = (typeof activeChannel==="function") ? activeChannel() : null;
             if(ac && ac.mixOut) chIndex1 = Math.max(1, Math.floor(ac.mixOut));
@@ -94,55 +123,55 @@ function __applyLfoPresetFxOverrides(songStep, absStep){
       const fxIndex = Math.max(0, Math.floor(bind.fxIndex||0));
       const key = __fxKey(scope, chIndex1, fxIndex);
 
-      // build override state
-      const snapshot = pat.preset?.snapshot || null;
-      const enabled = (bind.enabled != null)
-        ? !!bind.enabled
-        : (snapshot?.enabled != null ? !!snapshot.enabled : (pat.preset?.enabled != null ? !!pat.preset.enabled : true));
-      const params = (bind.params && typeof bind.params==="object")
-        ? bind.params
-        : ((snapshot && typeof snapshot.params === "object") ? snapshot.params : (pat.preset?.params || {}));
+      const fx = __getMixerFx(scope==="master"?"master":"channel", chIndex1, fxIndex);
+      if(!fx) continue;
 
-      overrides.push({
-        key,
-        scope,
-        chIndex1,
-        fxIndex,
-        enabled,
-        params: params || {}
-      });
+      if(!__lfoRT.orig.has(key)){
+        __lfoRT.orig.set(key, {
+          enabled: fx.enabled,
+          params: (fx.params && typeof fx.params==="object") ? { ...fx.params } : {}
+        });
+      }
+
+      const base = __lfoRT.orig.get(key) || { enabled: fx.enabled, params: {} };
+
+      const snap =
+        (bind.snapshot && typeof bind.snapshot === "object") ? bind.snapshot :
+        (pat.preset && pat.preset.snapshot && typeof pat.preset.snapshot === "object") ? pat.preset.snapshot :
+        bind;
+
+      const enabled =
+        (snap.enabled != null) ? !!snap.enabled :
+        (bind.enabled != null) ? !!bind.enabled :
+        true;
+
+      let params =
+        (snap.params && typeof snap.params==="object") ? snap.params :
+        (bind.params && typeof bind.params==="object") ? bind.params :
+        {};
+
+      params = __deepClone(params || {});
+
+      const sig = JSON.stringify({patId: pat.id, enabled, params});
+      if(__lfoRT.lastSig.get(key) !== sig){
+        fx.enabled = enabled;
+        fx.params = { ...(base.params||{}), ...(params||{}) };
+        __lfoRT.lastSig.set(key, sig);
+        didApply = true;
+      }
+
+      activeKeys.add(key);
     }
   }
 
-  if(!overrides.length){
-    if(__lfoRT.lastSig.get("mix") !== "base"){
-      try{ if(ae && ae.applyMixerModel) ae.applyMixerModel(project.mixer); }catch(_){}
-      __lfoRT.lastSig.set("mix", "base");
-    }
-    return;
+  const before = __lfoRT.orig.size;
+  __lfoRestoreMissing(activeKeys);
+  const after = __lfoRT.orig.size;
+  if(after < before) didRestore = true;
+
+  if(didApply || didRestore){
+    try{ if(ae && ae.applyMixerModel) ae.applyMixerModel(project.mixer); }catch(_){}
   }
-
-  const sig = JSON.stringify(overrides.map(o=>({
-    key:o.key,
-    enabled:o.enabled,
-    params:o.params
-  })).sort((a,b)=>String(a.key).localeCompare(String(b.key))));
-
-  if(__lfoRT.lastSig.get("mix") === sig) return;
-
-  const mixClone = (typeof structuredClone === "function")
-    ? structuredClone(project.mixer)
-    : JSON.parse(JSON.stringify(project.mixer));
-
-  for(const ov of overrides){
-    const fx = __getMixerFx(ov.scope==="master"?"master":"channel", ov.chIndex1, ov.fxIndex, mixClone);
-    if(!fx) continue;
-    fx.enabled = ov.enabled;
-    fx.params = { ...(ov.params||{}) };
-  }
-
-  __lfoRT.lastSig.set("mix", sig);
-  try{ if(ae && ae.applyMixerModel) ae.applyMixerModel(mixClone); }catch(_){}
 }
 function _recalcEndStepForMode(){
   try{
@@ -175,8 +204,6 @@ function scheduleStep_PATTERN(step, t) {
   const patBars = patternLengthBars(p);
   const patSteps = patBars * state.stepsPerBar;
   const local = step % patSteps;
-
-  if (!p || !Array.isArray(p.channels)) return; // skip LFO/invalid patterns
 
   for (const ch of p.channels) {
     if (ch.muted) continue;
@@ -334,7 +361,7 @@ function tick() {
   pb.uiSongStep = uiStep;
 
   // LFO preset overrides must be aligned to playhead (NOT scheduling lookahead)
-  try{ __applyLfoPresetFxOverrides(pb.uiSongStep, pb.uiAbsStep); }catch(_){ }
+  try{ __applyLfoPresetFxOverrides(pb.uiSongStep); }catch(_){ }
 
 
   try {

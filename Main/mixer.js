@@ -250,7 +250,29 @@ function _fxBlock(fxList, onUpdate){
 }
 
 function _divOptions(){
-  return ["1:16","1:8","1:6","1:4","1:3","1:2"];
+  // Kept as strings to match UI select values.
+  // NOTE: GrossBeat supports higher resolution grids.
+  return ["1:64","1:32","1:16","1:8","1:6","1:4","1:3","1:2"];
+}
+
+function _parseDivisionDenom(v, fallback=16){
+  // Accept "1:16", "16", 16, etc.
+  try{
+    if(v == null) return fallback;
+    if(typeof v === "number" && Number.isFinite(v)) return Math.max(1, Math.floor(v));
+    const s = String(v).trim();
+    const m = s.match(/(\d+)\s*:\s*(\d+)/);
+    if(m) return Math.max(1, parseInt(m[2], 10) || fallback);
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) ? Math.max(1, n) : fallback;
+  }catch(_){
+    return fallback;
+  }
+}
+
+function _normalizeDivisionValue(v){
+  const denom = _parseDivisionDenom(v, 16);
+  return `1:${denom}`;
 }
 
 function _renderFxParams(type, params, onParams){
@@ -276,12 +298,20 @@ function _renderFxParams(type, params, onParams){
       const o=document.createElement("option"); o.value=opt; o.textContent=opt;
       sel.appendChild(o);
     });
-    sel.value = params[key] ?? options[0];
+    // Normalize some params to match option values
+    if(t.includes("gross") && key==="division"){
+      const norm = _normalizeDivisionValue(params[key] ?? options[0]);
+      sel.value = options.includes(norm) ? norm : options[0];
+      // keep model in sync (important when params.division is stored as number)
+      params[key] = sel.value;
+    }else{
+      sel.value = params[key] ?? options[0];
+    }
     sel.addEventListener("change", ()=>{
       params[key]=sel.value;
       // auto-resize pattern for gross beat
       if(t.includes("gross") && key==="division"){
-        const denom=parseInt(sel.value.split(":")[1],10);
+        const denom=_parseDivisionDenom(sel.value, 16);
         const arr = Array.isArray(params.pattern)? params.pattern.slice(): [];
         const out = new Array(denom).fill(0);
         for(let i=0;i<denom;i++) out[i]= !!arr[i % Math.max(1,arr.length)] ? 1:0;
@@ -302,7 +332,7 @@ function _renderFxParams(type, params, onParams){
     const grid=document.createElement("div");
     grid.className="fxGrid";
     const pat = Array.isArray(params.pattern) ? params.pattern : [];
-    const denom=parseInt(String(params.division||"1:16").split(":")[1],10) || (pat.length||16);
+    const denom=_parseDivisionDenom(params.division || "1:16", pat.length||16);
     const arr = (pat.length===denom) ? pat : new Array(denom).fill(1);
     for(let i=0;i<denom;i++){
       const b=document.createElement("button");
