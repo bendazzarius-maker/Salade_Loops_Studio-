@@ -164,6 +164,17 @@ function __resolveMixerChannel(scope, channelId){
   return { model: fallback || null, keyId: fallback ? String(fallback.id) : "ch1" };
 }
 
+function __resolveMixerIndex(scope, channelId){
+  const sc = (scope||"").toLowerCase();
+  if(sc === "master") return 1;
+  const channels = project.mixer?.channels || [];
+  const byIdIndex = channels.findIndex(ch => String(ch.id) === String(channelId));
+  if(byIdIndex >= 0) return byIdIndex + 1;
+  const explicit = Number(channelId);
+  if(Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+  return 1;
+}
+
 function __lfoCurveRestoreMissing(activeKeys){
   for(const [key, snap] of __lfoCurveRT.orig.entries()){
     if(activeKeys.has(key)) continue;
@@ -315,8 +326,8 @@ function __applyLfoPresetFxOverrides(songStep){
       if(scope === "master"){
         chIndex1 = 1;
       }else{
-        const explicit = Number(bind.channelId);
-        if(Number.isFinite(explicit) && explicit > 0) chIndex1 = Math.floor(explicit);
+        const resolved = __resolveMixerIndex(scope, bind.channelId);
+        if(resolved > 0) chIndex1 = resolved;
         else{
           try{
             const ac = (typeof activeChannel==="function") ? activeChannel() : null;
