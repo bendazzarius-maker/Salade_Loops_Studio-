@@ -20,6 +20,16 @@ const __lfoRT = {
   lastSig: new Map(),
 };
 
+function __deepClone(obj){
+  try{
+    if (typeof structuredClone === "function") return structuredClone(obj);
+  }catch(_){}
+  try{ return JSON.parse(JSON.stringify(obj)); }catch(_){}
+  // last resort (shallow)
+  if(obj && typeof obj === "object") return { ...obj };
+  return obj;
+}
+
 function __fxKey(scope, chIndex1, fxIndex){
   const s = (scope||"").toLowerCase()==="master" ? "master" : `ch${chIndex1||1}`;
   return `${s}:fx${fxIndex||0}`;
