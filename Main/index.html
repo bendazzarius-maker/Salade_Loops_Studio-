@@ -290,21 +290,30 @@
       <div class="small" style="margin-top:6px;opacity:.9">Les patterns LFO sont utilisées uniquement dans la Playlist (pistes LFO).</div>
       <div id="patternList"></div>
       <div class="section" id="lfoInspector" style="display:none;margin-top:10px">
-        <div class="title">📈 LFO — Bind</div>
-        <div class="small" style="margin-bottom:6px;opacity:.9">Assigne un paramètre (Master/Channel/Mixer/FX). Les presets FX ouvrent un clone flottant.</div>
+        <div class="title" id="lfoInspectorTitle">📈 LFO — Bind</div>
+        <div class="small" id="lfoInspectorHelp" style="margin-bottom:6px;opacity:.9">Assigne un paramètre (Master/Channel/Mixer/FX). Les presets FX ouvrent un clone flottant.</div>
         <label class="small">Scope</label>
         <select id="lfoScope"></select>
         <label class="small">Channel</label>
         <select id="lfoChannel"></select>
-        <label class="small">Type</label>
-        <select id="lfoBindKind"></select>
-        <label class="small">Paramètre</label>
-        <select id="lfoParam"></select>
+        <div id="lfoKindRow">
+          <label class="small">Type</label>
+          <select id="lfoBindKind"></select>
+        </div>
+        <div id="lfoParamRow">
+          <label class="small">Paramètre</label>
+          <select id="lfoParam"></select>
+        </div>
         <div id="lfoFxRow" style="display:none">
           <label class="small">FX</label>
           <select id="lfoFx"></select>
           <button class="btn2" id="lfoCloneFx" style="margin-top:8px">🧬 Cloner / Binder FX</button>
         </div>
+      </div>
+      <div class="section" id="lfoCurveEditor" style="display:none;margin-top:10px">
+        <div class="title">📉 LFO Curve — Mixer Sliders</div>
+        <div class="small" style="margin-bottom:6px;opacity:.9">Édite la courbe A-B-C directement dans la pattern (glisser les points).</div>
+        <canvas id="lfoCurvePatternCanvas" style="width:100%;height:130px;border-radius:10px;background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.08)"></canvas>
       </div>
 
       <div class="small">Couleur = couleur du clip en playlist.</div>

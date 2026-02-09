@@ -129,7 +129,6 @@ window.LFO = window.LFO || {};
     const pts = ensureCurve(pattern);
 
     let dragging=false;
-      dragTarget=null;
     let dragTarget=null;
 
     function redraw(){
