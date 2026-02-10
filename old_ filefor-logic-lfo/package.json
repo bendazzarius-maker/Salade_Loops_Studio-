@@ -1,0 +1,24 @@
+{
+  "name": "salad-loops-studio",
+  "productName": "Salad Loops Studio",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:linux": "electron-builder --linux AppImage"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^26.4.0"
+  },
+  "build": {
+    "appId": "studio.saladloops.slstudio",
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Audio",
+      "icon": "build/icon.png",
+      "executableName": "salad-loops-studio"
+    }
+  }
+}
