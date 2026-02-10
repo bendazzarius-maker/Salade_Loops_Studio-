@@ -10,15 +10,94 @@ function _safeToast(msg){
   try{ if(typeof toast==="function") return toast(msg); }catch(_e){}
   console.warn("[toast]", msg);
 }
+function _lfoPatternType(p){
+  return String(p?.type||p?.kind||p?.patternType||"").toLowerCase();
+}
+
 function _isLfoPattern(p){
   if(!p) return false;
-  const t = String(p.type||p.kind||p.patternType||"").toLowerCase();
+  const t = _lfoPatternType(p);
   if(t.includes("lfo")) return true;
   // heuristics: lfo patterns usually have bind/preset structures without channels
   if(p.preset && (p.preset.fxIndex!==undefined || p.preset.params || p.preset.snapshot)) return true;
   if(p.bind && (p.bind.param || p.bind.fxIndex!==undefined)) return true;
   return false;
 }
+
+
+function _normalizeLfoTargetRef(ref){
+  const out = ref && typeof ref === "object" ? ref : {};
+  const scope = (String(out.scope||"channel").toLowerCase()==="master") ? "master" : "channel";
+  out.scope = scope;
+
+  const channels = project?.mixer?.channels || [];
+  const fallbackCh = channels[0] || null;
+  if(scope === "master"){
+    out.channelId = null;
+  }else{
+    const raw = out.channelId;
+    const wantsAuto = (raw == null || String(raw)==="");
+    if(wantsAuto){
+      out.channelId = null;
+    }else{
+      const hasExact = channels.some(ch => String(ch.id) === String(raw));
+      out.channelId = hasExact ? raw : (fallbackCh ? fallbackCh.id : null);
+    }
+  }
+
+  out.kind = (String(out.kind||"mixer").toLowerCase()==="fx") ? "fx" : "mixer";
+  out.fxIndex = Math.max(0, Math.floor(Number(out.fxIndex||0)));
+
+  if(out.kind === "mixer"){
+    const allowed = new Set(["gain","pan","eqLow","eqMid","eqHigh","cross"]);
+    if(!allowed.has(String(out.param||""))) out.param = "gain";
+    if(out.param === "cross" && scope !== "master") out.param = "gain";
+  }
+  return out;
+}
+
+function _normalizeLfoPatternBinding(pat){
+  if(!pat || !_isLfoPattern(pat)) return;
+  if(_lfoPatternType(pat)==="lfo_curve"){
+    pat.bind = _normalizeLfoTargetRef(pat.bind || (window.LFO && LFO.defaultBinding ? LFO.defaultBinding() : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 }));
+    pat.bind.kind = "mixer";
+  }
+  if(_lfoPatternType(pat)==="lfo_preset"){
+    pat.preset = _normalizeLfoTargetRef(pat.preset || { scope:"channel", channelId:null, kind:"fx", fxIndex:0, fxType:"", params:{} });
+    pat.preset.kind = "fx";
+    pat.preset.snapshot = (pat.preset.snapshot && typeof pat.preset.snapshot === "object") ? pat.preset.snapshot : { enabled:true, params:{} };
+
+    const isMaster = pat.preset.scope === "master";
+    const mix = project?.mixer || {};
+    const bank = isMaster ? mix.master : ((mix.channels||[]).find(c=>String(c.id)===String(pat.preset.channelId)) || (mix.channels||[])[0]);
+    const fxArr = bank?.fx || [];
+    if(fxArr.length===0){
+      pat.preset.fxIndex = 0;
+    }else if(pat.preset.fxIndex >= fxArr.length){
+      pat.preset.fxIndex = fxArr.length - 1;
+    }
+  }
+}
+
+window._normalizeLfoPatternBinding = _normalizeLfoPatternBinding;
+
+function reloadLfoBindEditorFromPlaylist(){
+  try{
+
+    for(const pat of (project?.patterns||[])){
+      if(!_isLfoPattern(pat)) continue;
+      _normalizeLfoPatternBinding(pat);
+    }
+
+    if(typeof updateLfoInspector === "function") updateLfoInspector();
+    if(typeof updateLfoCurvePatternEditor === "function") updateLfoCurvePatternEditor();
+    try{ renderPlaylist(); }catch(_e){}
+  }catch(err){
+    console.warn("[lfo] reload bind editor failed", err);
+  }
+}
+window.reloadLfoBindEditorFromPlaylist = reloadLfoBindEditorFromPlaylist;
+
 function _ensurePresetSnapshot(pat, fx){
   pat.preset = pat.preset || {};
   // snapshot shape: { enabled:boolean, params:object, fxType:string }
@@ -40,7 +119,7 @@ function _updateLfoFxCloneWindow(){
   const win = document.getElementById("__lfoFxFloat");
   if(!win) { st.open=false; return; }
   const pat = (typeof activePattern==="function") ? activePattern() : null;
-  if(!pat || (String(pat.type||"").toLowerCase()!=="lfo_preset")){
+  if(!pat || (_lfoPatternType(pat)!=="lfo_preset")){
     // no active preset: show placeholder and clear patId
     st.patId = null;
     const body = win.querySelector("#__lfoFxBody");
@@ -132,6 +211,51 @@ function _updateLfoFxCloneWindow(){
   }
 }
 
+
+function openChannelContextMenu(x, y, ch, p){
+  try{ document.getElementById('__channelCtx')?.remove(); }catch(_e){}
+  const menu=document.createElement('div');
+  menu.id='__channelCtx';
+  menu.style.position='fixed';
+  menu.style.left=Math.max(8,x)+'px';
+  menu.style.top=Math.max(8,y)+'px';
+  menu.style.zIndex='999999';
+  menu.style.minWidth='180px';
+  menu.style.background='rgba(10,14,28,0.98)';
+  menu.style.border='1px solid rgba(255,255,255,0.14)';
+  menu.style.borderRadius='10px';
+  menu.style.padding='8px';
+  menu.style.display='grid';
+  menu.style.gap='6px';
+
+  const mk=(label, fn)=>{ const b=document.createElement('button'); b.className='btn2'; b.style.textAlign='left'; b.textContent=label; b.onclick=()=>{ try{fn();}finally{menu.remove();} }; return b; };
+  const colorRow=document.createElement('label');
+  colorRow.className='btn2';
+  colorRow.style.display='flex';
+  colorRow.style.alignItems='center';
+  colorRow.style.justifyContent='space-between';
+  colorRow.style.gap='8px';
+  colorRow.textContent='🎨 Couleur des notes';
+  const picker=document.createElement('input');
+  picker.type='color';
+  picker.value=ch.color||'#27e0a3';
+  picker.oninput=()=>{ ch.color=picker.value; refreshUI(); renderNotes(); renderPlaylist(); };
+  colorRow.appendChild(picker);
+
+  menu.appendChild(mk('✏️ Renommer', ()=>{
+    openRenameSocket(x,y,ch.name,(v)=>{ ch.name=v; refreshUI(); renderPlaylist(); });
+  }));
+  menu.appendChild(colorRow);
+  menu.appendChild(mk('🗑️ Supprimer instrument', ()=>{
+    deleteChannel(p.id, ch.id);
+    refreshUI(); renderAll(); renderPlaylist();
+  }));
+
+  document.body.appendChild(menu);
+  const close=(ev)=>{ if(!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown',close,true);} };
+  document.addEventListener('mousedown',close,true);
+}
+
 // Floating rename socket (right-click pattern button)
 function openRenameSocket(x, y, initialValue, onSubmit){
   try{ document.getElementById('__renameSocket')?.remove(); }catch(_e){}
@@ -194,11 +318,6 @@ function openRenameSocket(x, y, initialValue, onSubmit){
 }
 
 /* ---------------- helpers: detect LFO pattern + safe "notes pattern" ---------------- */
-function _isLfoPattern(p){
-  const t = (p && (p.type||p.kind||p.patternType||"")).toString().toLowerCase();
-  return t === "lfo_curve" || t === "lfo_preset" || t === "lfo";
-}
-
 function _hasChannels(p){
   return !!(p && Array.isArray(p.channels));
 }
@@ -398,10 +517,7 @@ function refreshUI(){
       });
       btn.addEventListener("contextmenu",(e)=>{
         e.preventDefault();
-        openRenameSocket(e.clientX, e.clientY, ch.name, (v)=>{
-          ch.name = v;
-          refreshUI(); renderPlaylist();
-        });
+        openChannelContextMenu(e.clientX, e.clientY, ch, p);
       });
 
       const tools=document.createElement("div");
@@ -478,11 +594,23 @@ function refreshUI(){
 }
 
 /* ---------------- LFO inspector (playlist-side binding) ---------------- */
+
+function _safeSetSelectValue(sel, value, fallback=""){
+  if(!sel) return;
+  const wanted = String(value==null?"":value);
+  const has = Array.from(sel.options||[]).some(o=>String(o.value)===wanted);
+  if(has){ sel.value = wanted; return; }
+  const hasFallback = Array.from(sel.options||[]).some(o=>String(o.value)===String(fallback));
+  if(hasFallback){ sel.value = String(fallback); return; }
+  if(sel.options && sel.options.length) sel.value = sel.options[0].value;
+}
+
 function updateLfoInspector(){
   const wrap = document.getElementById("lfoInspector");
   if(!wrap) return;
 
   const p = (typeof activePattern === "function") ? activePattern() : null;
+  if(!project.mixer || !Array.isArray(project.mixer.channels)) project.mixer = initMixerModel(16);
   if(!p || !_isLfoPattern(p)){
     wrap.style.display = "none";
     return;
@@ -500,8 +628,9 @@ function updateLfoInspector(){
   const cloneBtn = document.getElementById("lfoCloneFx");
   const kindRow = document.getElementById("lfoKindRow");
   const paramRow = document.getElementById("lfoParamRow");
+  const lenSel = document.getElementById("lfoPatternLen");
 
-  if(!scopeSel || !chSel || !kindSel || !paramSel || !fxSel || !fxRow || !cloneBtn) return;
+  if(!scopeSel || !chSel || !kindSel || !paramSel || !fxSel || !fxRow || !cloneBtn || !lenSel) return;
 
   // One-time listener binding (non-destructive)
   if(!wrap.__bound){
@@ -510,7 +639,7 @@ function updateLfoInspector(){
     scopeSel.addEventListener("change", ()=>{
       const pat = activePattern();
       if(!pat) return;
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.scope = scopeSel.value;
       }else{
@@ -524,7 +653,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const cid = chSel.value || null;
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.channelId = cid;
       }else{
@@ -538,7 +667,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const k = kindSel.value;
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.kind = k;
       }else{
@@ -552,7 +681,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const v = paramSel.value;
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.param = v;
       }else{
@@ -566,7 +695,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const ix = Number(fxSel.value||0);
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.fxIndex = ix;
       }else{
@@ -576,10 +705,31 @@ function updateLfoInspector(){
       try{ renderPlaylist(); }catch(_e){}
     });
 
+    lenSel.addEventListener("change", ()=>{
+      const pat = activePattern();
+      if(!pat || !_isLfoPattern(pat)) return;
+      pat.lenBars = Math.max(1, Math.min(8, parseInt(lenSel.value,10)||4));
+      try{
+        // keep existing clips of this pattern aligned with edited pattern length
+        for(const tr of (project?.playlist?.tracks||[])){
+          for(const clip of (tr?.clips||[])){
+            if(String(clip.patternId)===String(pat.id)) clip.lenBars = pat.lenBars;
+          }
+        }
+      }catch(_e){}
+      try{
+        if(typeof patternLenSelect !== "undefined" && patternLenSelect){
+          patternLenSelect.value = String(pat.lenBars);
+        }
+      }catch(_e){}
+      try{ refreshUI(); }catch(_e){}
+      try{ renderPlaylist(); }catch(_e){}
+    });
+
     cloneBtn.addEventListener("click", ()=>{
       const pat = activePattern();
       if(!pat) return;
-      if(String(pat.type||"").toLowerCase()!=="lfo_preset"){
+      if(_lfoPatternType(pat)!=="lfo_preset"){
         _safeToast("Le clonage FX est réservé aux patterns LFO preset.");
         return;
       }
@@ -642,8 +792,15 @@ function updateLfoInspector(){
     });
   }
 
-  const isPreset = (p.type||"").toString().toLowerCase()==="lfo_preset";
-  const isCurve = (p.type||"").toString().toLowerCase()==="lfo_curve";
+  const isPreset = _lfoPatternType(p)==="lfo_preset";
+  const isCurve = _lfoPatternType(p)==="lfo_curve";
+  const _norm = (typeof _normalizeLfoPatternBinding === "function") ? _normalizeLfoPatternBinding : (window._normalizeLfoPatternBinding || null);
+  if(_norm) _norm(p);
+  lenSel.value = String(Math.max(1, Math.min(8, parseInt(p.lenBars||4,10)||4)));
+
+  cloneBtn.style.display = isPreset ? "inline-flex" : "none";
+  cloneBtn.textContent = "🧬 Binder FX";
+  cloneBtn.title = "Binder le preset FX";
 
   if(titleEl){
     titleEl.textContent = isPreset ? "🧬 LFO Preset — FX Clone" : "📈 LFO Curve — Mixer Sliders";
@@ -685,10 +842,9 @@ function updateLfoInspector(){
 
   const bind = isPreset ? (p.preset||{}) : (p.bind||{});
   const scope = bind.scope || "channel";
-  scopeSel.value = scope;
+  _safeSetSelectValue(scopeSel, scope, "channel");
 
-  chSel.value = (bind.channelId||"");
-  if(scope==="master") chSel.value = "";
+  _safeSetSelectValue(chSel, (scope==="master") ? "" : (bind.channelId||""), "");
 
   if(isPreset){
     kindSel.value = "fx";
@@ -707,7 +863,7 @@ function updateLfoInspector(){
       const o=document.createElement("option"); o.value=it.k; o.textContent=it.n; paramSel.appendChild(o);
     }
     fxRow.style.display="none";
-    paramSel.value = bind.param || "gain";
+    _safeSetSelectValue(paramSel, bind.param || "gain", "gain");
   }else{
     fxRow.style.display="block";
     const mix = project.mixer;
@@ -724,13 +880,26 @@ function updateLfoInspector(){
         fxSel.appendChild(o);
       });
     }
-    fxSel.value = String(bind.fxIndex||0);
+    _safeSetSelectValue(fxSel, String(bind.fxIndex||0), "0");
 
-    const op=document.createElement("option");
-    op.value=(bind.param||"mix");
-    op.textContent="(param FX — à câbler)";
-    paramSel.appendChild(op);
-    paramSel.value = bind.param || "mix";
+    // Populate FX params if available (prevents empty selector with imported projects)
+    const paramsObj = fxArr[Number(bind.fxIndex||0)]?.params || {};
+    const keys = Object.keys(paramsObj);
+    if(keys.length===0){
+      const op=document.createElement("option");
+      op.value=(bind.param||"mix");
+      op.textContent="(param FX — à câbler)";
+      paramSel.appendChild(op);
+      _safeSetSelectValue(paramSel, bind.param || "mix", bind.param || "mix");
+    }else{
+      for(const k of keys){
+        const op=document.createElement("option");
+        op.value=k;
+        op.textContent=`FX Param: ${k}`;
+        paramSel.appendChild(op);
+      }
+      _safeSetSelectValue(paramSel, bind.param || keys[0], keys[0]);
+    }
   }
 
   if(kindRow) kindRow.style.display = isPreset ? "none" : "block";
@@ -749,6 +918,7 @@ function updateLfoCurvePatternEditor(){
   if(!wrap || !canvas) return;
 
   const p = (typeof activePattern === "function") ? activePattern() : null;
+  if(!project.mixer || !Array.isArray(project.mixer.channels)) project.mixer = initMixerModel(16);
   const isCurve = p && (String(p.type||p.kind||"").toLowerCase()==="lfo_curve");
 
   if(!isCurve){
