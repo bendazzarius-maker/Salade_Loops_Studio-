@@ -40,8 +40,8 @@
     const strip = getStrip(scope);
     if(!strip) return 0;
     const rect = strip.getBoundingClientRect();
-    // strip is already translated with scroll => avoid double-offset
-    const x = (clientX - rect.left - stripPadLeftPx(strip));
+    // include scroll and exclude padding-left (piano/track column)
+    const x = (clientX - rect.left - stripPadLeftPx(strip)) + getScrollLeft(scope);
     const stepW = stepWidthPx(scope);
     const stepIndex = Math.max(0, Math.floor(x / stepW));
     return Math.floor(stepIndex / 4); // 4 steps per quarter

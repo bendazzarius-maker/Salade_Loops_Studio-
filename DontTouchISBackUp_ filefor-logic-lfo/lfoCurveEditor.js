@@ -30,7 +30,7 @@
 
   function getActiveLfoPattern(){
     const ap = (typeof activePattern === "function") ? activePattern() : null;
-    if(ap && String(ap.type||ap.kind||"").toLowerCase() === "lfo_curve") return ap;
+    if(ap && ap.kind === "lfo_curve") return ap;
     return null;
   }
 
@@ -497,7 +497,7 @@
   }
 
   function init(){
-    lfoCurveCanvas = document.getElementById("lfoCurvePatternCanvas");
+    lfoCurveCanvas = document.getElementById("lfoCurveCanvas");
     if(!lfoCurveCanvas) return;
     ui.canvas = lfoCurveCanvas;
     ui.ctx = ui.canvas.getContext("2d");

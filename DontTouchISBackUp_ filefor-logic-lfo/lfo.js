@@ -129,6 +129,7 @@ window.LFO = window.LFO || {};
     const pts = ensureCurve(pattern);
 
     let dragging=false;
+      dragTarget=null;
     let dragTarget=null;
 
     function redraw(){
@@ -141,11 +142,7 @@ window.LFO = window.LFO || {};
       const r = canvas.getBoundingClientRect();
       const x = (e.clientX - r.left);
       const y = (e.clientY - r.top);
-      return {
-        x,y,w:r.width,h:r.height,
-        shift: !!e.shiftKey,
-        alt: !!e.altKey
-      };
+      return {x,y,w:r.width,h:r.height};
     }
 
     function hitWhich(mx,my,w,h){
@@ -189,18 +186,9 @@ window.LFO = window.LFO || {};
     function onMove(e){
       if(!dragging) return;
       const m = getMouse(e);
-
-      // Precision: SHIFT = fine quantization, ALT = free movement (no quantize)
-      const stepT = m.shift ? 0.0025 : 0.01;
-      const stepV = m.shift ? 0.0025 : 0.01;
-      const q = (vv, step)=> Math.round(vv / step) * step;
-
-      let v = clamp(1 - (m.y / m.h), 0.0, 1.0);
-      if(!m.alt) v = clamp(q(v, stepV), 0, 1);
-
+      const v = clamp(1 - (m.y / m.h), 0.0, 1.0);
       if(dragTarget==="B"){
-        let t = clamp(m.x / m.w, 0.02, 0.98);
-        if(!m.alt) t = clamp(q(t, stepT), 0.02, 0.98);
+        const t = clamp(m.x / m.w, 0.02, 0.98);
         pts[1].t = t;
         pts[1].v = v;
       }else if(dragTarget==="A"){
@@ -212,7 +200,7 @@ window.LFO = window.LFO || {};
       }
       pattern.curve.points = pts;
       redraw();
-      try{ onChange && onChange(pattern); }catch(_){ }
+      try{ onChange && onChange(pattern); }catch(_){}
     }
     function onUp(e){
       if(!dragging) return;

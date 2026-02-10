@@ -90,7 +90,6 @@ function importProject(data){
 
   buildAllTimelines();
   refreshUI();
-  try{ if(typeof reloadLfoBindEditorFromPlaylist === "function") reloadLfoBindEditorFromPlaylist(); }catch(_){ }
   renderAll();
   try{ renderMixerUI(); }catch(_){}
   try{ if(ae && ae.ctx && ae.mixer){ ae.applyMixerModel(project.mixer); } }catch(_){}

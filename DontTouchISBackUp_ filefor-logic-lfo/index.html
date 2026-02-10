@@ -218,7 +218,7 @@
 
 /* --- FX param editor --- */
 .fxParams{ margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,.08); }
-.fxGrid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(44px,1fr)); gap:6px; margin-top:8px; max-height:240px; overflow:auto; padding:2px; }
+.fxGrid{ display:grid; grid-template-columns: repeat(8, minmax(0,1fr)); gap:6px; margin-top:8px; }
 .fxCell{ padding:6px 4px; font-size:11px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.25); color:var(--text); cursor:pointer; }
 .fxCell.on{ background:rgba(39,224,163,.18); border-color:rgba(39,224,163,.35); }
 .fxCell.off{ opacity:.7; }
@@ -290,43 +290,21 @@
       <div class="small" style="margin-top:6px;opacity:.9">Les patterns LFO sont utilisées uniquement dans la Playlist (pistes LFO).</div>
       <div id="patternList"></div>
       <div class="section" id="lfoInspector" style="display:none;margin-top:10px">
-        <div class="title" id="lfoInspectorTitle">📈 LFO — Bind</div>
-        <div class="small" id="lfoInspectorHelp" style="margin-bottom:6px;opacity:.9">Assigne un paramètre (Master/Channel/Mixer/FX). Les presets FX ouvrent un clone flottant.</div>
+        <div class="title">📈 LFO — Bind</div>
+        <div class="small" style="margin-bottom:6px;opacity:.9">Assigne un paramètre (Master/Channel/Mixer/FX). Les presets FX ouvrent un clone flottant.</div>
         <label class="small">Scope</label>
         <select id="lfoScope"></select>
         <label class="small">Channel</label>
         <select id="lfoChannel"></select>
-        <div id="lfoLenRow">
-          <label class="small">Longueur pattern</label>
-          <select id="lfoPatternLen">
-            <option value="1">1 temps</option>
-            <option value="2">2 temps</option>
-            <option value="3">3 temps</option>
-            <option value="4">4 temps</option>
-            <option value="5">5 temps</option>
-            <option value="6">6 temps</option>
-            <option value="7">7 temps</option>
-            <option value="8">8 temps</option>
-          </select>
-        </div>
-        <div id="lfoKindRow">
-          <label class="small">Type</label>
-          <select id="lfoBindKind"></select>
-        </div>
-        <div id="lfoParamRow">
-          <label class="small">Paramètre</label>
-          <select id="lfoParam"></select>
-        </div>
+        <label class="small">Type</label>
+        <select id="lfoBindKind"></select>
+        <label class="small">Paramètre</label>
+        <select id="lfoParam"></select>
         <div id="lfoFxRow" style="display:none">
           <label class="small">FX</label>
           <select id="lfoFx"></select>
           <button class="btn2" id="lfoCloneFx" style="margin-top:8px">🧬 Cloner / Binder FX</button>
         </div>
-      </div>
-      <div class="section" id="lfoCurveEditor" style="display:none;margin-top:10px">
-        <div class="title">📉 LFO Curve — Mixer Sliders</div>
-        <div class="small" style="margin-bottom:6px;opacity:.9">Édite la courbe A-B-C directement dans la pattern (glisser les points).</div>
-        <canvas id="lfoCurvePatternCanvas" style="width:100%;height:130px;border-radius:10px;background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.08)"></canvas>
       </div>
 
       <div class="small">Couleur = couleur du clip en playlist.</div>

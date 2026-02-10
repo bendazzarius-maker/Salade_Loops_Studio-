@@ -12,42 +12,13 @@ function _safeToast(msg){
 }
 function _isLfoPattern(p){
   if(!p) return false;
-  const t = _lfoPatternType(p);
+  const t = String(p.type||p.kind||p.patternType||"").toLowerCase();
   if(t.includes("lfo")) return true;
   // heuristics: lfo patterns usually have bind/preset structures without channels
   if(p.preset && (p.preset.fxIndex!==undefined || p.preset.params || p.preset.snapshot)) return true;
   if(p.bind && (p.bind.param || p.bind.fxIndex!==undefined)) return true;
   return false;
 }
-
-function reloadLfoBindEditorFromPlaylist(){
-  try{
-    const tracks = project?.playlist?.tracks || [];
-    const lfoClipPatternIds = new Set();
-    for(const tr of tracks){
-      for(const clip of (tr?.clips||[])){
-        const pid = clip?.patternId;
-        if(pid) lfoClipPatternIds.add(pid);
-      }
-    }
-    for(const pat of (project?.patterns||[])){
-      if(!lfoClipPatternIds.has(pat.id) || !_isLfoPattern(pat)) continue;
-      if((pat.type||"").toLowerCase()==="lfo_curve"){
-        pat.bind = pat.bind || (window.LFO && LFO.defaultBinding ? LFO.defaultBinding() : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 });
-      }
-      if((pat.type||"").toLowerCase()==="lfo_preset"){
-        pat.preset = pat.preset || { scope:"channel", channelId:null, fxIndex:0, fxType:"", params:{} };
-        pat.preset.snapshot = pat.preset.snapshot || { enabled:true, params:{} };
-      }
-    }
-    if(typeof updateLfoInspector === "function") updateLfoInspector();
-    if(typeof updateLfoCurvePatternEditor === "function") updateLfoCurvePatternEditor();
-  }catch(err){
-    console.warn("[lfo] reload bind editor failed", err);
-  }
-}
-window.reloadLfoBindEditorFromPlaylist = reloadLfoBindEditorFromPlaylist;
-
 function _ensurePresetSnapshot(pat, fx){
   pat.preset = pat.preset || {};
   // snapshot shape: { enabled:boolean, params:object, fxType:string }
@@ -69,7 +40,7 @@ function _updateLfoFxCloneWindow(){
   const win = document.getElementById("__lfoFxFloat");
   if(!win) { st.open=false; return; }
   const pat = (typeof activePattern==="function") ? activePattern() : null;
-  if(!pat || (_lfoPatternType(pat)!=="lfo_preset")){
+  if(!pat || (String(pat.type||"").toLowerCase()!=="lfo_preset")){
     // no active preset: show placeholder and clear patId
     st.patId = null;
     const body = win.querySelector("#__lfoFxBody");
@@ -161,51 +132,6 @@ function _updateLfoFxCloneWindow(){
   }
 }
 
-
-function openChannelContextMenu(x, y, ch, p){
-  try{ document.getElementById('__channelCtx')?.remove(); }catch(_e){}
-  const menu=document.createElement('div');
-  menu.id='__channelCtx';
-  menu.style.position='fixed';
-  menu.style.left=Math.max(8,x)+'px';
-  menu.style.top=Math.max(8,y)+'px';
-  menu.style.zIndex='999999';
-  menu.style.minWidth='180px';
-  menu.style.background='rgba(10,14,28,0.98)';
-  menu.style.border='1px solid rgba(255,255,255,0.14)';
-  menu.style.borderRadius='10px';
-  menu.style.padding='8px';
-  menu.style.display='grid';
-  menu.style.gap='6px';
-
-  const mk=(label, fn)=>{ const b=document.createElement('button'); b.className='btn2'; b.style.textAlign='left'; b.textContent=label; b.onclick=()=>{ try{fn();}finally{menu.remove();} }; return b; };
-  const colorRow=document.createElement('label');
-  colorRow.className='btn2';
-  colorRow.style.display='flex';
-  colorRow.style.alignItems='center';
-  colorRow.style.justifyContent='space-between';
-  colorRow.style.gap='8px';
-  colorRow.textContent='🎨 Couleur des notes';
-  const picker=document.createElement('input');
-  picker.type='color';
-  picker.value=ch.color||'#27e0a3';
-  picker.oninput=()=>{ ch.color=picker.value; refreshUI(); renderNotes(); renderPlaylist(); };
-  colorRow.appendChild(picker);
-
-  menu.appendChild(mk('✏️ Renommer', ()=>{
-    openRenameSocket(x,y,ch.name,(v)=>{ ch.name=v; refreshUI(); renderPlaylist(); });
-  }));
-  menu.appendChild(colorRow);
-  menu.appendChild(mk('🗑️ Supprimer instrument', ()=>{
-    deleteChannel(p.id, ch.id);
-    refreshUI(); renderAll(); renderPlaylist();
-  }));
-
-  document.body.appendChild(menu);
-  const close=(ev)=>{ if(!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown',close,true);} };
-  document.addEventListener('mousedown',close,true);
-}
-
 // Floating rename socket (right-click pattern button)
 function openRenameSocket(x, y, initialValue, onSubmit){
   try{ document.getElementById('__renameSocket')?.remove(); }catch(_e){}
@@ -268,8 +194,9 @@ function openRenameSocket(x, y, initialValue, onSubmit){
 }
 
 /* ---------------- helpers: detect LFO pattern + safe "notes pattern" ---------------- */
-function _lfoPatternType(p){
-  return String(p?.type||p?.kind||p?.patternType||"").toLowerCase();
+function _isLfoPattern(p){
+  const t = (p && (p.type||p.kind||p.patternType||"")).toString().toLowerCase();
+  return t === "lfo_curve" || t === "lfo_preset" || t === "lfo";
 }
 
 function _hasChannels(p){
@@ -471,7 +398,10 @@ function refreshUI(){
       });
       btn.addEventListener("contextmenu",(e)=>{
         e.preventDefault();
-        openChannelContextMenu(e.clientX, e.clientY, ch, p);
+        openRenameSocket(e.clientX, e.clientY, ch.name, (v)=>{
+          ch.name = v;
+          refreshUI(); renderPlaylist();
+        });
       });
 
       const tools=document.createElement("div");
@@ -544,7 +474,6 @@ function refreshUI(){
   if(typeof renderAutomationLane==="function") renderAutomationLane();
 
   try{ updateLfoInspector(); }catch(_e){}
-  try{ updateLfoCurvePatternEditor(); }catch(_e){}
 }
 
 /* ---------------- LFO inspector (playlist-side binding) ---------------- */
@@ -559,8 +488,6 @@ function updateLfoInspector(){
   }
   wrap.style.display = "block";
 
-  const titleEl = document.getElementById("lfoInspectorTitle");
-  const helpEl = document.getElementById("lfoInspectorHelp");
   const scopeSel = document.getElementById("lfoScope");
   const chSel = document.getElementById("lfoChannel");
   const kindSel = document.getElementById("lfoBindKind");
@@ -568,11 +495,8 @@ function updateLfoInspector(){
   const fxRow = document.getElementById("lfoFxRow");
   const fxSel = document.getElementById("lfoFx");
   const cloneBtn = document.getElementById("lfoCloneFx");
-  const kindRow = document.getElementById("lfoKindRow");
-  const paramRow = document.getElementById("lfoParamRow");
-  const lenSel = document.getElementById("lfoPatternLen");
 
-  if(!scopeSel || !chSel || !kindSel || !paramSel || !fxSel || !fxRow || !cloneBtn || !lenSel) return;
+  if(!scopeSel || !chSel || !kindSel || !paramSel || !fxSel || !fxRow || !cloneBtn) return;
 
   // One-time listener binding (non-destructive)
   if(!wrap.__bound){
@@ -581,7 +505,7 @@ function updateLfoInspector(){
     scopeSel.addEventListener("change", ()=>{
       const pat = activePattern();
       if(!pat) return;
-      if(_lfoPatternType(pat)==="lfo_preset"){
+      if(pat.type==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.scope = scopeSel.value;
       }else{
@@ -595,7 +519,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const cid = chSel.value || null;
-      if(_lfoPatternType(pat)==="lfo_preset"){
+      if(pat.type==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.channelId = cid;
       }else{
@@ -609,7 +533,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const k = kindSel.value;
-      if(_lfoPatternType(pat)==="lfo_preset"){
+      if(pat.type==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.kind = k;
       }else{
@@ -623,7 +547,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const v = paramSel.value;
-      if(_lfoPatternType(pat)==="lfo_preset"){
+      if(pat.type==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.param = v;
       }else{
@@ -637,7 +561,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const ix = Number(fxSel.value||0);
-      if(_lfoPatternType(pat)==="lfo_preset"){
+      if(pat.type==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.fxIndex = ix;
       }else{
@@ -647,18 +571,10 @@ function updateLfoInspector(){
       try{ renderPlaylist(); }catch(_e){}
     });
 
-    lenSel.addEventListener("change", ()=>{
-      const pat = activePattern();
-      if(!pat || !_isLfoPattern(pat)) return;
-      pat.lenBars = Math.max(1, Math.min(8, parseInt(lenSel.value,10)||4));
-      try{ refreshUI(); }catch(_e){}
-      try{ renderPlaylist(); }catch(_e){}
-    });
-
     cloneBtn.addEventListener("click", ()=>{
       const pat = activePattern();
       if(!pat) return;
-      if(_lfoPatternType(pat)!=="lfo_preset"){
+      if(String(pat.type||"").toLowerCase()!=="lfo_preset"){
         _safeToast("Le clonage FX est réservé aux patterns LFO preset.");
         return;
       }
@@ -722,17 +638,6 @@ function updateLfoInspector(){
   }
 
   const isPreset = (p.type||"").toString().toLowerCase()==="lfo_preset";
-  const isCurve = (p.type||"").toString().toLowerCase()==="lfo_curve";
-  _normalizeLfoPatternBinding(p);
-
-  if(titleEl){
-    titleEl.textContent = isPreset ? "🧬 LFO Preset — FX Clone" : "📈 LFO Curve — Mixer Sliders";
-  }
-  if(helpEl){
-    helpEl.textContent = isPreset
-      ? "Pré-configuration d'effet : clone un FX dans une fenêtre flottante."
-      : "Contrôle les sliders du mixer via une courbe A-B-C.";
-  }
 
   scopeSel.innerHTML="";
   ["master","channel"].forEach(v=>{
@@ -765,9 +670,7 @@ function updateLfoInspector(){
 
   const bind = isPreset ? (p.preset||{}) : (p.bind||{});
   const scope = bind.scope || "channel";
-  const patLen = Math.max(1, Math.min(8, parseInt(p.lenBars,10) || 4));
   scopeSel.value = scope;
-  lenSel.value = String(patLen);
 
   chSel.value = (bind.channelId||"");
   if(scope==="master") chSel.value = "";
@@ -776,13 +679,12 @@ function updateLfoInspector(){
     kindSel.value = "fx";
     kindSel.disabled = true;
   }else{
-    kindSel.disabled = true;
-    kindSel.value = "mixer";
-    bind.kind = "mixer";
+    kindSel.disabled = false;
+    kindSel.value = bind.kind || "mixer";
   }
 
   paramSel.innerHTML="";
-  const wantFx = isPreset;
+  const wantFx = (isPreset || kindSel.value==="fx");
   if(!wantFx){
     for(const it of mixerParams){
       if(it.k==="cross" && scope!=="master") continue;
@@ -815,44 +717,8 @@ function updateLfoInspector(){
     paramSel.value = bind.param || "mix";
   }
 
-  if(kindRow) kindRow.style.display = isPreset ? "none" : "block";
-  if(paramRow) paramRow.style.display = isPreset ? "none" : "block";
-  if(fxRow) fxRow.style.display = isPreset ? "block" : "none";
-
   // If the floating clone editor is open, keep it in sync when switching presets.
   if(window.__lfoFxCloneState?.open){
     try{ _updateLfoFxCloneWindow(); }catch(_e){}
-  }
-}
-
-function updateLfoCurvePatternEditor(){
-  const wrap = document.getElementById("lfoCurveEditor");
-  const canvas = document.getElementById("lfoCurvePatternCanvas");
-  if(!wrap || !canvas) return;
-
-  const p = (typeof activePattern === "function") ? activePattern() : null;
-  const isCurve = p && (String(p.type||p.kind||"").toLowerCase()==="lfo_curve");
-
-  if(!isCurve){
-    wrap.style.display = "none";
-    if(canvas.__lfoCleanup){
-      try{ canvas.__lfoCleanup(); }catch(_e){}
-      canvas.__lfoCleanup = null;
-    }
-    canvas.__lfoPatternId = null;
-    return;
-  }
-
-  wrap.style.display = "block";
-  if(window.LFO){
-    if(canvas.__lfoPatternId !== p.id){
-      if(canvas.__lfoCleanup){
-        try{ canvas.__lfoCleanup(); }catch(_e){}
-      }
-      canvas.__lfoPatternId = p.id;
-      canvas.__lfoCleanup = LFO.makeInteractive(canvas, p, ()=>{ try{ renderPlaylist(); }catch(_e){} });
-    }else{
-      try{ LFO.drawPreview(canvas, p); }catch(_e){}
-    }
   }
 }
