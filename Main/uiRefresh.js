@@ -20,74 +20,28 @@ function _isLfoPattern(p){
   return false;
 }
 
-
-function _normalizeLfoTargetRef(ref){
-  const out = ref && typeof ref === "object" ? ref : {};
-  const scope = (String(out.scope||"channel").toLowerCase()==="master") ? "master" : "channel";
-  out.scope = scope;
-
-  const channels = project?.mixer?.channels || [];
-  const fallbackCh = channels[0] || null;
-  if(scope === "master"){
-    out.channelId = null;
-  }else{
-    const raw = out.channelId;
-    const wantsAuto = (raw == null || String(raw)==="");
-    if(wantsAuto){
-      out.channelId = null;
-    }else{
-      const hasExact = channels.some(ch => String(ch.id) === String(raw));
-      out.channelId = hasExact ? raw : (fallbackCh ? fallbackCh.id : null);
-    }
-  }
-
-  out.kind = (String(out.kind||"mixer").toLowerCase()==="fx") ? "fx" : "mixer";
-  out.fxIndex = Math.max(0, Math.floor(Number(out.fxIndex||0)));
-
-  if(out.kind === "mixer"){
-    const allowed = new Set(["gain","pan","eqLow","eqMid","eqHigh","cross"]);
-    if(!allowed.has(String(out.param||""))) out.param = "gain";
-    if(out.param === "cross" && scope !== "master") out.param = "gain";
-  }
-  return out;
-}
-
-function _normalizeLfoPatternBinding(pat){
-  if(!pat || !_isLfoPattern(pat)) return;
-  if(_lfoPatternType(pat)==="lfo_curve"){
-    pat.bind = _normalizeLfoTargetRef(pat.bind || (window.LFO && LFO.defaultBinding ? LFO.defaultBinding() : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 }));
-    pat.bind.kind = "mixer";
-  }
-  if(_lfoPatternType(pat)==="lfo_preset"){
-    pat.preset = _normalizeLfoTargetRef(pat.preset || { scope:"channel", channelId:null, kind:"fx", fxIndex:0, fxType:"", params:{} });
-    pat.preset.kind = "fx";
-    pat.preset.snapshot = (pat.preset.snapshot && typeof pat.preset.snapshot === "object") ? pat.preset.snapshot : { enabled:true, params:{} };
-
-    const isMaster = pat.preset.scope === "master";
-    const mix = project?.mixer || {};
-    const bank = isMaster ? mix.master : ((mix.channels||[]).find(c=>String(c.id)===String(pat.preset.channelId)) || (mix.channels||[])[0]);
-    const fxArr = bank?.fx || [];
-    if(fxArr.length===0){
-      pat.preset.fxIndex = 0;
-    }else if(pat.preset.fxIndex >= fxArr.length){
-      pat.preset.fxIndex = fxArr.length - 1;
-    }
-  }
-}
-
-window._normalizeLfoPatternBinding = _normalizeLfoPatternBinding;
-
 function reloadLfoBindEditorFromPlaylist(){
   try{
-
-    for(const pat of (project?.patterns||[])){
-      if(!_isLfoPattern(pat)) continue;
-      _normalizeLfoPatternBinding(pat);
+    const tracks = project?.playlist?.tracks || [];
+    const lfoClipPatternIds = new Set();
+    for(const tr of tracks){
+      for(const clip of (tr?.clips||[])){
+        const pid = clip?.patternId;
+        if(pid) lfoClipPatternIds.add(pid);
+      }
     }
-
+    for(const pat of (project?.patterns||[])){
+      if(!lfoClipPatternIds.has(pat.id) || !_isLfoPattern(pat)) continue;
+      if((pat.type||"").toLowerCase()==="lfo_curve"){
+        pat.bind = pat.bind || (window.LFO && LFO.defaultBinding ? LFO.defaultBinding() : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 });
+      }
+      if((pat.type||"").toLowerCase()==="lfo_preset"){
+        pat.preset = pat.preset || { scope:"channel", channelId:null, fxIndex:0, fxType:"", params:{} };
+        pat.preset.snapshot = pat.preset.snapshot || { enabled:true, params:{} };
+      }
+    }
     if(typeof updateLfoInspector === "function") updateLfoInspector();
     if(typeof updateLfoCurvePatternEditor === "function") updateLfoCurvePatternEditor();
-    try{ renderPlaylist(); }catch(_e){}
   }catch(err){
     console.warn("[lfo] reload bind editor failed", err);
   }
@@ -697,11 +651,6 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat || !_isLfoPattern(pat)) return;
       pat.lenBars = Math.max(1, Math.min(8, parseInt(lenSel.value,10)||4));
-      try{
-        if(typeof patternLenSelect !== "undefined" && patternLenSelect){
-          patternLenSelect.value = String(pat.lenBars);
-        }
-      }catch(_e){}
       try{ refreshUI(); }catch(_e){}
       try{ renderPlaylist(); }catch(_e){}
     });
@@ -772,14 +721,9 @@ function updateLfoInspector(){
     });
   }
 
-  const isPreset = _lfoPatternType(p)==="lfo_preset";
-  const isCurve = _lfoPatternType(p)==="lfo_curve";
-  const _norm = (typeof _normalizeLfoPatternBinding === "function") ? _normalizeLfoPatternBinding : (window._normalizeLfoPatternBinding || null);
-  if(_norm) _norm(p);
-  lenSel.value = String(Math.max(1, Math.min(8, parseInt(p.lenBars||4,10)||4)));
-
-  cloneBtn.style.display = isPreset ? "inline-flex" : "none";
-  cloneBtn.textContent = "🧬 Binder FX";
+  const isPreset = (p.type||"").toString().toLowerCase()==="lfo_preset";
+  const isCurve = (p.type||"").toString().toLowerCase()==="lfo_curve";
+  _normalizeLfoPatternBinding(p);
 
   if(titleEl){
     titleEl.textContent = isPreset ? "🧬 LFO Preset — FX Clone" : "📈 LFO Curve — Mixer Sliders";
