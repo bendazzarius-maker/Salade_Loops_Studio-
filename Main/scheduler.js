@@ -12,8 +12,21 @@ const pb = {
   uiStep: 0,
   uiAbsStep: 0,
   uiSongStep: 0,
-  uiRollStep: 0
+  uiRollStep: 0,
+  rangeStartStep: 0,
+  rangeEndStep: 0,
+  forceSongFromSelection: false
 };
+
+function _selectedRangeSteps(){
+  try{
+    const pl = (typeof getTimeRulerSelectionSteps === "function") ? getTimeRulerSelectionSteps("playlist") : null;
+    if(pl && pl.endStep > pl.startStep) return { ...pl, source:"playlist" };
+    const roll = (typeof getTimeRulerSelectionSteps === "function") ? getTimeRulerSelectionSteps("roll") : null;
+    if(roll && roll.endStep > roll.startStep) return { ...roll, source:"roll" };
+  }catch(_){ }
+  return null;
+}
 // ---------------- LFO preset runtime override (non-destructive) ----------------
 const __lfoRT = {
   // key -> { enabled, params } original snapshot to restore when LFO not active
@@ -396,7 +409,9 @@ function _recalcEndStepForMode(){
       const bars = p ? patternLengthBars(p) : 1;
       return Math.max(1, bars * state.stepsPerBar);
     }
-    return Math.max(1, playlistEndBar() * state.stepsPerBar);
+    const start = Math.max(0, Math.floor(pb.rangeStartStep||0));
+    const end = Math.max(start+1, Math.floor(pb.rangeEndStep||0));
+    return Math.max(1, end - start);
   }catch(_){
     return pb.endStep || 0;
   }
@@ -556,9 +571,10 @@ function tick() {
       pb.pendingEndStep = 0;
     }
 
+    const rangeLen = Math.max(1, pb.rangeEndStep - pb.rangeStartStep);
     const stepForSeq = (state.loop && pb.endStep > 0)
-      ? (pb.nextStep % pb.endStep)
-      : pb.nextStep;
+      ? (pb.rangeStartStep + (pb.nextStep % rangeLen))
+      : (pb.rangeStartStep + pb.nextStep);
 
     if (state.mode === "pattern") scheduleStep_PATTERN(stepForSeq, t);
     else scheduleStep_SONG(stepForSeq, t);
@@ -571,7 +587,9 @@ function tick() {
   // UI readhead
   const elapsed = Math.max(0, now - pb.startT);
   const absStep = Math.floor(elapsed / sp);
-  const uiStep = (state.loop && pb.endStep > 0) ? (absStep % pb.endStep) : absStep;
+  const rangeLen = Math.max(1, pb.rangeEndStep - pb.rangeStartStep);
+  const relUiStep = (state.loop && pb.endStep > 0) ? (absStep % pb.endStep) : absStep;
+  const uiStep = pb.rangeStartStep + relUiStep;
 
   pb.uiAbsStep = absStep;
   pb.uiSongStep = uiStep;
@@ -586,7 +604,7 @@ function tick() {
     const p = activePattern();
     const bars = p ? patternLengthBars(p) : 1;
     const patSteps = Math.max(1, bars * state.stepsPerBar);
-    pb.uiRollStep = absStep % patSteps;
+    pb.uiRollStep = (pb.rangeStartStep + absStep) % patSteps;
   } catch (_) {
     pb.uiRollStep = uiStep;
   }
@@ -657,12 +675,27 @@ async function start() {
   pb.startT = ae.ctx.currentTime + 0.06;   // match safetyLead
   pb.nextStep = 0;
 
+  const selected = _selectedRangeSteps();
+  pb.forceSongFromSelection = !!selected;
+  if(selected){
+    pb.rangeStartStep = Math.max(0, Math.floor(selected.startStep||0));
+    pb.rangeEndStep = Math.max(pb.rangeStartStep+1, Math.floor(selected.endStep||0));
+    try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
+  }else{
+    // Smart play: no selection => full song playback
+    try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
+    pb.rangeStartStep = 0;
+    pb.rangeEndStep = playlistEndBar() * state.stepsPerBar;
+  }
+
   if (state.mode === "pattern") {
     const p = activePattern();
     const bars = p ? patternLengthBars(p) : 1;
-    pb.endStep = bars * state.stepsPerBar;
+    pb.rangeStartStep = 0;
+    pb.rangeEndStep = bars * state.stepsPerBar;
+    pb.endStep = pb.rangeEndStep - pb.rangeStartStep;
   } else {
-    pb.endStep = playlistEndBar() * state.stepsPerBar;
+    pb.endStep = Math.max(1, pb.rangeEndStep - pb.rangeStartStep);
   }
 
   pb.pendingEndStep = 0;
