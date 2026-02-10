@@ -789,13 +789,13 @@ function updateLfoInspector(){
     kindSel.value = "fx";
     kindSel.disabled = true;
   }else{
-    kindSel.disabled = true;
-    kindSel.value = "mixer";
-    bind.kind = "mixer";
+    kindSel.disabled = false;
+    _safeSetSelectValue(kindSel, bind.kind || "mixer", "mixer");
+    bind.kind = kindSel.value;
   }
 
+  const wantFx = isPreset || (kindSel.value === "fx");
   paramSel.innerHTML="";
-  const wantFx = isPreset;
   if(!wantFx){
     for(const it of mixerParams){
       if(it.k==="cross" && scope!=="master") continue;
@@ -804,9 +804,8 @@ function updateLfoInspector(){
     fxRow.style.display="none";
     _safeSetSelectValue(paramSel, bind.param || "gain", "gain");
   }else{
-    fxRow.style.display="block";
     const mix = project.mixer;
-    const bank = (scope==="master") ? mix.master : (mix.channels.find(c=>c.id===(bind.channelId||mix.channels[0].id)) || mix.channels[0]);
+    const bank = (scope==="master") ? mix.master : (mix.channels.find(c=>c.id===(bind.channelId||mix.channels[0]?.id)) || mix.channels[0]);
     const fxArr = bank?.fx || [];
     fxSel.innerHTML="";
     if(fxArr.length===0){
@@ -830,7 +829,7 @@ function updateLfoInspector(){
 
   if(kindRow) kindRow.style.display = isPreset ? "none" : "block";
   if(paramRow) paramRow.style.display = isPreset ? "none" : "block";
-  if(fxRow) fxRow.style.display = isPreset ? "block" : "none";
+  if(fxRow) fxRow.style.display = wantFx ? "block" : "none";
 
   // If the floating clone editor is open, keep it in sync when switching presets.
   if(window.__lfoFxCloneState?.open){
