@@ -28,6 +28,51 @@ function exportProject(){
   };
 }
 
+
+function normalizeLoadedLfoPatterns(){
+  try{
+    const pats = project?.patterns || [];
+    for(const pat of pats){
+      const t = String(pat?.type||pat?.kind||pat?.patternType||"").toLowerCase();
+      if(t === "lfo_curve"){
+        pat.type = "lfo_curve";
+        pat.kind = "lfo_curve";
+        pat.lenBars = Math.max(1, Math.min(8, parseInt(pat.lenBars||4,10)||4));
+        pat.bind = pat.bind && typeof pat.bind === "object" ? pat.bind : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 };
+      }else if(t === "lfo_preset"){
+        pat.type = "lfo_preset";
+        pat.kind = "lfo_preset";
+        pat.lenBars = Math.max(1, Math.min(8, parseInt(pat.lenBars||4,10)||4));
+        pat.preset = pat.preset && typeof pat.preset === "object" ? pat.preset : { scope:"channel", channelId:null, fxIndex:0, fxType:"", params:{} };
+        pat.preset.snapshot = (pat.preset.snapshot && typeof pat.preset.snapshot === "object") ? pat.preset.snapshot : { enabled:true, params:{} };
+
+        const scope = String(pat.preset.scope||"channel").toLowerCase()==="master" ? "master" : "channel";
+        pat.preset.scope = scope;
+        if(scope === "master"){
+          pat.preset.channelId = null;
+          const mfx = project?.mixer?.master?.fx || [];
+          if(mfx.length===0) pat.preset.fxIndex = 0;
+          else pat.preset.fxIndex = Math.max(0, Math.min(mfx.length-1, parseInt(pat.preset.fxIndex||0,10)||0));
+        }else{
+          const channels = project?.mixer?.channels || [];
+          const idx = channels.findIndex(ch => String(ch.id)===String(pat.preset.channelId));
+          if(idx < 0) pat.preset.channelId = null;
+          const target = (idx>=0 ? channels[idx] : channels[0]) || null;
+          const fxs = target?.fx || [];
+          let fxIndex = parseInt(pat.preset.fxIndex||0,10)||0;
+          if(pat.preset.fxType && fxs.length){
+            const byType = fxs.findIndex(fx => String(fx.type||fx.name||"").toLowerCase()===String(pat.preset.fxType||"").toLowerCase());
+            if(byType>=0) fxIndex = byType;
+          }
+          if(fxs.length===0) fxIndex = 0;
+          else fxIndex = Math.max(0, Math.min(fxs.length-1, fxIndex));
+          pat.preset.fxIndex = fxIndex;
+        }
+      }
+    }
+  }catch(err){ console.warn('[load] normalizeLoadedLfoPatterns failed', err); }
+}
+
 function importProject(data){
   if(!data || data.schema !== "ElectroDAW.Project"){
     throw new Error("Fichier projet invalide (schema).");
@@ -88,8 +133,11 @@ function importProject(data){
   updateSnapLabel();
   setMode(state.mode === "song" ? "song" : "pattern");
 
+  normalizeLoadedLfoPatterns();
+
   buildAllTimelines();
   refreshUI();
+  try{ if(typeof reloadLfoBindEditorFromPlaylist === "function") reloadLfoBindEditorFromPlaylist(); }catch(_){ }
   renderAll();
   try{ renderMixerUI(); }catch(_){}
   try{ if(ae && ae.ctx && ae.mixer){ ae.applyMixerModel(project.mixer); } }catch(_){}

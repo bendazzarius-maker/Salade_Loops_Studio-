@@ -72,12 +72,22 @@ function activeChannel(){
 }
 
 
+
+function _defaultPatternLenBars(){
+  try{
+    if(typeof patternLenSelect !== "undefined" && patternLenSelect){
+      return Math.max(1, Math.min(8, parseInt(patternLenSelect.value,10)||4));
+    }
+  }catch(_){ }
+  return 4;
+}
+
 function createPattern(name){
   const p={
     id:gid("pat"),
     name,
     color:"#27e0a3",
-    lenBars: 4, // fixed cycle length (independent of last note)
+    lenBars: _defaultPatternLenBars(), // fixed cycle length (independent of last note)
     channels: [],
     activeChannelId: null
   };
@@ -95,8 +105,9 @@ function createLfoPatternCurve(name){
     id:gid("lfo"),
     name,
     color:"#facc15",
-    lenBars: 4,
+    lenBars: _defaultPatternLenBars(),
     type:"lfo_curve",
+    kind:"lfo_curve",
     // binding to a slider parameter (mixer or instrument)
     bind: (window.LFO && LFO.defaultBinding) ? LFO.defaultBinding() : {scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0},
     curve: { points: (window.LFO && LFO.ensureCurve) ? LFO.ensureCurve({curve:{}}).slice?.() : [{t:0,v:0},{t:0.33,v:0.85},{t:1,v:0.15}] }
@@ -114,8 +125,9 @@ function createLfoPatternPreset(name){
     id:gid("lfo"),
     name,
     color:"#ff4d6d",
-    lenBars: 4,
+    lenBars: _defaultPatternLenBars(),
     type:"lfo_preset",
+    kind:"lfo_preset",
     // preset binds to an FX clone
     preset: {
       scope:"channel", // master|channel

@@ -293,20 +293,33 @@
         <div class="title" id="lfoInspectorTitle">📈 LFO — Bind</div>
         <div class="small" id="lfoInspectorHelp" style="margin-bottom:6px;opacity:.9">Assigne un paramètre (Master/Channel/Mixer/FX). Les presets FX ouvrent un clone flottant.</div>
         <label class="small">Scope</label>
-        <select id="lfoScope"></select>
+        <select id="lfoScope"><option value="master">Master</option><option value="channel" selected>Channel</option></select>
         <label class="small">Channel</label>
-        <select id="lfoChannel"></select>
+        <select id="lfoChannel"><option value="">(auto)</option></select>
+        <div id="lfoLenRow">
+          <label class="small">Longueur pattern</label>
+          <select id="lfoPatternLen">
+            <option value="1">1 temps</option>
+            <option value="2">2 temps</option>
+            <option value="3">3 temps</option>
+            <option value="4">4 temps</option>
+            <option value="5">5 temps</option>
+            <option value="6">6 temps</option>
+            <option value="7">7 temps</option>
+            <option value="8">8 temps</option>
+          </select>
+        </div>
         <div id="lfoKindRow">
           <label class="small">Type</label>
-          <select id="lfoBindKind"></select>
+          <select id="lfoBindKind"><option value="mixer" selected>Mixer</option><option value="fx">FX</option></select>
         </div>
         <div id="lfoParamRow">
           <label class="small">Paramètre</label>
-          <select id="lfoParam"></select>
+          <select id="lfoParam"><option value="gain" selected>Gain</option><option value="pan">Pan</option><option value="eqLow">EQ Low</option><option value="eqMid">EQ Mid</option><option value="eqHigh">EQ High</option><option value="cross">Cross (master)</option></select>
         </div>
         <div id="lfoFxRow" style="display:none">
           <label class="small">FX</label>
-          <select id="lfoFx"></select>
+          <select id="lfoFx"><option value="0">(aucun FX)</option></select>
           <button class="btn2" id="lfoCloneFx" style="margin-top:8px">🧬 Cloner / Binder FX</button>
         </div>
       </div>
