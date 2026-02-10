@@ -244,7 +244,10 @@ function __applyLfoCurveOverrides(songStep){
       const clipEndStep = clipStartStep + clipLenSteps;
       if(stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
-      const t = (stepInSong - clipStartStep) / clipLenSteps;
+      const patLenSteps = Math.max(1, patternLengthBars(pat) * spb);
+      const stepInClip = Math.max(0, stepInSong - clipStartStep);
+      const stepInPattern = stepInClip % patLenSteps;
+      const t = stepInPattern / patLenSteps;
       const lfoVal = __lfoCurveSample(pat, t);
 
       const bind = pat.bind || {};
