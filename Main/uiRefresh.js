@@ -552,11 +552,23 @@ function refreshUI(){
 }
 
 /* ---------------- LFO inspector (playlist-side binding) ---------------- */
+
+function _safeSetSelectValue(sel, value, fallback=""){
+  if(!sel) return;
+  const wanted = String(value==null?"":value);
+  const has = Array.from(sel.options||[]).some(o=>String(o.value)===wanted);
+  if(has){ sel.value = wanted; return; }
+  const hasFallback = Array.from(sel.options||[]).some(o=>String(o.value)===String(fallback));
+  if(hasFallback){ sel.value = String(fallback); return; }
+  if(sel.options && sel.options.length) sel.value = sel.options[0].value;
+}
+
 function updateLfoInspector(){
   const wrap = document.getElementById("lfoInspector");
   if(!wrap) return;
 
   const p = (typeof activePattern === "function") ? activePattern() : null;
+  if(!project.mixer || !Array.isArray(project.mixer.channels)) project.mixer = initMixerModel(16);
   if(!p || !_isLfoPattern(p)){
     wrap.style.display = "none";
     return;
@@ -769,10 +781,9 @@ function updateLfoInspector(){
 
   const bind = isPreset ? (p.preset||{}) : (p.bind||{});
   const scope = bind.scope || "channel";
-  scopeSel.value = scope;
+  _safeSetSelectValue(scopeSel, scope, "channel");
 
-  chSel.value = (bind.channelId||"");
-  if(scope==="master") chSel.value = "";
+  _safeSetSelectValue(chSel, (scope==="master") ? "" : (bind.channelId||""), "");
 
   if(isPreset){
     kindSel.value = "fx";
@@ -791,7 +802,7 @@ function updateLfoInspector(){
       const o=document.createElement("option"); o.value=it.k; o.textContent=it.n; paramSel.appendChild(o);
     }
     fxRow.style.display="none";
-    paramSel.value = bind.param || "gain";
+    _safeSetSelectValue(paramSel, bind.param || "gain", "gain");
   }else{
     fxRow.style.display="block";
     const mix = project.mixer;
@@ -808,13 +819,13 @@ function updateLfoInspector(){
         fxSel.appendChild(o);
       });
     }
-    fxSel.value = String(bind.fxIndex||0);
+    _safeSetSelectValue(fxSel, String(bind.fxIndex||0), "0");
 
     const op=document.createElement("option");
     op.value=(bind.param||"mix");
     op.textContent="(param FX — à câbler)";
     paramSel.appendChild(op);
-    paramSel.value = bind.param || "mix";
+    _safeSetSelectValue(paramSel, bind.param || "mix", bind.param || "mix");
   }
 
   if(kindRow) kindRow.style.display = isPreset ? "none" : "block";
@@ -833,6 +844,7 @@ function updateLfoCurvePatternEditor(){
   if(!wrap || !canvas) return;
 
   const p = (typeof activePattern === "function") ? activePattern() : null;
+  if(!project.mixer || !Array.isArray(project.mixer.channels)) project.mixer = initMixerModel(16);
   const isCurve = p && (String(p.type||p.kind||"").toLowerCase()==="lfo_curve");
 
   if(!isCurve){
