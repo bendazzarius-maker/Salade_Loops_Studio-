@@ -1,0 +1,23 @@
+/* ================= Electro DAW | domRefs.js ================= */
+const ctxEl=$("#ctx"), hud=$("#hud"), posTxt=$("#posTxt");
+const rollTime=$("#rollTime"), plistTime=$("#plistTime");
+const pianoScroll=$("#pianoScroll"), gridScroll=$("#gridScroll");
+const pianoKeys=$("#pianoKeys"), grid=$("#grid"), playhead=$("#playhead"), plistPlayhead=$("#plistPlayhead");
+const autoLane=$("#autoLane"), autoTarget=$("#autoTarget"), autoTargetInfo=$("#autoTargetInfo");
+const autoEditorScroll=$("#autoEditorScroll"), autoCanvas=$("#autoCanvas"), autoDiscrete=$("#autoDiscrete");
+const tracks=$("#tracks"), plistInfo=$("#plistInfo");
+const patternSelect=$("#patternSelect"), plistPatternSelect=$("#plistPatternSelect");
+const channelSelect=$("#channelSelect");
+const lenSelect=$("#lenSelect");
+const toolPaint=$("#toolPaint"), toolHandle=$("#toolHandle"), snapBtn=$("#snapBtn");
+const bpm=$("#bpm"), playBtn=$("#play"), stopBtn=$("#stop"), loopBtn=$("#loop");
+const vel=$("#vel"), velVal=$("#velVal"), previewBtn=$("#previewBtn");
+const presetOverride=$("#presetOverride");
+const instrumentPanel=$("#instrumentPanel");
+const modeBtn=$("#modeBtn");
+const maxBtn=$("#maxBtn");
+const layout=$("#layout");
+const patternLenSelect=$("#patternLenSelect");
+const mixerMaster=$("#mixerMaster"), mixerChannels=$("#mixerChannels");
+const addMixChannel=$("#addMixChannel");
+const mixerInfo=$("#mixerInfo");
