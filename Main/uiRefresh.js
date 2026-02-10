@@ -19,6 +19,81 @@ function _isLfoPattern(p){
   if(p.bind && (p.bind.param || p.bind.fxIndex!==undefined)) return true;
   return false;
 }
+
+
+function _normalizeLfoTargetRef(ref){
+  const out = ref && typeof ref === "object" ? ref : {};
+  const scope = (String(out.scope||"channel").toLowerCase()==="master") ? "master" : "channel";
+  out.scope = scope;
+
+  const channels = project?.mixer?.channels || [];
+  const fallbackCh = channels[0] || null;
+  if(scope === "master"){
+    out.channelId = null;
+  }else{
+    const hasExact = channels.some(ch => String(ch.id) === String(out.channelId));
+    out.channelId = hasExact ? out.channelId : (fallbackCh ? fallbackCh.id : null);
+  }
+
+  out.kind = (String(out.kind||"mixer").toLowerCase()==="fx") ? "fx" : "mixer";
+  out.fxIndex = Math.max(0, Math.floor(Number(out.fxIndex||0)));
+
+  if(out.kind === "mixer"){
+    const allowed = new Set(["gain","pan","eqLow","eqMid","eqHigh","cross"]);
+    if(!allowed.has(String(out.param||""))) out.param = "gain";
+    if(out.param === "cross" && scope !== "master") out.param = "gain";
+  }
+  return out;
+}
+
+function _normalizeLfoPatternBinding(pat){
+  if(!pat || !_isLfoPattern(pat)) return;
+  if((pat.type||"").toString().toLowerCase()==="lfo_curve"){
+    pat.bind = _normalizeLfoTargetRef(pat.bind || (window.LFO && LFO.defaultBinding ? LFO.defaultBinding() : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 }));
+    pat.bind.kind = "mixer";
+  }
+  if((pat.type||"").toString().toLowerCase()==="lfo_preset"){
+    pat.preset = _normalizeLfoTargetRef(pat.preset || { scope:"channel", channelId:null, kind:"fx", fxIndex:0, fxType:"", params:{} });
+    pat.preset.kind = "fx";
+    pat.preset.snapshot = (pat.preset.snapshot && typeof pat.preset.snapshot === "object") ? pat.preset.snapshot : { enabled:true, params:{} };
+
+    const isMaster = pat.preset.scope === "master";
+    const mix = project?.mixer || {};
+    const bank = isMaster ? mix.master : ((mix.channels||[]).find(c=>String(c.id)===String(pat.preset.channelId)) || (mix.channels||[])[0]);
+    const fxArr = bank?.fx || [];
+    if(fxArr.length===0){
+      pat.preset.fxIndex = 0;
+    }else if(pat.preset.fxIndex >= fxArr.length){
+      pat.preset.fxIndex = fxArr.length - 1;
+    }
+  }
+}
+
+function reloadLfoBindEditorFromPlaylist(){
+  try{
+    const tracks = project?.playlist?.tracks || [];
+    const lfoClipPatternIds = new Set();
+    for(const tr of tracks){
+      for(const clip of (tr?.clips||[])){
+        const pid = clip?.patternId;
+        if(pid) lfoClipPatternIds.add(pid);
+      }
+    }
+
+    for(const pat of (project?.patterns||[])){
+      if(!lfoClipPatternIds.has(pat.id) || !_isLfoPattern(pat)) continue;
+      _normalizeLfoPatternBinding(pat);
+    }
+
+    if(typeof updateLfoInspector === "function") updateLfoInspector();
+    if(typeof updateLfoCurvePatternEditor === "function") updateLfoCurvePatternEditor();
+    try{ renderPlaylist(); }catch(_e){}
+  }catch(err){
+    console.warn("[lfo] reload bind editor failed", err);
+  }
+}
+window.reloadLfoBindEditorFromPlaylist = reloadLfoBindEditorFromPlaylist;
+
 function _ensurePresetSnapshot(pat, fx){
   pat.preset = pat.preset || {};
   // snapshot shape: { enabled:boolean, params:object, fxType:string }
@@ -130,6 +205,51 @@ function _updateLfoFxCloneWindow(){
     };
     body.appendChild(ta);
   }
+}
+
+
+function openChannelContextMenu(x, y, ch, p){
+  try{ document.getElementById('__channelCtx')?.remove(); }catch(_e){}
+  const menu=document.createElement('div');
+  menu.id='__channelCtx';
+  menu.style.position='fixed';
+  menu.style.left=Math.max(8,x)+'px';
+  menu.style.top=Math.max(8,y)+'px';
+  menu.style.zIndex='999999';
+  menu.style.minWidth='180px';
+  menu.style.background='rgba(10,14,28,0.98)';
+  menu.style.border='1px solid rgba(255,255,255,0.14)';
+  menu.style.borderRadius='10px';
+  menu.style.padding='8px';
+  menu.style.display='grid';
+  menu.style.gap='6px';
+
+  const mk=(label, fn)=>{ const b=document.createElement('button'); b.className='btn2'; b.style.textAlign='left'; b.textContent=label; b.onclick=()=>{ try{fn();}finally{menu.remove();} }; return b; };
+  const colorRow=document.createElement('label');
+  colorRow.className='btn2';
+  colorRow.style.display='flex';
+  colorRow.style.alignItems='center';
+  colorRow.style.justifyContent='space-between';
+  colorRow.style.gap='8px';
+  colorRow.textContent='🎨 Couleur des notes';
+  const picker=document.createElement('input');
+  picker.type='color';
+  picker.value=ch.color||'#27e0a3';
+  picker.oninput=()=>{ ch.color=picker.value; refreshUI(); renderNotes(); renderPlaylist(); };
+  colorRow.appendChild(picker);
+
+  menu.appendChild(mk('✏️ Renommer', ()=>{
+    openRenameSocket(x,y,ch.name,(v)=>{ ch.name=v; refreshUI(); renderPlaylist(); });
+  }));
+  menu.appendChild(colorRow);
+  menu.appendChild(mk('🗑️ Supprimer instrument', ()=>{
+    deleteChannel(p.id, ch.id);
+    refreshUI(); renderAll(); renderPlaylist();
+  }));
+
+  document.body.appendChild(menu);
+  const close=(ev)=>{ if(!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown',close,true);} };
+  document.addEventListener('mousedown',close,true);
 }
 
 // Floating rename socket (right-click pattern button)
@@ -398,10 +518,7 @@ function refreshUI(){
       });
       btn.addEventListener("contextmenu",(e)=>{
         e.preventDefault();
-        openRenameSocket(e.clientX, e.clientY, ch.name, (v)=>{
-          ch.name = v;
-          refreshUI(); renderPlaylist();
-        });
+        openChannelContextMenu(e.clientX, e.clientY, ch, p);
       });
 
       const tools=document.createElement("div");
@@ -644,6 +761,7 @@ function updateLfoInspector(){
 
   const isPreset = (p.type||"").toString().toLowerCase()==="lfo_preset";
   const isCurve = (p.type||"").toString().toLowerCase()==="lfo_curve";
+  _normalizeLfoPatternBinding(p);
 
   if(titleEl){
     titleEl.textContent = isPreset ? "🧬 LFO Preset — FX Clone" : "📈 LFO Curve — Mixer Sliders";
