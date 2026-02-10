@@ -19,6 +19,35 @@ function _isLfoPattern(p){
   if(p.bind && (p.bind.param || p.bind.fxIndex!==undefined)) return true;
   return false;
 }
+
+function reloadLfoBindEditorFromPlaylist(){
+  try{
+    const tracks = project?.playlist?.tracks || [];
+    const lfoClipPatternIds = new Set();
+    for(const tr of tracks){
+      for(const clip of (tr?.clips||[])){
+        const pid = clip?.patternId;
+        if(pid) lfoClipPatternIds.add(pid);
+      }
+    }
+    for(const pat of (project?.patterns||[])){
+      if(!lfoClipPatternIds.has(pat.id) || !_isLfoPattern(pat)) continue;
+      if((pat.type||"").toLowerCase()==="lfo_curve"){
+        pat.bind = pat.bind || (window.LFO && LFO.defaultBinding ? LFO.defaultBinding() : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 });
+      }
+      if((pat.type||"").toLowerCase()==="lfo_preset"){
+        pat.preset = pat.preset || { scope:"channel", channelId:null, fxIndex:0, fxType:"", params:{} };
+        pat.preset.snapshot = pat.preset.snapshot || { enabled:true, params:{} };
+      }
+    }
+    if(typeof updateLfoInspector === "function") updateLfoInspector();
+    if(typeof updateLfoCurvePatternEditor === "function") updateLfoCurvePatternEditor();
+  }catch(err){
+    console.warn("[lfo] reload bind editor failed", err);
+  }
+}
+window.reloadLfoBindEditorFromPlaylist = reloadLfoBindEditorFromPlaylist;
+
 function _ensurePresetSnapshot(pat, fx){
   pat.preset = pat.preset || {};
   // snapshot shape: { enabled:boolean, params:object, fxType:string }
@@ -130,6 +159,51 @@ function _updateLfoFxCloneWindow(){
     };
     body.appendChild(ta);
   }
+}
+
+
+function openChannelContextMenu(x, y, ch, p){
+  try{ document.getElementById('__channelCtx')?.remove(); }catch(_e){}
+  const menu=document.createElement('div');
+  menu.id='__channelCtx';
+  menu.style.position='fixed';
+  menu.style.left=Math.max(8,x)+'px';
+  menu.style.top=Math.max(8,y)+'px';
+  menu.style.zIndex='999999';
+  menu.style.minWidth='180px';
+  menu.style.background='rgba(10,14,28,0.98)';
+  menu.style.border='1px solid rgba(255,255,255,0.14)';
+  menu.style.borderRadius='10px';
+  menu.style.padding='8px';
+  menu.style.display='grid';
+  menu.style.gap='6px';
+
+  const mk=(label, fn)=>{ const b=document.createElement('button'); b.className='btn2'; b.style.textAlign='left'; b.textContent=label; b.onclick=()=>{ try{fn();}finally{menu.remove();} }; return b; };
+  const colorRow=document.createElement('label');
+  colorRow.className='btn2';
+  colorRow.style.display='flex';
+  colorRow.style.alignItems='center';
+  colorRow.style.justifyContent='space-between';
+  colorRow.style.gap='8px';
+  colorRow.textContent='🎨 Couleur des notes';
+  const picker=document.createElement('input');
+  picker.type='color';
+  picker.value=ch.color||'#27e0a3';
+  picker.oninput=()=>{ ch.color=picker.value; refreshUI(); renderNotes(); renderPlaylist(); };
+  colorRow.appendChild(picker);
+
+  menu.appendChild(mk('✏️ Renommer', ()=>{
+    openRenameSocket(x,y,ch.name,(v)=>{ ch.name=v; refreshUI(); renderPlaylist(); });
+  }));
+  menu.appendChild(colorRow);
+  menu.appendChild(mk('🗑️ Supprimer instrument', ()=>{
+    deleteChannel(p.id, ch.id);
+    refreshUI(); renderAll(); renderPlaylist();
+  }));
+
+  document.body.appendChild(menu);
+  const close=(ev)=>{ if(!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown',close,true);} };
+  document.addEventListener('mousedown',close,true);
 }
 
 // Floating rename socket (right-click pattern button)
@@ -398,10 +472,7 @@ function refreshUI(){
       });
       btn.addEventListener("contextmenu",(e)=>{
         e.preventDefault();
-        openRenameSocket(e.clientX, e.clientY, ch.name, (v)=>{
-          ch.name = v;
-          refreshUI(); renderPlaylist();
-        });
+        openChannelContextMenu(e.clientX, e.clientY, ch, p);
       });
 
       const tools=document.createElement("div");
