@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Salad loops Studio — All in One (Channel Rack + Pattern/Song + Presets + Save/Load)</title>
+<style>
+
+  :root{
+    --bg:#0b1020; --panel:#0f172a; --panel2:#101b33; --line:#24314f;
+    --text:#e7ecff; --muted:#93a4c7;
+    --accent:#27e0a3; --accent2:#70a7ff; --danger:#ff4d6d; --warn:#facc15;
+    --shadow: 0 12px 30px rgba(0,0,0,.35);
+    --r:14px;
+    --piano-col: 86px;
+    --track-col: 140px;
+    --row-h: 20px;
+    --step-w: 40px;
+    --roll-step-w: 40px;
+    --plist-step-w: 40px;
+    --steps-per-bar: 16;
+    --bars: 64;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;user-select:none}
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;overflow:hidden}
+  body{-webkit-tap-highlight-color:transparent}
+  body.panMode .grid-col, body.panMode .tracks{cursor:grab}
+  body.panning .grid-col, body.panning .tracks{cursor:grabbing}
+
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:rgba(0,0,0,.25);border-radius:10px}
+  ::-webkit-scrollbar-thumb{background:rgba(112,167,255,.55);border-radius:10px}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(39,224,163,.75)}
+
+  .topbar{
+    height:52px;display:flex;align-items:center;gap:14px;padding:0 14px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(135deg,#0f172a,#0a0f1d);
+    box-shadow:var(--shadow);
+  }
+  
+/* --- Electron: ensure transport buttons remain clickable (even with draggable regions) --- */
+.topbar, .transport, .tabs, .tab, .tbtn { 
+  -webkit-app-region: no-drag; 
+  pointer-events: auto; 
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:900}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  .tabs{display:flex;gap:6px;background:rgba(0,0,0,.25);padding:4px;border-radius:12px}
+  .tab{border:0;background:transparent;color:var(--muted);padding:8px 14px;border-radius:10px;font-weight:900;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px}
+  .tab:hover{background:rgba(255,255,255,.06)}
+  .tab.active{background:rgba(112,167,255,.25);color:#fff;border:1px solid rgba(112,167,255,.35)}
+  .transport{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .bpm{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);font-weight:900;font-size:12px}
+  .bpm input{width:64px;background:transparent;border:0;outline:0;color:var(--accent);text-align:center;font-weight:900}
+  .tbtn{border:0;border-radius:12px;padding:8px 14px;cursor:pointer;font-weight:900;font-size:12px;display:flex;align-items:center;gap:8px}
+  .tbtn.play{background:linear-gradient(135deg,var(--accent),#1ac189);color:#071014}
+  .tbtn.stop{background:linear-gradient(135deg,var(--danger),#e0415f);color:#fff}
+  .tbtn.loop{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:var(--text)}
+  .tbtn.loop.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
+  .tbtn.mode{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:var(--text)}
+  .tbtn.mode.active{background:rgba(39,224,163,.18);border-color:rgba(39,224,163,.38)}
+
+  .layout{height:calc(100% - 52px);display:grid;grid-template-columns: 320px 1fr 320px;}
+  .left,.right{background:var(--panel);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column}
+  .left{border-right:1px solid var(--line)}
+  .right{border-left:1px solid var(--line)}
+  .center{position:relative;overflow:hidden}
+
+  .section{padding:14px;border-bottom:1px solid var(--line)}
+  .title{font-weight:900;font-size:11px;letter-spacing:1px;color:var(--accent2);display:flex;gap:8px;align-items:center;margin-bottom:10px}
+  .btn2{
+    width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.06);color:var(--text);cursor:pointer;font-weight:900;font-size:12px;margin-bottom:8px
+  }
+  .btn2:hover{background:rgba(255,255,255,.09)}
+  .btn2.active{border-color:rgba(112,167,255,.5);background:rgba(112,167,255,.18)}
+  .panel-title{font-weight:900;font-size:12px;margin-bottom:10px}
+  .panel-section{padding:10px 0;border-top:1px solid rgba(255,255,255,.08)}
+  .panel-section-title{font-weight:900;font-size:11px;color:var(--accent2);margin-bottom:8px;letter-spacing:.6px}
+  .ctrl-row{display:grid;grid-template-columns: 1fr 1fr;gap:10px;align-items:center;margin:8px 0}
+  .ctrl-label{font-size:11px;color:var(--muted);font-weight:900}
+  .ctrl-slider{display:flex;align-items:center;gap:10px;justify-content:flex-end}
+  .ctrl-slider input[type="range"]{flex:1}
+  .ctrl-value{min-width:64px;text-align:right;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-size:11px;color:var(--text)}
+
+  .mini-dot{width:12px;height:12px;border-radius:50%}
+  .small{font-size:11px;color:var(--muted);font-weight:900}
+  .toolrow{display:flex;gap:8px;flex-wrap:wrap}
+  .pill{
+    padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.06);font-weight:900;font-size:12px;color:var(--text);cursor:pointer;
+    display:flex;align-items:center;gap:8px
+  }
+  .pill.active{background:rgba(39,224,163,.18);border-color:rgba(39,224,163,.35)}
+  .pill:hover{background:rgba(255,255,255,.09)}
+  select, input[type="range"], input[type="text"], input[type="number"]{
+    width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);
+    color:var(--text);padding:8px 10px;border-radius:12px;font-weight:900;outline:0
+  }
+  input[type="color"]{
+    width:42px;height:30px;border-radius:10px;border:1px solid rgba(255,255,255,.14);
+    background:transparent;padding:0;cursor:pointer
+  }
+
+  .view{position:absolute;inset:0;display:none;flex-direction:column}
+  .view.active{display:flex}
+  .viewhead{
+    padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    border-bottom:1px solid var(--line);background:rgba(0,0,0,.18)
+  }
+  .headleft{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  /* Piano Roll */
+  .roll{flex:1;display:grid;grid-template-columns: var(--piano-col) 1fr;grid-template-rows: 30px 1fr 140px;overflow:hidden}
+  .roll-timeline{grid-column:1 / -1;position:relative;height:30px;border-bottom:1px solid var(--line);background:rgba(0,0,0,.22);overflow:hidden}
+  .roll-timeline .strip{
+    position:absolute;top:0;left:0;height:100%;display:flex;align-items:center;
+    padding-left: var(--piano-col);will-change:transform
+  }
+  .bar{width: calc(var(--roll-step-w) * var(--steps-per-bar));height:100%;border-left:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:var(--muted);position:relative}
+  .plist .bar{width: calc(var(--plist-step-w) * var(--steps-per-bar));}
+
+  .bar .beatline{position:absolute;top:0;height:100%;width:1px;background:rgba(255,255,255,.06)}
+  .piano-col{grid-column:1;grid-row:2;overflow:auto;border-right:1px solid var(--line);background:rgba(0,0,0,.12)}
+  .grid-col{grid-column:2;grid-row:2;overflow:auto;position:relative;background:rgba(0,0,0,.06)}
+  .piano-keys{position:relative;width:100%}
+  .pkey{height:var(--row-h);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;border-bottom:1px solid rgba(255,255,255,.05);font-size:10px;font-weight:900;color:var(--muted)}
+  .pkey.white{background:rgba(255,255,255,.03);color:var(--text)}
+  .pkey.black{background:rgba(0,0,0,.25)}
+  .pkey:hover{background:rgba(112,167,255,.10);cursor:pointer}
+
+  .grid{
+    position:relative;
+    background-image:
+      linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(to right, rgba(255,255,255,0.10) 1px, transparent 1px),
+      linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+      linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size:
+      100% var(--row-h),
+      calc(var(--roll-step-w) * var(--steps-per-bar)) 100%,
+      calc(var(--roll-step-w) * 4) 100%,
+      var(--roll-step-w) 100%;
+  }
+  .playhead{position:absolute;top:0;width:2px;background:var(--danger);box-shadow:0 0 12px var(--danger);pointer-events:none;z-index:50}
+  .note{position:absolute;height: calc(var(--row-h) - 2px);border-radius:8px;border:1px solid rgba(255,255,255,.22);
+    box-shadow:0 2px 10px rgba(0,0,0,.35);display:flex;align-items:center;padding:0 8px;font-size:10px;font-weight:900;color:rgba(0,0,0,.75);z-index:10}
+  .note.selected{outline:2px solid var(--accent2);outline-offset:1px;z-index:20}
+  .handle{position:absolute;right:0;top:0;width:10px;height:100%;cursor:col-resize;background:linear-gradient(to right, transparent, rgba(255,255,255,.35));opacity:0}
+  .note:hover .handle{opacity:1}
+
+  /* Playlist */
+  .plist{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .plist-timeline{height:30px;border-bottom:1px solid var(--line);background:rgba(0,0,0,.22);position:relative;overflow:hidden}
+  .plist-timeline .strip{position:absolute;top:0;left:0;height:100%;display:flex;align-items:center;padding-left: var(--track-col);will-change:transform}
+  .tracks{flex:1;overflow:auto;position:relative;background:rgba(0,0,0,.05)}
+  .track{height:42px;display:grid;grid-template-columns: var(--track-col) 1fr;border-bottom:1px solid rgba(255,255,255,.06)}
+  .thead{display:flex;align-items:center;gap:10px;padding:0 12px;background:rgba(0,0,0,.18);border-right:1px solid rgba(255,255,255,.06);font-weight:900;font-size:12px}
+  .lane{position:relative}
+  .laneInner{position:relative;height:100%}
+  .clip{position:absolute;top:7px;height:28px;border-radius:8px;border:1px solid rgba(255,255,255,.22);
+    box-shadow:0 2px 10px rgba(0,0,0,.35);display:flex;align-items:center;padding:0 10px;font-weight:900;font-size:11px;color:rgba(0,0,0,.78)}
+
+  /* Context */
+  .ctx{position:fixed;z-index:9999;display:none;min-width:190px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.55);overflow:hidden}
+  .ctx .it{padding:10px 12px;cursor:pointer;font-weight:900;font-size:12px;color:var(--text);display:flex;gap:8px;align-items:center}
+  .ctx .it:hover{background:rgba(112,167,255,.18)}
+  .ctx .sep{height:1px;background:rgba(255,255,255,.06)}
+  .hud{position:fixed;bottom:16px;right:16px;padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.55);
+    border:1px solid rgba(255,255,255,.10);font-weight:900;font-size:11px;color:var(--accent);pointer-events:none}
+
+  /* --- Mixer --- */
+  .mixerWrap{height:100%;display:flex;flex-direction:column;gap:10px;padding:12px}
+  .mixerTop{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  /* --- Mixer viewport scroll (X+Y) --- */
+.mixerMain{
+  flex:1;
+  display:flex;
+  gap:12px;
+
+  overflow:auto;          /* ✅ scroll vertical + horizontal */
+  min-height:0;           /* ✅ IMPORTANT en flex pour autoriser le scroll */
+  min-width:0;
+
+  padding-bottom:6px;
+  overscroll-behavior: contain;
+}
+
+.mixerMain{ cursor:grab; }
+.mixerMain.panning{ cursor:grabbing; user-select:none; }
+
+/* Le contenu doit pouvoir dépasser en largeur => scroll horizontal */
+#mixerChannels{ min-width:max-content; }
+
+/* Optionnel: si un strip devient très grand (beaucoup de FX), il reste navigable */
+.mixStrip{ max-height:100%; }
+
+  .mixStrip{min-width:160px;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+  .mixStrip.master{min-width:190px}
+  .mixTitle{font-weight:900;font-size:12px}
+  .mixSub{font-size:11px;color:var(--muted)}
+  .mixFader{flex:1;display:flex;flex-direction:column;gap:8px;align-items:stretch}
+  .mixFader input[type="range"]{width:100%}
+  .mixRow{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .mixRow label{font-size:11px;color:var(--muted)}
+  .mixSmallSel{background:#0b1020;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:6px 8px;font-size:12px}
+  .fxList{display:flex;flex-direction:column;gap:6px}
+  .fxItem{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:8px}
+  .fxItem .fxName{font-size:12px;font-weight:800}
+  .fxItem .fxBtns{display:flex;gap:6px}
+  .btnTiny{padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:#0b1020;color:var(--text);cursor:pointer}
+  .btnTiny:hover{border-color:rgba(112,167,255,.8)}
+
+
+/* --- FX param editor --- */
+.fxParams{ margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,.08); }
+.fxGrid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(44px,1fr)); gap:6px; margin-top:8px; max-height:240px; overflow:auto; padding:2px; }
+.fxCell{ padding:6px 4px; font-size:11px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.25); color:var(--text); cursor:pointer; }
+.fxCell.on{ background:rgba(39,224,163,.18); border-color:rgba(39,224,163,.35); }
+.fxCell.off{ opacity:.7; }
+
+
+/* --- Instrument Preset Manager --- */
+.instPresetMgr{ margin:10px 0 12px; padding:10px; border:1px solid rgba(255,255,255,.10); border-radius:12px; background:rgba(0,0,0,.18); }
+.instPresetTop{ display:flex; gap:8px; align-items:center; justify-content:flex-start; flex-wrap:wrap; }
+.instPresetRow{ margin-top:10px; display:flex; gap:8px; align-items:center; }
+
+
+  .note.playing{outline:2px solid rgba(255,255,255,.65);box-shadow:0 0 18px rgba(255,255,255,.45);filter:brightness(1.08)}
+
+
+
+  /* ---- Automation lane (P004) ---- */
+  .autoLane{display:grid;grid-template-columns: var(--piano-col) 1fr;gap:0;border-top:1px solid var(--line);height:140px;overflow:hidden;grid-column:1 / -1;grid-row:3;}
+  .autoLeft{background:rgba(0,0,0,.12);border-right:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px}
+  .autoLeft select{width:100%}
+  .autoEditor{position:relative;overflow:auto}
+  .autoCanvas{display:block}
+  .autoDiscrete{position:absolute;inset:0;display:flex;align-items:stretch}
+  .autoStep{border-right:1px solid rgba(255,255,255,.06);flex:0 0 auto;display:flex;align-items:flex-end;justify-content:center;font-size:11px;color:rgba(255,255,255,.7)}
+  .autoStep.on{background:rgba(255,77,109,.25)}
+  .autoLegend{font-size:11px;color:var(--muted);line-height:1.2}
+
+</style>
+</head>
+<body>
+
+<div class="ctx" id="ctx">
+  <div class="it" data-a="copy">📋 Copier</div>
+  <div class="it" data-a="paste">📝 Coller</div>
+  <div class="sep"></div>
+  <div class="it" data-a="duplicate">⎘ Dupliquer</div>
+  <div class="it" data-a="quantize">⏱️ Quantifier</div>
+  <div class="sep"></div>
+  <div class="it" data-a="delete">🗑️ Supprimer</div>
+</div>
+
+<div class="topbar">
+  <div class="brand"><div class="dot"></div>Salad loops Studio</div>
+  <div class="tabs">
+    <button class="tab active" data-v="roll">🎹 Piano Roll</button>
+    <button class="tab" data-v="plist">🎵 Playlist</button>
+    <button class="tab" data-v="mixer">🎚️ Mixer</button>
+    <button class="tab" data-v="sampler">📁 Sampler</button>
+  </div>
+
+  <div class="transport">
+    <button class="tbtn mode active" id="modeBtn">🎯 MODE: PATTERN</button>
+    <div class="bpm">BPM <input id="bpm" type="number" value="120" min="40" max="240"></div>
+    <button class="tbtn loop" id="loop">🔁 Loop</button>
+    <button class="tbtn stop" id="stop">■ Stop</button>
+    <button class="tbtn play" id="play">▶ Play</button>
+  </div>
+</div>
+
+<div class="layout" id="layout">
+  <!-- LEFT -->
+  <div class="left">
+    <div class="section">
+      <div class="title">🧩 PATTERNS (clic droit pour renommer)</div>
+      <button class="btn2" id="addPattern">+ Nouvelle Pattern</button>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn2" id="addLfoCurve" style="flex:1">+ LFO Curve</button>
+        <button class="btn2" id="addLfoPreset" style="flex:1">+ LFO Preset</button>
+      </div>
+      <div class="small" style="margin-top:6px;opacity:.9">Les patterns LFO sont utilisées uniquement dans la Playlist (pistes LFO).</div>
+      <div id="patternList"></div>
+      <div class="section" id="lfoInspector" style="display:none;margin-top:10px">
+        <div class="title" id="lfoInspectorTitle">📈 LFO — Bind</div>
+        <div class="small" id="lfoInspectorHelp" style="margin-bottom:6px;opacity:.9">Assigne un paramètre (Master/Channel/Mixer/FX). Les presets FX ouvrent un clone flottant.</div>
+        <label class="small">Scope</label>
+        <select id="lfoScope"></select>
+        <label class="small">Channel</label>
+        <select id="lfoChannel"></select>
+        <div id="lfoLenRow">
+          <label class="small">Longueur pattern</label>
+          <select id="lfoPatternLen">
+            <option value="1">1 temps</option>
+            <option value="2">2 temps</option>
+            <option value="3">3 temps</option>
+            <option value="4">4 temps</option>
+            <option value="5">5 temps</option>
+            <option value="6">6 temps</option>
+            <option value="7">7 temps</option>
+            <option value="8">8 temps</option>
+          </select>
+        </div>
+        <div id="lfoKindRow">
+          <label class="small">Type</label>
+          <select id="lfoBindKind"></select>
+        </div>
+        <div id="lfoParamRow">
+          <label class="small">Paramètre</label>
+          <select id="lfoParam"></select>
+        </div>
+        <div id="lfoFxRow" style="display:none">
+          <label class="small">FX</label>
+          <select id="lfoFx"></select>
+          <button class="btn2" id="lfoCloneFx" style="margin-top:8px">🧬 Cloner / Binder FX</button>
+        </div>
+      </div>
+      <div class="section" id="lfoCurveEditor" style="display:none;margin-top:10px">
+        <div class="title">📉 LFO Curve — Mixer Sliders</div>
+        <div class="small" style="margin-bottom:6px;opacity:.9">Édite la courbe A-B-C directement dans la pattern (glisser les points).</div>
+        <canvas id="lfoCurvePatternCanvas" style="width:100%;height:130px;border-radius:10px;background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.08)"></canvas>
+      </div>
+
+      <div class="small">Couleur = couleur du clip en playlist.</div>
+    </div>
+
+    <div class="section">
+      <div class="title">🎛️ CHANNEL RACK (Pattern)</div>
+      <button class="btn2" id="addChannel">+ Ajouter Channel</button>
+      <div id="channelList"></div>
+      <div class="small">Le Piano Roll édite le channel sélectionné.</div>
+    </div>
+
+    <div class="section">
+      <div class="title">🛠️ OUTILS</div>
+      <div class="toolrow">
+        <button class="pill active" id="toolPaint">🖌️ Paint (P)</button>
+        <button class="pill" id="toolHandle">↔️ Handler (H)</button>
+        <button class="pill" id="snapBtn">⏱️ Snap: 1/16</button>
+        <button class="pill" id="maxBtn">⛶ Maximize</button>
+      </div>
+      <div style="margin-top:10px" class="small">
+        Clic gauche: toggle • Maintenir+glisser: paint/erase<br>
+        Handler: étirer via poignée droite • Clic droit: menu
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER -->
+  <div class="center">
+    <div class="view active" id="view-roll">
+      <div class="viewhead">
+        <div class="headleft">
+          <select id="patternSelect"></select>
+          
+          <select id="patternLenSelect" title="Longueur de la pattern">
+            <option value="1">Pat: 1 temps</option>
+            <option value="2">Pat: 2 temps</option>
+            <option value="3">Pat: 3 temps</option>
+            <option value="4" selected>Pat: 4 temps</option>
+            <option value="5">Pat: 5 temps</option>
+            <option value="6">Pat: 6 temps</option>
+            <option value="7">Pat: 7 temps</option>
+            <option value="8">Pat: 8 temps</option>
+          </select>
+<select id="channelSelect"></select>
+          <select id="lenSelect">
+            <option value="1">Len 1/16</option>
+            <option value="2">Len 1/8</option>
+            <option value="4" selected>Len 1/4</option>
+            <option value="8">Len 1/2</option>
+            <option value="16">Len 1</option>
+          </select>
+          <button class="pill active" id="previewBtn">🔊 Preview: ON</button>
+          <button class="pill" id="clearChannel">🗑️ Clear Channel</button>
+        </div>
+        <div class="small" id="posTxt">—</div>
+      </div>
+
+      <div class="roll">
+        <div class="roll-timeline"><div class="strip" id="rollTime"></div></div>
+        <div class="piano-col" id="pianoScroll"><div class="piano-keys" id="pianoKeys"></div></div>
+        <div class="grid-col" id="gridScroll">
+          <div class="grid" id="grid"><div class="playhead" id="playhead"></div></div>
+        </div>
+
+      <div class="autoLane" id="autoLane">
+        <div class="autoLeft">
+          <div class="small" style="font-weight:700">Automation</div>
+          <select id="autoTarget"></select>
+          <div class="autoLegend" id="autoTargetInfo">Sélectionne un paramètre de l'instrument (colonne droite) à automatiser.</div>
+        </div>
+        <div class="autoEditor" id="autoEditorScroll">
+          <canvas class="autoCanvas" id="autoCanvas"></canvas>
+          <div class="autoDiscrete" id="autoDiscrete" style="display:none"></div>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <div class="view" id="view-plist">
+      <div class="viewhead">
+        <div class="headleft">
+          <button class="pill" id="addTrack">+ Track</button>
+          <button class="pill" id="addLfoTrack">+ LFO</button>
+          <button class="pill" id="clearPlaylist">🧹 Clear Playlist</button>
+          <select id="plistPatternSelect"></select>
+          <div class="small">Clic lane: poser/retirer la pattern sélectionnée (durée auto)</div>
+        </div>
+        <div class="small" id="plistInfo">—</div>
+      </div>
+      <div class="plist">
+        <div class="plist-timeline"><div class="strip" id="plistTime"></div></div>
+        <div class="tracks" id="tracks"><div class="playhead" id="plistPlayhead"></div></div>
+      </div>
+    </div>
+
+    
+    <div class="view" id="view-mixer">
+      <div class="viewhead">
+        <div class="headleft">
+          <div class="small">Mixer — Master + 16 pistes (ajout possible)</div>
+        </div>
+        <div class="small">FX: comp / chorus / reverb / flanger / delay / gross beat</div>
+      </div>
+
+      <div class="mixerWrap">
+        <div class="mixerTop">
+          <button class="btn2" id="addMixChannel">➕ Ajouter une piste mixage</button>
+          <div class="small" id="mixerInfo">Routing: chaque instrument → 1 canal de mixage</div>
+        </div>
+        <div class="mixerMain" id="mixerViewport">
+          <div id="mixerMaster" class="mixStrip master"></div>
+          <div id="mixerChannels" style="display:flex;gap:12px;align-items:stretch"></div>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="view" id="view-sampler">
+      <div class="viewhead"><div class="headleft"><div class="small">Sampler (stub)</div></div></div>
+      <div style="padding:14px" class="small">Waveform + loop start/end + base note à venir.</div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right">
+    <div class="section">
+      <div class="title">🎛️ NOTE</div>
+      <div class="small" style="margin-bottom:8px">Velocity</div>
+      <input type="range" id="vel" min="1" max="127" value="100" />
+      <div class="small" style="margin-top:6px">Valeur: <span id="velVal" style="color:var(--accent)">100</span></div>
+    </div>
+
+    <div class="section">
+      <div class="title">🔊 PRESETS (canal sélectionné)</div>
+      <div class="small" style="margin-bottom:8px">Preset</div>
+      <select id="presetOverride">
+        <option value="">(utiliser le preset du channel)</option>
+        <option value="Piano">Piano</option>
+        <option value="Bass">Bass</option>
+        <option value="Lead">Lead</option>
+        <option value="Pad">Pad</option>
+        <option value="Drums">Drums</option>
+      </select>
+      <div class="small" style="margin-top:10px">Test</div>
+      <button class="btn2" id="testC4" style="justify-content:center;margin-top:8px">▶ Tester C4 (ou Drum hit)</button>
+    </div>
+
+    <div class="section">
+      <div class="title">🎚️ INSTRUMENT (canal sélectionné)</div>
+      <div id="instrumentPanel"></div>
+      <div class="small" style="margin-top:8px;color:var(--muted)">Les paramètres sont enregistrés par channel.</div>
+    </div>
+
+    <div class="section" style="margin-top:auto">
+      <div class="title">💾 PROJET</div>
+      <button class="btn2" id="saveProjectBtn" style="justify-content:center">💾 Sauvegarder</button>
+      <button class="btn2" id="loadProjectBtn" style="justify-content:center">📂 Charger</button>
+      <button class="btn2" id="export" style="justify-content:center">📤 Export JSON (console)</button>
+
+      <!-- input caché: fallback navigateur -->
+      <input id="projectFile" type="file" accept="application/json" style="display:none" />
+
+      <div class="small" style="margin-top:8px">
+        Electron: utilise <code>window.dawFS</code> si présent • Sinon: download/upload JSON
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="hud" id="hud">Ready</div>
+
+<script defer src="./utils.js"></script>
+<script defer src="./audioEngine.js"></script>
+  <script defer src="./fx_compressor.js"></script>
+  <script defer src="./fx_chorus.js"></script>
+  <script defer src="./fx_reverb.js"></script>
+  <script defer src="./fx_flanger.js"></script>
+  <script defer src="./fx_delay.js"></script>
+  <script defer src="./fx_grossBeat.js"></script>
+
+<script defer src="./instrumentBase.js"></script>
+<script defer src="./inst_piano.js"></script>
+<script defer src="./inst_bass.js"></script>
+<script defer src="./inst_lead.js"></script>
+<script defer src="./inst_pad.js"></script>
+<script defer src="./inst_drums.js"></script>
+  <script defer src="./inst_violin.js"></script>
+  <script defer src="./inst_subbass.js"></script>
+<script defer src="./bank.js"></script>
+<script defer src="./presetStore.js"></script>
+<script defer src="./projectModel.js"></script>
+<script defer src="./saveLoad.js"></script>
+<script defer src="./domRefs.js"></script>
+<script defer src="./timeline.js"></script>
+<script defer src="./timeRulerSelection.js"></script>
+<script defer src="./pianoRoll.js"></script>
+<script defer src="./automationLane.js"></script>
+<script defer src="./lfo.js"></script>
+<script defer src="./playlist.js"></script>
+<script defer src="./uiRefresh.js"></script>
+<script defer src="./instrumentUI.js"></script>
+<script defer src="./instrumentPanel.js"></script>
+<script defer src="./transport.js"></script>
+<script defer src="./scheduler.js"></script>
+<script defer src="./contextMenu.js"></script>
+<script defer src="./tabs.js"></script>
+<script defer src="./mixer.js"></script>
+  <script defer src="./wiring.js"></script>
+<script defer src="./renderHelpers.js"></script>
+<script defer src="./sampler.js"></script>
+<script defer src="./demoSeed.js"></script>
+<script defer src="./boot.js"></script>
+<script>
+/* Fallback: ensure MODE (PATTERN/SONG) button works in Electron even if an overlay/drag-region eats clicks */
+window.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('modeBtn');
+  if (!btn) return;
+  if (btn.__modeFallbackBound) return;
+  btn.__modeFallbackBound = true;
+
+  // keep it clickable
+  btn.style.pointerEvents = 'auto';
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      // Prefer existing app logic if present
+      if (typeof window.toggleMode === 'function') {
+        window.toggleMode();
+        return;
+      }
+      if (typeof window.setMode === 'function' && window.state) {
+        window.setMode(window.state.mode === 'pattern' ? 'song' : 'pattern');
+        return;
+      }
+
+      // Minimal fallback
+      if (!window.state) window.state = {};
+      window.state.mode = (window.state.mode === 'pattern') ? 'song' : 'pattern';
+
+      const isPattern = window.state.mode === 'pattern';
+      btn.classList.toggle('active', isPattern);
+      btn.textContent = isPattern ? '🎯 MODE: PATTERN' : '🎯 MODE: SONG';
+
+      // notify any listeners (optional)
+      window.dispatchEvent(new CustomEvent('daw:mode', { detail: window.state.mode }));
+    } catch (err) {
+      console.error('[modeBtn fallback] failed', err);
+    }
+  }, true); // capture to bypass bubbling blockers
+});
+</script>
+
+</body>
+</html>
