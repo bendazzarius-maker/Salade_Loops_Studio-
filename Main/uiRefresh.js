@@ -715,6 +715,7 @@ function updateLfoInspector(){
 
   const isPreset = (p.type||"").toString().toLowerCase()==="lfo_preset";
   const isCurve = (p.type||"").toString().toLowerCase()==="lfo_curve";
+  _normalizeLfoPatternBinding(p);
 
   if(titleEl){
     titleEl.textContent = isPreset ? "🧬 LFO Preset — FX Clone" : "📈 LFO Curve — Mixer Sliders";
