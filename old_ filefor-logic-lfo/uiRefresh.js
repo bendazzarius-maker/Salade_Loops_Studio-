@@ -765,7 +765,9 @@ function updateLfoInspector(){
 
   const bind = isPreset ? (p.preset||{}) : (p.bind||{});
   const scope = bind.scope || "channel";
+  const patLen = Math.max(1, Math.min(8, parseInt(p.lenBars,10) || 4));
   scopeSel.value = scope;
+  lenSel.value = String(patLen);
 
   chSel.value = (bind.channelId||"");
   if(scope==="master") chSel.value = "";

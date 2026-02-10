@@ -781,7 +781,9 @@ function updateLfoInspector(){
 
   const bind = isPreset ? (p.preset||{}) : (p.bind||{});
   const scope = bind.scope || "channel";
+  const patLen = Math.max(1, Math.min(8, parseInt(p.lenBars,10) || 4));
   _safeSetSelectValue(scopeSel, scope, "channel");
+  _safeSetSelectValue(lenSel, String(patLen), "4");
 
   _safeSetSelectValue(chSel, (scope==="master") ? "" : (bind.channelId||""), "");
 
