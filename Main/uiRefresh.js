@@ -12,7 +12,7 @@ function _safeToast(msg){
 }
 function _isLfoPattern(p){
   if(!p) return false;
-  const t = String(p.type||p.kind||p.patternType||"").toLowerCase();
+  const t = _lfoPatternType(p);
   if(t.includes("lfo")) return true;
   // heuristics: lfo patterns usually have bind/preset structures without channels
   if(p.preset && (p.preset.fxIndex!==undefined || p.preset.params || p.preset.snapshot)) return true;
@@ -69,7 +69,7 @@ function _updateLfoFxCloneWindow(){
   const win = document.getElementById("__lfoFxFloat");
   if(!win) { st.open=false; return; }
   const pat = (typeof activePattern==="function") ? activePattern() : null;
-  if(!pat || (String(pat.type||"").toLowerCase()!=="lfo_preset")){
+  if(!pat || (_lfoPatternType(pat)!=="lfo_preset")){
     // no active preset: show placeholder and clear patId
     st.patId = null;
     const body = win.querySelector("#__lfoFxBody");
@@ -268,9 +268,8 @@ function openRenameSocket(x, y, initialValue, onSubmit){
 }
 
 /* ---------------- helpers: detect LFO pattern + safe "notes pattern" ---------------- */
-function _isLfoPattern(p){
-  const t = (p && (p.type||p.kind||p.patternType||"")).toString().toLowerCase();
-  return t === "lfo_curve" || t === "lfo_preset" || t === "lfo";
+function _lfoPatternType(p){
+  return String(p?.type||p?.kind||p?.patternType||"").toLowerCase();
 }
 
 function _hasChannels(p){
@@ -571,8 +570,9 @@ function updateLfoInspector(){
   const cloneBtn = document.getElementById("lfoCloneFx");
   const kindRow = document.getElementById("lfoKindRow");
   const paramRow = document.getElementById("lfoParamRow");
+  const lenSel = document.getElementById("lfoPatternLen");
 
-  if(!scopeSel || !chSel || !kindSel || !paramSel || !fxSel || !fxRow || !cloneBtn) return;
+  if(!scopeSel || !chSel || !kindSel || !paramSel || !fxSel || !fxRow || !cloneBtn || !lenSel) return;
 
   // One-time listener binding (non-destructive)
   if(!wrap.__bound){
@@ -581,7 +581,7 @@ function updateLfoInspector(){
     scopeSel.addEventListener("change", ()=>{
       const pat = activePattern();
       if(!pat) return;
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.scope = scopeSel.value;
       }else{
@@ -595,7 +595,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const cid = chSel.value || null;
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.channelId = cid;
       }else{
@@ -609,7 +609,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const k = kindSel.value;
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.kind = k;
       }else{
@@ -623,7 +623,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const v = paramSel.value;
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.param = v;
       }else{
@@ -637,7 +637,7 @@ function updateLfoInspector(){
       const pat = activePattern();
       if(!pat) return;
       const ix = Number(fxSel.value||0);
-      if(pat.type==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || {};
         pat.preset.fxIndex = ix;
       }else{
@@ -647,10 +647,18 @@ function updateLfoInspector(){
       try{ renderPlaylist(); }catch(_e){}
     });
 
+    lenSel.addEventListener("change", ()=>{
+      const pat = activePattern();
+      if(!pat || !_isLfoPattern(pat)) return;
+      pat.lenBars = Math.max(1, Math.min(8, parseInt(lenSel.value,10)||4));
+      try{ refreshUI(); }catch(_e){}
+      try{ renderPlaylist(); }catch(_e){}
+    });
+
     cloneBtn.addEventListener("click", ()=>{
       const pat = activePattern();
       if(!pat) return;
-      if(String(pat.type||"").toLowerCase()!=="lfo_preset"){
+      if(_lfoPatternType(pat)!=="lfo_preset"){
         _safeToast("Le clonage FX est réservé aux patterns LFO preset.");
         return;
       }
