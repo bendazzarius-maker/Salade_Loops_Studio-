@@ -10,6 +10,10 @@ function _safeToast(msg){
   try{ if(typeof toast==="function") return toast(msg); }catch(_e){}
   console.warn("[toast]", msg);
 }
+function _lfoPatternType(p){
+  return String(p?.type||p?.kind||p?.patternType||"").toLowerCase();
+}
+
 function _isLfoPattern(p){
   if(!p) return false;
   const t = _lfoPatternType(p);
