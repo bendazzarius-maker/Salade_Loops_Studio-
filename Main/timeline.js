@@ -17,6 +17,10 @@ function buildTimeline(el, bars){
     const lab = document.createElement("span");
     lab.className = "bar-label";
     lab.textContent = String(i+1);
+    lab.style.position = "absolute";
+    lab.style.left = "6px";
+    lab.style.top = "6px";
+    lab.style.pointerEvents = "none";
     b.appendChild(lab);
 
     for(let q=0;q<4;q++){

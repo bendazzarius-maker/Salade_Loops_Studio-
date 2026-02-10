@@ -97,6 +97,7 @@ function createLfoPatternCurve(name){
     color:"#facc15",
     lenBars: 4,
     type:"lfo_curve",
+    kind:"lfo_curve",
     // binding to a slider parameter (mixer or instrument)
     bind: (window.LFO && LFO.defaultBinding) ? LFO.defaultBinding() : {scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0},
     curve: { points: (window.LFO && LFO.ensureCurve) ? LFO.ensureCurve({curve:{}}).slice?.() : [{t:0,v:0},{t:0.33,v:0.85},{t:1,v:0.15}] }
@@ -116,6 +117,7 @@ function createLfoPatternPreset(name){
     color:"#ff4d6d",
     lenBars: 4,
     type:"lfo_preset",
+    kind:"lfo_preset",
     // preset binds to an FX clone
     preset: {
       scope:"channel", // master|channel
