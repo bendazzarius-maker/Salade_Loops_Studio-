@@ -75,20 +75,8 @@
 
   async function rescanCurrentRoots() {
     const paths = directoryState.roots.map((root) => root.rootPath);
-    if (!paths.length) {
-      emitChange();
-      return { ok: true, roots: [] };
-    }
+    if (!paths.length) return { ok: true, roots: [] };
     return rescanWithPaths(paths);
-  }
-
-  function removeRoot(rootPath) {
-    directoryState.roots = directoryState.roots.filter((root) => root.rootPath !== rootPath);
-    if (directoryState.activeRootPath === rootPath) {
-      directoryState.activeRootPath = directoryState.roots[0]?.rootPath || null;
-    }
-    saveRootsToStorage();
-    emitChange();
   }
 
   function setActiveRoot(rootPath) {
@@ -135,7 +123,6 @@
     addRootsFromDialog,
     rescanCurrentRoots,
     setActiveRoot,
-    removeRoot,
     selectSample,
     setDragSample,
     importSample,
