@@ -245,6 +245,18 @@
   .autoStep.on{background:rgba(255,77,109,.25)}
   .autoLegend{font-size:11px;color:var(--muted);line-height:1.2}
 
+  .samplerLayout{display:grid;grid-template-columns:320px 1fr;gap:12px;padding:12px;height:calc(100% - 40px)}
+  .samplerSide,.samplerMain{min-height:0}
+  .samplerMain{display:grid;grid-template-rows:1fr auto;gap:12px}
+  .samplerBlock{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
+  .samplerList{display:flex;flex-direction:column;gap:6px;overflow:auto;min-height:0}
+  .samplerItem{padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);cursor:pointer;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .samplerItem:hover{background:rgba(255,255,255,.08)}
+  .samplerItem.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
+  .samplerDropZone{border:2px dashed rgba(112,167,255,.45);border-radius:12px;padding:18px;text-align:center;color:var(--muted);font-weight:800}
+  .samplerDropZone.dragover{border-color:var(--accent);color:var(--accent);background:rgba(39,224,163,.08)}
+
+
 </style>
 </head>
 <body>
@@ -446,8 +458,32 @@
 
 
     <div class="view" id="view-sampler">
-      <div class="viewhead"><div class="headleft"><div class="small">Sampler (stub)</div></div></div>
-      <div style="padding:14px" class="small">Waveform + loop start/end + base note à venir.</div>
+      <div class="viewhead"><div class="headleft"><div class="small">Sampler Key — Bibliothèque</div></div></div>
+      <div class="samplerLayout">
+        <aside class="samplerSide">
+          <div class="samplerBlock">
+            <div class="title">📂 Dossiers sources</div>
+            <button class="btn2" id="samplerAddRoot">+ Ajouter dossier</button>
+            <button class="btn2" id="samplerRescan">↻ Rescanner</button>
+            <div class="small">Chemins persistés localement pour éviter de les reconfigurer à chaque démarrage.</div>
+            <div id="samplerRoots" class="samplerList"></div>
+          </div>
+        </aside>
+        <section class="samplerMain">
+          <div class="samplerBlock">
+            <div class="title">🗂️ Browser samples</div>
+            <div class="small" id="samplerRootLabel">Aucun dossier sélectionné</div>
+            <div id="samplerBrowser" class="samplerList"></div>
+          </div>
+          <div class="samplerBlock">
+            <div class="title">🎧 Pré-écoute et import</div>
+            <div class="small" id="samplerSelectedName">Sélectionnez un sample pour pré-écoute.</div>
+            <audio id="samplerPreview" controls preload="none" style="width:100%;margin:10px 0 12px"></audio>
+            <div id="samplerDropZone" class="samplerDropZone">Glissez-déposez un sample ici pour l'import Sampler Key.</div>
+            <div class="small" id="samplerDropStatus" style="margin-top:8px">Aucun sample importé.</div>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
 
@@ -537,6 +573,7 @@
 <script defer src="./mixer.js"></script>
   <script defer src="./wiring.js"></script>
 <script defer src="./renderHelpers.js"></script>
+<script defer src="./sampleDirectory.js"></script>
 <script defer src="./sampler.js"></script>
 <script defer src="./demoSeed.js"></script>
 <script defer src="./boot.js"></script>
