@@ -553,6 +553,26 @@ function refreshUI(){
 
 /* ---------------- LFO inspector (playlist-side binding) ---------------- */
 
+function _normalizeLfoPatternBinding(p){
+  if(!p) return;
+  const t = _lfoPatternType(p);
+  if(t==="lfo_preset"){
+    p.preset = p.preset || {};
+    if(!p.preset.scope) p.preset.scope = "channel";
+    if(p.preset.channelId===undefined) p.preset.channelId = null;
+    if(p.preset.fxIndex===undefined) p.preset.fxIndex = 0;
+    if(!p.preset.fxType) p.preset.fxType = "";
+    if(!p.preset.snapshot || typeof p.preset.snapshot!=="object"){
+      p.preset.snapshot = { enabled:true, params:{} };
+    }else{
+      if(p.preset.snapshot.enabled===undefined) p.preset.snapshot.enabled = true;
+      if(!p.preset.snapshot.params || typeof p.preset.snapshot.params!=="object") p.preset.snapshot.params = {};
+    }
+  }else if(t==="lfo_curve" || t==="lfo"){
+    p.bind = p.bind || ((window.LFO && LFO.defaultBinding) ? LFO.defaultBinding() : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 });
+  }
+}
+
 function _safeSetSelectValue(sel, value, fallback=""){
   if(!sel) return;
   const wanted = String(value==null?"":value);
