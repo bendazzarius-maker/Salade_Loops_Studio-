@@ -200,3 +200,92 @@ ipcMain.handle("project:load", async () => {
   const parsed = JSON.parse(raw);
   return { ok: true, path: filePaths[0], data: parsed };
 });
+
+// -----------------------------------------------------------------------------
+// SAMPLER LIBRARY
+// -----------------------------------------------------------------------------
+const SUPPORTED_SAMPLE_EXTENSIONS = new Set([".wav", ".mp3", ".ogg"]);
+
+async function scanSamplerDirectory(rootDir) {
+  const files = [];
+
+  async function walk(currentDir) {
+    let entries = [];
+    try {
+      entries = await fs.readdir(currentDir, { withFileTypes: true });
+    } catch (err) {
+      console.warn("[Sampler] cannot read directory:", currentDir, err?.message || err);
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!SUPPORTED_SAMPLE_EXTENSIONS.has(ext)) continue;
+
+      files.push({
+        name: entry.name,
+        ext,
+        path: fullPath,
+        relativePath: path.relative(rootDir, fullPath),
+      });
+    }
+  }
+
+  await walk(rootDir);
+  return files;
+}
+
+ipcMain.handle("sampler:pickDirectories", async () => {
+  const win = BrowserWindow.getFocusedWindow() || mainWindow;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: "Sélectionner un ou plusieurs dossiers de samples",
+    properties: ["openDirectory", "multiSelections"],
+  });
+  if (canceled) return { ok: false, canceled: true };
+  return { ok: true, directories: filePaths || [] };
+});
+
+ipcMain.handle("sampler:scanDirectories", async (_evt, payload = {}) => {
+  const directories = Array.isArray(payload.directories) ? payload.directories : [];
+  const indexed = [];
+
+  for (const dirPath of directories) {
+    try {
+      const files = await scanSamplerDirectory(dirPath);
+      indexed.push({
+        rootPath: dirPath,
+        rootName: path.basename(dirPath),
+        files,
+      });
+    } catch (err) {
+      indexed.push({
+        rootPath: dirPath,
+        rootName: path.basename(dirPath),
+        files: [],
+        error: err?.message || String(err),
+      });
+    }
+  }
+
+  return { ok: true, roots: indexed };
+});
+
+ipcMain.handle("sampler:readFile", async (_evt, payload = {}) => {
+  const filePath = typeof payload.path === "string" ? payload.path : "";
+  if (!filePath) return { ok: false, error: "Invalid path" };
+  try {
+    const buff = await fs.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = ext === ".wav" ? "audio/wav" : ext === ".mp3" ? "audio/mpeg" : ext === ".ogg" ? "audio/ogg" : "application/octet-stream";
+    return { ok: true, mime, data: buff.toString("base64") };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+});
