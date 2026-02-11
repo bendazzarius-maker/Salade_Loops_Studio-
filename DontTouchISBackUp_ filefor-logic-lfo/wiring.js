@@ -1,3 +1,14 @@
+
+function updateLoopButtonLabel(){
+  const hasSel = (typeof getTimeRulerSelectionSteps === "function") && (
+    ((getTimeRulerSelectionSteps("playlist")||{}).endStep||0) > ((getTimeRulerSelectionSteps("playlist")||{}).startStep||0) ||
+    ((getTimeRulerSelectionSteps("roll")||{}).endStep||0) > ((getTimeRulerSelectionSteps("roll")||{}).startStep||0)
+  );
+  const scope = hasSel ? "SEG" : ((state.mode==="song") ? "SONG" : "PAT");
+  loopBtn.textContent = `🔁 Loop ${scope}`;
+  loopBtn.classList.toggle("active", !!state.loop);
+}
+
 /* ================= Electro DAW | wiring.js ================= */
 /* ---------------- wiring buttons ---------------- */
 toolPaint.addEventListener("click",()=>setTool("paint"));
@@ -11,7 +22,10 @@ bpm.addEventListener("change",()=>{
 
 playBtn.addEventListener("click", async ()=>{ if(!state.playing) await start(); else pause(); });
 stopBtn.addEventListener("click", stop);
-loopBtn.addEventListener("click",()=>{ state.loop=!state.loop; loopBtn.classList.toggle("active",state.loop); });
+loopBtn.addEventListener("click",()=>{ state.loop=!state.loop; updateLoopButtonLabel(); });
+window.addEventListener("timeRulerSelectionChanged", updateLoopButtonLabel);
+window.addEventListener("daw:refresh", updateLoopButtonLabel);
+updateLoopButtonLabel();
 
 vel.addEventListener("input",()=> velVal.textContent=vel.value);
 
