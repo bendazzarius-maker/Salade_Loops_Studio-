@@ -737,8 +737,9 @@ function updateLfoInspector(){
     });
   }
 
-  const isPreset = (p.type||"").toString().toLowerCase()==="lfo_preset";
-  const isCurve = (p.type||"").toString().toLowerCase()==="lfo_curve";
+  const lfoType = _lfoPatternType(p);
+  const isPreset = lfoType === "lfo_preset";
+  const isCurve = lfoType === "lfo_curve";
   _normalizeLfoPatternBinding(p);
 
   if(titleEl){

@@ -111,10 +111,11 @@ function renderPlaylist(){
         title.className="small";
         title.style.fontWeight="800";
         title.style.opacity="0.95";
-        title.textContent = pat.type==="lfo_preset" ? `LFO Preset: ${pat.name}` : `LFO Curve: ${pat.name}`;
+        const lfoType = String(pat.type||pat.kind||pat.patternType||"").toLowerCase();
+        title.textContent = lfoType==="lfo_preset" ? `LFO Preset: ${pat.name}` : `LFO Curve: ${pat.name}`;
         clip.appendChild(title);
 
-        if(pat.type==="lfo_curve"){
+        if(lfoType==="lfo_curve"){
           const canvas=document.createElement("canvas");
           canvas.style.width="100%";
           canvas.style.height="100%";
