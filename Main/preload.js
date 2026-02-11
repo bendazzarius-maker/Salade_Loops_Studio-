@@ -8,3 +8,9 @@ contextBridge.exposeInMainWorld("audioNative", {
     return () => ipcRenderer.removeListener("audio:native:event", handler);
   }
 });
+
+contextBridge.exposeInMainWorld("samplerFS", {
+  pickDirectories: () => ipcRenderer.invoke("sampler:pickDirectories"),
+  scanDirectories: (directories) => ipcRenderer.invoke("sampler:scanDirectories", { directories }),
+  readFile: (filePath) => ipcRenderer.invoke("sampler:readFile", { path: filePath }),
+});
