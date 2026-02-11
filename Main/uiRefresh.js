@@ -36,10 +36,10 @@ function reloadLfoBindEditorFromPlaylist(){
     }
     for(const pat of (project?.patterns||[])){
       if(!lfoClipPatternIds.has(pat.id) || !_isLfoPattern(pat)) continue;
-      if((pat.type||"").toLowerCase()==="lfo_curve"){
+      if(_lfoPatternType(pat)==="lfo_curve"){
         pat.bind = pat.bind || (window.LFO && LFO.defaultBinding ? LFO.defaultBinding() : { scope:"channel", channelId:null, kind:"mixer", param:"gain", fxIndex:0 });
       }
-      if((pat.type||"").toLowerCase()==="lfo_preset"){
+      if(_lfoPatternType(pat)==="lfo_preset"){
         pat.preset = pat.preset || { scope:"channel", channelId:null, fxIndex:0, fxType:"", params:{} };
         pat.preset.snapshot = pat.preset.snapshot || { enabled:true, params:{} };
       }
@@ -163,6 +163,42 @@ function _updateLfoFxCloneWindow(){
     };
     body.appendChild(ta);
   }
+}
+
+function _ensureLfoFxCloneWindow(){
+  let win = document.getElementById("__lfoFxFloat");
+  if(win) return win;
+  win = document.createElement("div");
+  win.id="__lfoFxFloat";
+  win.style.position="fixed";
+  win.style.right="16px";
+  win.style.top="70px";
+  win.style.width="380px";
+  win.style.maxHeight="70vh";
+  win.style.overflow="auto";
+  win.style.background="rgba(15,23,42,.98)";
+  win.style.border="1px solid rgba(36,49,79,.9)";
+  win.style.borderRadius="14px";
+  win.style.boxShadow="0 12px 30px rgba(0,0,0,.45)";
+  win.style.padding="12px";
+  win.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <div style="font-weight:900">FX Clone (bindé)</div>
+      <div style="flex:1"></div>
+      <button class="pill" id="__lfoFxClose">✖</button>
+    </div>
+    <div id="__lfoFxBody"></div>
+  `;
+  document.body.appendChild(win);
+  const closeBtn = win.querySelector("#__lfoFxClose");
+  if(closeBtn){
+    closeBtn.onclick = ()=>{
+      try{ win.remove(); }catch(_e){}
+      window.__lfoFxCloneState.open = false;
+      window.__lfoFxCloneState.patId = null;
+    };
+  }
+  return win;
 }
 
 
@@ -604,11 +640,12 @@ function updateLfoInspector(){
   const fxRow = document.getElementById("lfoFxRow");
   const fxSel = document.getElementById("lfoFx");
   const cloneBtn = document.getElementById("lfoCloneFx");
+  const refreshBtn = document.getElementById("lfoRefreshFx");
   const kindRow = document.getElementById("lfoKindRow");
   const paramRow = document.getElementById("lfoParamRow");
   const lenSel = document.getElementById("lfoPatternLen");
 
-  if(!scopeSel || !chSel || !kindSel || !paramSel || !fxSel || !fxRow || !cloneBtn || !lenSel) return;
+  if(!scopeSel || !chSel || !kindSel || !paramSel || !fxSel || !fxRow || !cloneBtn || !refreshBtn || !lenSel) return;
 
   // One-time listener binding (non-destructive)
   if(!wrap.__bound){
@@ -691,6 +728,20 @@ function updateLfoInspector(){
       try{ renderPlaylist(); }catch(_e){}
     });
 
+    refreshBtn.addEventListener("click", ()=>{
+      try{ if(typeof reloadLfoBindEditorFromPlaylist === "function") reloadLfoBindEditorFromPlaylist(); }catch(_e){}
+      const pat = activePattern();
+      if(pat && _lfoPatternType(pat)==="lfo_preset"){
+        window.__lfoFxCloneState.open = true;
+        window.__lfoFxCloneState.patId = pat.id;
+        _ensureLfoFxCloneWindow();
+        try{ _updateLfoFxCloneWindow(); }catch(_e){}
+      }
+      try{ if(typeof __applyLfoPresetFxOverrides === "function") __applyLfoPresetFxOverrides(pb?.uiSongStep||0); }catch(_e){}
+      try{ if(ae && ae.applyMixerModel) ae.applyMixerModel(project.mixer); }catch(_e){}
+      _safeToast("Bindings LFO preset rafraîchis.");
+    });
+
     cloneBtn.addEventListener("click", ()=>{
       const pat = activePattern();
       if(!pat) return;
@@ -723,32 +774,7 @@ function updateLfoInspector(){
       };
 
       // open / reuse floating window
-      let win = document.getElementById("__lfoFxFloat");
-      if(!win){
-        win = document.createElement("div");
-        win.id="__lfoFxFloat";
-        win.style.position="fixed";
-        win.style.right="16px";
-        win.style.top="70px";
-        win.style.width="380px";
-        win.style.maxHeight="70vh";
-        win.style.overflow="auto";
-        win.style.background="rgba(15,23,42,.98)";
-        win.style.border="1px solid rgba(36,49,79,.9)";
-        win.style.borderRadius="14px";
-        win.style.boxShadow="0 12px 30px rgba(0,0,0,.45)";
-        win.style.padding="12px";
-        win.innerHTML = `
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-            <div style="font-weight:900">FX Clone (bindé)</div>
-            <div style="flex:1"></div>
-            <button class="pill" id="__lfoFxClose">✖</button>
-          </div>
-          <div id="__lfoFxBody"></div>
-        `;
-        document.body.appendChild(win);
-        win.querySelector("#__lfoFxClose").onclick = ()=> win.remove();
-      }
+      _ensureLfoFxCloneWindow();
       window.__lfoFxCloneState.open = true;
       window.__lfoFxCloneState.patId = pat.id;
 
@@ -853,6 +879,15 @@ function updateLfoInspector(){
   if(kindRow) kindRow.style.display = isPreset ? "none" : "block";
   if(paramRow) paramRow.style.display = isPreset ? "none" : "block";
   if(fxRow) fxRow.style.display = wantFx ? "block" : "none";
+
+  if(isPreset){
+    try{
+      window.__lfoFxCloneState.open = true;
+      window.__lfoFxCloneState.patId = p.id;
+      _ensureLfoFxCloneWindow();
+      _updateLfoFxCloneWindow();
+    }catch(_e){}
+  }
 
   // If the floating clone editor is open, keep it in sync when switching presets.
   if(window.__lfoFxCloneState?.open){

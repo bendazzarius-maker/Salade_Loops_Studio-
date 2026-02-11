@@ -192,6 +192,7 @@ function selectPlaylistClip(trackId, clipId){
 
     if(isLfo){
       state.selectedLfoPatternId = c.patternId;
+      project.activePatternId = c.patternId;
       // optional: jump to playlist tab only
       try{ selectTab && selectTab("plist"); }catch(_e){}
       try{ refreshUI(); }catch(_e){}

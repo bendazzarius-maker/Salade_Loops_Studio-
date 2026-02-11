@@ -167,6 +167,22 @@ function __getMixerFx(scope, chIndex1, fxIndex){
   }catch(_){ return null; }
 }
 
+function __isLfoTrackModel(tr){
+  try{ if(window.LFO && typeof LFO.isLfoTrack==="function") return !!LFO.isLfoTrack(tr); }catch(_){ }
+  const t = (tr && (tr.type||tr.kind||tr.trackType||"")).toString().toLowerCase();
+  return t === "lfo" || t === "lfo_track" || t === "automation_lfo";
+}
+
+function __lfoPatternType(p){
+  return (p && (p.type||p.kind||p.patternType||"")).toString().toLowerCase();
+}
+
+function __clipLenBars(clip, pat){
+  const fromClip = Math.max(0, Number(clip?.lenBars)||0);
+  if(fromClip > 0) return fromClip;
+  try{ return Math.max(1, patternLengthBars(pat)); }catch(_){ return 1; }
+}
+
 function __resolveMixerChannel(scope, channelId){
   const sc = (scope||"").toLowerCase();
   if(sc === "master") return { model: project.mixer?.master, keyId: "master" };
@@ -230,17 +246,16 @@ function __applyLfoCurveOverrides(songStep){
   let didRestore = false;
 
   for(const tr of project.playlist.tracks){
-    const ttype = (tr.type||"").toString().toLowerCase();
-    if(ttype !== "lfo") continue;
+    if(!__isLfoTrackModel(tr)) continue;
 
     for(const clip of (tr.clips||[])){
       const pat = project.patterns.find(p => p.id === clip.patternId);
       if(!pat) continue;
-      const ptype = (pat.type||pat.kind||"").toString().toLowerCase();
+      const ptype = __lfoPatternType(pat);
       if(ptype !== "lfo_curve") continue;
 
       const clipStartStep = (clip.startBar||0) * spb;
-      const clipLenSteps = Math.max(1, (clip.lenBars||1) * spb);
+      const clipLenSteps = Math.max(1, __clipLenBars(clip, pat) * spb);
       const clipEndStep = clipStartStep + clipLenSteps;
       if(stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
@@ -322,17 +337,16 @@ function __applyLfoPresetFxOverrides(songStep){
   let didRestore = false;
 
   for(const tr of project.playlist.tracks){
-    const ttype = (tr.type||"").toString().toLowerCase();
-    if(ttype !== "lfo") continue;
+    if(!__isLfoTrackModel(tr)) continue;
 
     for(const clip of (tr.clips||[])){
       const pat = project.patterns.find(p => p.id === clip.patternId);
       if(!pat) continue;
-      const ptype = (pat.type||pat.kind||"").toString().toLowerCase();
+      const ptype = __lfoPatternType(pat);
       if(ptype !== "lfo_preset") continue;
 
       const clipStartStep = (clip.startBar||0) * spb;
-      const clipEndStep   = ((clip.startBar||0) + (clip.lenBars||0)) * spb;
+      const clipEndStep   = ((clip.startBar||0) + __clipLenBars(clip, pat)) * spb;
       if(stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
       const bind = (pat.preset && typeof pat.preset === "object") ? pat.preset : {};
