@@ -276,16 +276,3 @@ ipcMain.handle("sampler:scanDirectories", async (_evt, payload = {}) => {
 
   return { ok: true, roots: indexed };
 });
-
-ipcMain.handle("sampler:readFile", async (_evt, payload = {}) => {
-  const filePath = typeof payload.path === "string" ? payload.path : "";
-  if (!filePath) return { ok: false, error: "Invalid path" };
-  try {
-    const buff = await fs.readFile(filePath);
-    const ext = path.extname(filePath).toLowerCase();
-    const mime = ext === ".wav" ? "audio/wav" : ext === ".mp3" ? "audio/mpeg" : ext === ".ogg" ? "audio/ogg" : "application/octet-stream";
-    return { ok: true, mime, data: buff.toString("base64") };
-  } catch (err) {
-    return { ok: false, error: err?.message || String(err) };
-  }
-});

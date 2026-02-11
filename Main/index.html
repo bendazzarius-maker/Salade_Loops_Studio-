@@ -255,12 +255,6 @@
   .samplerItem.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
   .samplerDropZone{border:2px dashed rgba(112,167,255,.45);border-radius:12px;padding:18px;text-align:center;color:var(--muted);font-weight:800}
   .samplerDropZone.dragover{border-color:var(--accent);color:var(--accent);background:rgba(39,224,163,.08)}
-  .samplerEditor{display:grid;grid-template-columns:1fr 260px;gap:10px;min-height:220px}
-  .samplerWaveWrap{border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(0,0,0,.2);padding:8px}
-  .samplerWave{width:100%;height:180px;display:block}
-  .samplerEditorControls{display:flex;flex-direction:column;gap:8px}
-  .samplerMap{max-height:140px;overflow:auto;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:6px;background:rgba(0,0,0,.18)}
-  .samplerMapRow{display:flex;justify-content:space-between;font-size:11px;padding:2px 4px;color:var(--text)}
 
 
 </style>
@@ -482,38 +476,11 @@
             <div id="samplerBrowser" class="samplerList"></div>
           </div>
           <div class="samplerBlock">
-            <div class="title">🎧 Pré-écoute, import et éditeur</div>
+            <div class="title">🎧 Pré-écoute et import</div>
             <div class="small" id="samplerSelectedName">Sélectionnez un sample pour pré-écoute.</div>
             <audio id="samplerPreview" controls preload="none" style="width:100%;margin:10px 0 12px"></audio>
             <div id="samplerDropZone" class="samplerDropZone">Glissez-déposez un sample ici pour l'import Sampler Key.</div>
             <div class="small" id="samplerDropStatus" style="margin-top:8px">Aucun sample importé.</div>
-            <div class="samplerEditor" id="samplerEditor">
-              <div class="samplerWaveWrap">
-                <canvas id="samplerWaveform" class="samplerWave" width="900" height="180"></canvas>
-                <div class="small" id="samplerEditorInfo">Éditeur en attente d'un sample importé.</div>
-              </div>
-              <div class="samplerEditorControls">
-                <label class="small">Base note</label>
-                <select id="samplerBaseNote"></select>
-                <label class="small">Loop start (%)</label>
-                <input type="range" id="samplerLoopStart" min="0" max="99" value="0" />
-                <label class="small">Loop end (%)</label>
-                <input type="range" id="samplerLoopEnd" min="1" max="100" value="100" />
-                <label class="small">Crossfade (ms)</label>
-                <input type="range" id="samplerCrossfade" min="0" max="200" value="12" />
-                <div class="panel-section"></div>
-                <div class="title">🧠 Analyse note</div>
-                <button class="btn2" id="samplerAnalyzePitch">Analyser note du sample</button>
-                <div class="small" id="samplerPitchResult">Aucune analyse.</div>
-                <div class="panel-section"></div>
-                <div class="title">🎹 Sampler 2 Key</div>
-                <label class="small">Key range low</label>
-                <select id="samplerKeyLow"></select>
-                <label class="small">Key range high</label>
-                <select id="samplerKeyHigh"></select>
-                <div class="samplerMap" id="samplerKeyMap"></div>
-              </div>
-            </div>
           </div>
         </section>
       </div>
