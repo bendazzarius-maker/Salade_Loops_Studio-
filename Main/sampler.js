@@ -21,15 +21,11 @@
   const loopStartEl = document.getElementById("samplerLoopStart");
   const loopEndEl = document.getElementById("samplerLoopEnd");
   const sustainEl = document.getElementById("samplerSustain");
-  const programNameEl = document.getElementById("samplerProgramName");
-  const saveProgramBtn = document.getElementById("samplerSaveProgram");
-  const programListEl = document.getElementById("samplerProgramList");
 
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   let audioCtx = null;
   let analysisToken = 0;
   let analysisState = null;
-  let lastAnalyzedPath = "";
 
   function midiToName(midi) {
     const idx = ((midi % 12) + 12) % 12;
@@ -186,53 +182,6 @@
     pianoMapEl.innerHTML = html;
   }
 
-  function currentEditorProgramData(snapshot) {
-    const imported = snapshot?.importedSample || analysisState?.sample || null;
-    return {
-      sample: imported,
-      rootMidi: Number.isFinite(analysisState?.rootMidi) ? analysisState.rootMidi : null,
-      rootHz: Number.isFinite(analysisState?.freq) ? analysisState.freq : null,
-      loopStartPct: Number(loopStartEl?.value || 15),
-      loopEndPct: Number(loopEndEl?.value || 90),
-      sustainPct: Number(sustainEl?.value || 72),
-    };
-  }
-
-  function renderPrograms(snapshot) {
-    if (!programListEl) return;
-    const programs = snapshot?.programs || [];
-    const activeId = snapshot?.activeProgramId;
-    const activeProgram = programs.find((x) => x.id === activeId) || null;
-    if (programNameEl && activeProgram && document.activeElement !== programNameEl) {
-      programNameEl.value = activeProgram.name || "";
-    }
-    programListEl.innerHTML = "";
-
-    if (!programs.length) {
-      programListEl.innerHTML = '<div class="small">Aucune programmation sauvegardée.</div>';
-      return;
-    }
-
-    for (const prog of programs) {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "samplerItem" + (prog.id === activeId ? " active" : "");
-      const noteLabel = Number.isFinite(prog.rootMidi) ? midiToName(prog.rootMidi) : "—";
-      item.innerHTML = `<span>${prog.name}</span><span class="small">${noteLabel}</span>`;
-      item.title = prog.sample?.relativePath || prog.sample?.path || prog.name;
-      item.addEventListener("click", () => {
-        directory.setActiveProgram(prog.id);
-        if (programNameEl) programNameEl.value = prog.name || "";
-        if (prog.sample) directory.importSample(prog.sample);
-        if (loopStartEl) loopStartEl.value = String(Math.max(0, Math.min(100, +prog.loopStartPct || 15)));
-        if (loopEndEl) loopEndEl.value = String(Math.max(0, Math.min(100, +prog.loopEndPct || 90)));
-        if (sustainEl) sustainEl.value = String(Math.max(0, Math.min(100, +prog.sustainPct || 72)));
-        updateLoopStatus();
-      });
-      programListEl.appendChild(item);
-    }
-  }
-
   function drawWaveform(buffer) {
     if (!waveCanvas) return;
     const ctx = waveCanvas.getContext("2d");
@@ -277,10 +226,6 @@
   }
 
   async function analyzeImportedSample(sample) {
-    if (sample?.path && sample.path === lastAnalyzedPath && analysisState?.buffer) {
-      drawWaveform(analysisState.buffer);
-      return;
-    }
     const token = ++analysisToken;
     analysisState = null;
     if (rootNoteEl) rootNoteEl.textContent = "Analyse...";
@@ -294,7 +239,6 @@
       const freq = detectRootFrequency(buffer);
       const rootMidi = frequencyToMidi(freq || 0);
       analysisState = { sample, buffer, freq, rootMidi };
-      lastAnalyzedPath = sample?.path || "";
       drawWaveform(buffer);
       if (!isFinite(rootMidi)) {
         if (rootNoteEl) rootNoteEl.textContent = "Non détectée";
@@ -400,7 +344,6 @@
     const imported = snapshot.importedSample;
     if (!imported) {
       setStatus("Aucun sample importé.");
-      lastAnalyzedPath = "";
       drawWaveform(null);
       if (rootNoteEl) rootNoteEl.textContent = "—";
       if (rootHzEl) rootHzEl.textContent = "—";
@@ -408,9 +351,6 @@
       return;
     }
     setStatus(`Import prêt: ${imported.relativePath || imported.name} (analyse root note en cours).`);
-    if (programNameEl && !String(programNameEl.value || "").trim()) {
-      programNameEl.value = sampleSuggestedProgramName(imported);
-    }
     analyzeImportedSample(imported);
   }
 
@@ -419,29 +359,7 @@
     renderBrowser(snapshot);
     renderPreview(snapshot);
     renderImported(snapshot);
-
-    // Inline rendering here to avoid any runtime dependency issue on helper name resolution.
-    try {
-      renderPrograms(snapshot);
-    } catch (error) {
-      console.warn("[Sampler Touski] program list render fallback", error);
-      if (programListEl) {
-        const programs = snapshot?.programs || [];
-        const activeId = snapshot?.activeProgramId;
-        programListEl.innerHTML = "";
-        if (!programs.length) {
-          programListEl.innerHTML = '<div class="small">Aucune programmation sauvegardée.</div>';
-          return;
-        }
-        for (const prog of programs) {
-          const row = document.createElement("div");
-          row.className = "samplerItem" + (prog.id === activeId ? " active" : "");
-          row.innerHTML = `<span>${prog.name || "Program"}</span><span class="small">fallback</span>`;
-          row.addEventListener("click", () => directory.setActiveProgram(prog.id));
-          programListEl.appendChild(row);
-        }
-      }
-    }
+    renderPrograms(snapshot);
   }
 
   async function withBusyButton(button, job) {
@@ -509,47 +427,6 @@
       updateLoopStatus();
       drawWaveform(analysisState?.buffer || null);
     });
-  });
-
-  saveProgramBtn?.addEventListener("click", () => {
-    const snapshot = directory.getSnapshot();
-    const name = String(programNameEl?.value || "").trim();
-    if (!name) {
-      setStatus("Donnez un nom à la programmation Sampler Touski.");
-      return;
-    }
-
-    const payload = currentEditorProgramData(snapshot);
-    if (!payload.sample?.path) {
-      setStatus("Importez un sample avant d'enregistrer la programmation.");
-      return;
-    }
-
-    const result = directory.saveProgram({
-      id: snapshot.activeProgramId,
-      name,
-      ...payload,
-    });
-    if (!result?.ok) {
-      setStatus(`Erreur sauvegarde programmation: ${result?.error || "inconnue"}`);
-      return;
-    }
-
-    setStatus(`Programmation enregistrée: ${name}`);
-    if (typeof renderInstrumentPanel === "function") renderInstrumentPanel();
-    if (typeof refreshUI === "function") refreshUI();
-    try {
-      global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: directory.getSnapshot() }));
-    } catch (_error) {
-      // noop
-    }
-  });
-
-  programNameEl?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      saveProgramBtn?.click();
-    }
   });
 
   global.addEventListener("sampler-directory:change", (event) => {
