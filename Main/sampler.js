@@ -1,5 +1,5 @@
 /* ================= Electro DAW | sampler.js ================= */
-/* name of custom Sampler is Saple To Key includ . */
+/* Sampler Touski editor + library */
 (function initSamplerLibraryUI(global) {
   const directory = global.sampleDirectory;
   if (!directory) return;
@@ -353,6 +353,7 @@
     renderBrowser(snapshot);
     renderPreview(snapshot);
     renderImported(snapshot);
+    renderPrograms(snapshot);
   }
 
   async function withBusyButton(button, job) {
