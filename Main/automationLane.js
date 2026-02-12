@@ -58,7 +58,9 @@
     const list=[];
     list.push({key:"__velocity__", label:"Velocity", mode:"curve", min:1, max:127, step:1, def:100});
     const def=_getInstrumentDef();
-    const schema = def ? (def.uiSchema || null) : null;
+    const schema = def
+      ? ((typeof def.uiSchema === "function") ? def.uiSchema((typeof activeChannel === "function" ? (activeChannel()?.params || {}) : {})) : (def.uiSchema || null))
+      : null;
     const ctrls=_flattenControls(schema);
 
     for(const c of ctrls){
