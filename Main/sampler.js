@@ -13,6 +13,39 @@
   const dropStatusEl = document.getElementById("samplerDropStatus");
   const addRootBtn = document.getElementById("samplerAddRoot");
   const rescanBtn = document.getElementById("samplerRescan");
+  const rootNoteEl = document.getElementById("samplerRootNote");
+  const rootHzEl = document.getElementById("samplerRootHz");
+  const waveCanvas = document.getElementById("samplerWaveCanvas");
+  const pianoMapEl = document.getElementById("samplerPianoMap");
+  const loopStatusEl = document.getElementById("samplerLoopStatus");
+  const loopStartEl = document.getElementById("samplerLoopStart");
+  const loopEndEl = document.getElementById("samplerLoopEnd");
+  const sustainEl = document.getElementById("samplerSustain");
+
+  const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  let audioCtx = null;
+  let analysisToken = 0;
+  let analysisState = null;
+
+  function midiToName(midi) {
+    const idx = ((midi % 12) + 12) % 12;
+    const oct = Math.floor(midi / 12) - 1;
+    return `${NOTE_NAMES[idx]}${oct}`;
+  }
+
+  function frequencyToMidi(freq) {
+    if (!isFinite(freq) || freq <= 0) return null;
+    return Math.round(69 + (12 * Math.log2(freq / 440)));
+  }
+
+  function midiToFrequency(midi) {
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  }
+
+  function formatHz(freq) {
+    if (!isFinite(freq) || freq <= 0) return "—";
+    return `${freq.toFixed(2)} Hz`;
+  }
 
   function makeItemLabel(sample) {
     const rel = sample.relativePath || sample.name;
@@ -27,6 +60,198 @@
 
   function setStatus(message) {
     if (dropStatusEl) dropStatusEl.textContent = message;
+  }
+
+  function setLoopStatus(message) {
+    if (loopStatusEl) loopStatusEl.textContent = message;
+  }
+
+  function updateLoopStatus() {
+    const start = Number(loopStartEl?.value || 0);
+    const end = Number(loopEndEl?.value || 100);
+    const sustain = Number(sustainEl?.value || 70);
+    if (end <= start + 2) {
+      setLoopStatus("Loop invalide: Loop End doit être > Loop Start + 2.");
+      return;
+    }
+    setLoopStatus(`Sustain editor: loop ${start}% → ${end}% • sustain ${sustain}%`);
+  }
+
+  function ensureAudioContext() {
+    if (!audioCtx) {
+      const Ctor = global.AudioContext || global.webkitAudioContext;
+      if (!Ctor) return null;
+      audioCtx = new Ctor();
+    }
+    return audioCtx;
+  }
+
+  async function loadSampleBuffer(sample) {
+    if (!sample?.path) return null;
+    const response = await fetch(sampleToPreviewUrl(sample));
+    const arrayBuffer = await response.arrayBuffer();
+    const ctx = ensureAudioContext();
+    if (!ctx) return null;
+    return ctx.decodeAudioData(arrayBuffer.slice(0));
+  }
+
+  function detectRootFrequency(buffer) {
+    if (!buffer) return null;
+    const channel = buffer.numberOfChannels ? buffer.getChannelData(0) : null;
+    if (!channel?.length) return null;
+
+    const sr = buffer.sampleRate || 44100;
+    const winSize = Math.min(4096, channel.length);
+    const offset = Math.max(0, Math.floor(channel.length * 0.08));
+    const chunk = channel.subarray(offset, Math.min(offset + winSize, channel.length));
+    if (chunk.length < 200) return null;
+
+    let rms = 0;
+    for (let i = 0; i < chunk.length; i += 1) rms += chunk[i] * chunk[i];
+    rms = Math.sqrt(rms / chunk.length);
+    if (rms < 0.004) return null;
+
+    const minHz = 40;
+    const maxHz = 1200;
+    const minLag = Math.max(2, Math.floor(sr / maxHz));
+    const maxLag = Math.min(chunk.length - 1, Math.floor(sr / minHz));
+
+    let bestLag = -1;
+    let bestCorr = 0;
+    for (let lag = minLag; lag <= maxLag; lag += 1) {
+      let corr = 0;
+      let normA = 0;
+      let normB = 0;
+      const end = chunk.length - lag;
+      for (let i = 0; i < end; i += 1) {
+        const a = chunk[i];
+        const b = chunk[i + lag];
+        corr += a * b;
+        normA += a * a;
+        normB += b * b;
+      }
+      const denom = Math.sqrt(normA * normB) || 1;
+      const score = corr / denom;
+      if (score > bestCorr) {
+        bestCorr = score;
+        bestLag = lag;
+      }
+    }
+    if (bestLag <= 0 || bestCorr < 0.35) return null;
+
+    const freq = sr / bestLag;
+    return isFinite(freq) && freq > 0 ? freq : null;
+  }
+
+  function extrapolatePianoMap(rootMidi, minMidi = 24, maxMidi = 108) {
+    if (!isFinite(rootMidi)) return [];
+    const rows = [];
+    for (let midi = minMidi; midi <= maxMidi; midi += 1) {
+      const semitones = midi - rootMidi;
+      rows.push({
+        midi,
+        note: midiToName(midi),
+        semitones,
+        ratio: Math.pow(2, semitones / 12),
+      });
+    }
+    return rows;
+  }
+
+  function renderPianoMap(rows, rootMidi) {
+    if (!pianoMapEl) return;
+    if (!rows.length) {
+      pianoMapEl.innerHTML = '<div class="small" style="padding:8px">Aucune extrapolation disponible.</div>';
+      return;
+    }
+
+    const focusRows = rows.filter((r) => r.midi >= 48 && r.midi <= 84);
+    let html = '<table><thead><tr><th>Note</th><th>Pitch</th><th>Ratio</th></tr></thead><tbody>';
+    for (const row of focusRows) {
+      const cls = row.midi === rootMidi ? "inRange" : "";
+      const sign = row.semitones > 0 ? "+" : "";
+      html += `<tr class="${cls}"><td>${row.note}</td><td>${sign}${row.semitones} st</td><td>${row.ratio.toFixed(4)}x</td></tr>`;
+    }
+    html += '</tbody></table>';
+    pianoMapEl.innerHTML = html;
+  }
+
+  function drawWaveform(buffer) {
+    if (!waveCanvas) return;
+    const ctx = waveCanvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.fillStyle = "#070b12";
+    ctx.fillRect(0, 0, waveCanvas.width, waveCanvas.height);
+    if (!buffer) return;
+
+    const data = buffer.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / waveCanvas.width));
+    const h = waveCanvas.height;
+    const mid = h / 2;
+    ctx.strokeStyle = "#27e0a3";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x < waveCanvas.width; x += 1) {
+      const idx = Math.min(data.length - 1, x * step);
+      const y = mid + data[idx] * (mid * 0.9);
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    const startPct = Number(loopStartEl?.value || 15) / 100;
+    const endPct = Number(loopEndEl?.value || 90) / 100;
+    const sustainPct = Number(sustainEl?.value || 72) / 100;
+
+    ctx.strokeStyle = "rgba(112,167,255,.95)";
+    ctx.beginPath();
+    ctx.moveTo(startPct * waveCanvas.width, 0);
+    ctx.lineTo(startPct * waveCanvas.width, h);
+    ctx.moveTo(endPct * waveCanvas.width, 0);
+    ctx.lineTo(endPct * waveCanvas.width, h);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(39,224,163,.95)";
+    ctx.beginPath();
+    ctx.moveTo(sustainPct * waveCanvas.width, 0);
+    ctx.lineTo(sustainPct * waveCanvas.width, h);
+    ctx.stroke();
+  }
+
+  async function analyzeImportedSample(sample) {
+    const token = ++analysisToken;
+    analysisState = null;
+    if (rootNoteEl) rootNoteEl.textContent = "Analyse...";
+    if (rootHzEl) rootHzEl.textContent = "Analyse...";
+    renderPianoMap([], null);
+
+    try {
+      const buffer = await loadSampleBuffer(sample);
+      if (token !== analysisToken) return;
+      if (!buffer) throw new Error("decodeAudioData indisponible");
+      const freq = detectRootFrequency(buffer);
+      const rootMidi = frequencyToMidi(freq || 0);
+      analysisState = { sample, buffer, freq, rootMidi };
+      drawWaveform(buffer);
+      if (!isFinite(rootMidi)) {
+        if (rootNoteEl) rootNoteEl.textContent = "Non détectée";
+        if (rootHzEl) rootHzEl.textContent = "Signal trop faible";
+        renderPianoMap([], null);
+        return;
+      }
+
+      if (rootNoteEl) rootNoteEl.textContent = `${midiToName(rootMidi)} (MIDI ${rootMidi})`;
+      if (rootHzEl) rootHzEl.textContent = `${formatHz(freq)} • cible ${formatHz(midiToFrequency(rootMidi))}`;
+      const mapping = extrapolatePianoMap(rootMidi);
+      renderPianoMap(mapping, rootMidi);
+    } catch (error) {
+      if (token !== analysisToken) return;
+      if (rootNoteEl) rootNoteEl.textContent = "Erreur";
+      if (rootHzEl) rootHzEl.textContent = "Impossible d'analyser";
+      renderPianoMap([], null);
+      console.warn("[Sampler] analyse root note failed", error);
+    }
   }
 
   function renderRoots(snapshot) {
@@ -113,9 +338,14 @@
     const imported = snapshot.importedSample;
     if (!imported) {
       setStatus("Aucun sample importé.");
+      drawWaveform(null);
+      if (rootNoteEl) rootNoteEl.textContent = "—";
+      if (rootHzEl) rootHzEl.textContent = "—";
+      renderPianoMap([], null);
       return;
     }
-    setStatus(`Import prêt: ${imported.relativePath || imported.name} (analyse pitch: étape suivante).`);
+    setStatus(`Import prêt: ${imported.relativePath || imported.name} (analyse root note en cours).`);
+    analyzeImportedSample(imported);
   }
 
   function render(snapshot) {
@@ -185,9 +415,18 @@
     directory.importSample(sample);
   });
 
+  [loopStartEl, loopEndEl, sustainEl].forEach((control) => {
+    control?.addEventListener("input", () => {
+      updateLoopStatus();
+      drawWaveform(analysisState?.buffer || null);
+    });
+  });
+
   global.addEventListener("sampler-directory:change", (event) => {
     render(event.detail || directory.getSnapshot());
   });
 
+  updateLoopStatus();
+  drawWaveform(null);
   directory.restorePersistedRoots().then(() => render(directory.getSnapshot()));
 })(window);
