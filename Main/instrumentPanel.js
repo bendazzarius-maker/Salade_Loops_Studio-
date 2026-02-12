@@ -205,7 +205,8 @@ function renderInstrumentPanel(){
   const controlsDiv = document.createElement("div");
   instrumentPanel.appendChild(controlsDiv);
 
-  renderInstrumentUI(controlsDiv, def.uiSchema || {title:presetName, sections:[]}, ch.params, (key,val)=>{
+  const schema = (typeof def.uiSchema === "function") ? def.uiSchema(ch.params || {}) : (def.uiSchema || {title:presetName, sections:[]});
+  renderInstrumentUI(controlsDiv, schema, ch.params, (key,val)=>{
     // If instrument supports preset application, do it in-place (keeps reference)
     if(key==="preset" && typeof def.applyPreset==="function"){
       def.applyPreset(ch.params, val);
@@ -213,5 +214,12 @@ function renderInstrumentPanel(){
       ch.params[key]=val;
     }
     // optional live update hook (future): could re-render audio nodes etc.
+  });
+}
+
+if(!window.__samplerProgramPanelRefreshHook){
+  window.__samplerProgramPanelRefreshHook = true;
+  window.addEventListener("sampler-programs:changed", ()=>{
+    try{ renderInstrumentPanel(); }catch(_){ }
   });
 }
