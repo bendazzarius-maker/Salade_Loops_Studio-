@@ -52,6 +52,12 @@
     return rel.length > 56 ? `${rel.slice(0, 53)}...` : rel;
   }
 
+  function sampleSuggestedProgramName(sample) {
+    const raw = sample?.name || sample?.relativePath || "";
+    if (!raw) return "";
+    return String(raw).replace(/\.[a-z0-9]+$/i, "").trim();
+  }
+
   function sampleToPreviewUrl(sample) {
     if (!sample?.path) return "";
     const normalized = sample.path.replace(/\\/g, "/");

@@ -39,6 +39,11 @@ function _renderPresetManager(host, def, ch){
   const row = document.createElement("div");
   row.className = "instPresetRow";
 
+  const nameInput = document.createElement("input");
+  nameInput.className = "mixSmallSel";
+  nameInput.style.flex = "1";
+  nameInput.placeholder = "Nom preset (sans prompt)";
+
   const sel = document.createElement("select");
   sel.className = "mixSmallSel";
   sel.style.flex = "1";
@@ -57,6 +62,7 @@ function _renderPresetManager(host, def, ch){
     });
   }
   refreshList();
+  nameInput.value = "";
 
   const btnLoad = document.createElement("button");
   btnLoad.className = "btn small";
@@ -65,22 +71,32 @@ function _renderPresetManager(host, def, ch){
   row.appendChild(sel);
   row.appendChild(btnLoad);
 
-  btnSave.addEventListener("click", ()=>{
-    const suggested = (ch.params && ch.params.preset) ? String(ch.params.preset) : "";
-    const name = prompt("Preset name to save for "+instId, suggested || "My Preset");
+  const row2 = document.createElement("div");
+  row2.className = "instPresetRow";
+  row2.appendChild(nameInput);
+
+  function saveNamedPreset(){
+    const name = String(nameInput.value || "").trim();
     if(!name) return;
     const ok = presetStore.save(instId, name, ch.params || {});
     if(ok){
       refreshList();
       sel.value = name;
+      nameInput.value = name;
     } else {
       alert("Preset save failed (storage full or blocked).");
     }
+  }
+
+  btnSave.addEventListener("click", saveNamedPreset);
+  nameInput.addEventListener("keydown", (ev)=>{
+    if(ev.key === "Enter") saveNamedPreset();
   });
 
   btnLoad.addEventListener("click", ()=>{
     const name = sel.value;
     if(!name) return;
+    nameInput.value = name;
     const data = presetStore.get(instId, name);
     if(!data) return;
     ch.params = ch.params || {};
@@ -143,6 +159,7 @@ function _renderPresetManager(host, def, ch){
 
   wrap.appendChild(top);
   wrap.appendChild(row);
+  wrap.appendChild(row2);
   host.appendChild(wrap);
 }
 
