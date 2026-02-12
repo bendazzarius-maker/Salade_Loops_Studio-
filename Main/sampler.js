@@ -21,6 +21,11 @@
   const loopStartEl = document.getElementById("samplerLoopStart");
   const loopEndEl = document.getElementById("samplerLoopEnd");
   const sustainEl = document.getElementById("samplerSustain");
+  const programNameEl = document.getElementById("samplerProgramName");
+  const programSelectEl = document.getElementById("samplerProgramSelect");
+  const programSaveBtn = document.getElementById("samplerProgramSave");
+  const programLoadBtn = document.getElementById("samplerProgramLoad");
+  const programStatusEl = document.getElementById("samplerProgramStatus");
 
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   let audioCtx = null;
@@ -70,6 +75,10 @@
 
   function setLoopStatus(message) {
     if (loopStatusEl) loopStatusEl.textContent = message;
+  }
+
+  function setProgramStatus(message) {
+    if (programStatusEl) programStatusEl.textContent = message;
   }
 
   function updateLoopStatus() {
@@ -354,6 +363,61 @@
     analyzeImportedSample(imported);
   }
 
+  function toProgramPayload(sample, sourceProgramId = null) {
+    const rootMidiFromUI = Number.parseInt(String(rootNoteEl?.textContent || "").match(/MIDI\s*(-?\d+)/)?.[1] || "", 10);
+    const rootHzFromUI = Number.parseFloat(String(rootHzEl?.textContent || "").match(/([\d.]+)\s*Hz/)?.[1] || "");
+    const suggestedName = sampleSuggestedProgramName(sample) || "Sampler Program";
+    const rawName = String(programNameEl?.value || suggestedName).trim();
+
+    return {
+      id: sourceProgramId || undefined,
+      name: rawName || suggestedName,
+      sample: sample || null,
+      rootMidi: Number.isFinite(analysisState?.rootMidi) ? analysisState.rootMidi : (Number.isFinite(rootMidiFromUI) ? rootMidiFromUI : null),
+      rootHz: Number.isFinite(analysisState?.freq) ? analysisState.freq : (Number.isFinite(rootHzFromUI) ? rootHzFromUI : null),
+      loopStartPct: Number(loopStartEl?.value || 15),
+      loopEndPct: Number(loopEndEl?.value || 90),
+      sustainPct: Number(sustainEl?.value || 72),
+    };
+  }
+
+  function renderPrograms(snapshot) {
+    if (!programSelectEl) return;
+    const programs = Array.isArray(snapshot.programs) ? snapshot.programs : [];
+    const activeId = snapshot.activeProgramId || null;
+
+    programSelectEl.innerHTML = "";
+    if (!programs.length) {
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "(aucun programme)";
+      programSelectEl.appendChild(empty);
+      programSelectEl.value = "";
+      setProgramStatus("Aucun programme enregistré.");
+      return;
+    }
+
+    for (const program of programs) {
+      const option = document.createElement("option");
+      option.value = program.id;
+      option.textContent = program.name || "Sampler Program";
+      option.title = program.sample?.relativePath || program.sample?.name || "";
+      programSelectEl.appendChild(option);
+    }
+
+    const selectedId = programs.find((p) => p.id === activeId)?.id || programs[0].id;
+    programSelectEl.value = selectedId;
+
+    const activeProgram = programs.find((p) => p.id === selectedId) || null;
+    if (activeProgram && programNameEl && document.activeElement !== programNameEl) {
+      programNameEl.value = activeProgram.name || sampleSuggestedProgramName(activeProgram.sample) || "";
+    }
+    if (activeProgram) {
+      const sampleName = activeProgram.sample?.relativePath || activeProgram.sample?.name || "sample non défini";
+      setProgramStatus(`Programme actif: ${activeProgram.name || "Sampler Program"} • ${sampleName}`);
+    }
+  }
+
   function render(snapshot) {
     renderRoots(snapshot);
     renderBrowser(snapshot);
@@ -427,6 +491,49 @@
       updateLoopStatus();
       drawWaveform(analysisState?.buffer || null);
     });
+  });
+
+  programSelectEl?.addEventListener("change", () => {
+    const id = programSelectEl.value;
+    directory.setActiveProgram(id || null);
+  });
+
+  programSaveBtn?.addEventListener("click", () => {
+    const imported = directory.state.importedSample;
+    if (!imported) {
+      setProgramStatus("Importez d'abord un sample avant d'enregistrer un programme.");
+      return;
+    }
+
+    const currentProgramId = programSelectEl?.value || null;
+    const payload = toProgramPayload(imported, currentProgramId || null);
+    const result = directory.saveProgram(payload);
+    if (!result?.ok) {
+      setProgramStatus(`Erreur sauvegarde programme: ${result?.error || "inconnue"}`);
+      return;
+    }
+    setProgramStatus(`Programme sauvegardé: ${result.program.name}`);
+    global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: result.program }));
+  });
+
+  programLoadBtn?.addEventListener("click", () => {
+    const programId = programSelectEl?.value || directory.state.activeProgramId;
+    const program = directory.getProgram(programId);
+    if (!program) {
+      setProgramStatus("Sélectionnez un programme à charger.");
+      return;
+    }
+
+    if (program.sample) directory.importSample(program.sample);
+    if (loopStartEl) loopStartEl.value = String(program.loopStartPct ?? 15);
+    if (loopEndEl) loopEndEl.value = String(program.loopEndPct ?? 90);
+    if (sustainEl) sustainEl.value = String(program.sustainPct ?? 72);
+    if (programNameEl) programNameEl.value = program.name || "";
+    directory.setActiveProgram(program.id);
+    updateLoopStatus();
+    drawWaveform(analysisState?.buffer || null);
+    setProgramStatus(`Programme chargé: ${program.name}`);
+    global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: program }));
   });
 
   global.addEventListener("sampler-directory:change", (event) => {

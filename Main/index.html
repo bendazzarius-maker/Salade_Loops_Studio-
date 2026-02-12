@@ -519,6 +519,22 @@
             <div class="small">Extrapolation des notes: mapping automatique du sample root vers toutes les notes du piano roll.</div>
             <div class="samplerPianoMap" id="samplerPianoMap"></div>
           </div>
+          <div class="samplerBlock">
+            <div class="title">💾 Programmes Sampler Touski</div>
+            <div class="samplerGrid2">
+              <label class="small">Nom du programme
+                <input id="samplerProgramName" type="text" placeholder="Kick Punchy, Bass Warm..." style="width:100%;margin-top:6px">
+              </label>
+              <label class="small">Programmes enregistrés
+                <select id="samplerProgramSelect" style="width:100%;margin-top:6px"></select>
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+              <button class="btn2" id="samplerProgramSave">💾 Enregistrer le paramétrage</button>
+              <button class="btn2" id="samplerProgramLoad">↩ Charger le programme</button>
+            </div>
+            <div class="small" id="samplerProgramStatus" style="margin-top:8px">Aucun programme enregistré.</div>
+          </div>
         </section>
       </div>
     </div>
