@@ -247,7 +247,7 @@
 
   .samplerLayout{display:grid;grid-template-columns:320px 1fr;gap:12px;padding:12px;min-height:calc(100% - 40px)}
   .samplerSide,.samplerMain{min-height:0}
-  .samplerMain{display:grid;grid-template-rows:1fr auto auto;gap:12px;min-height:max-content}
+  .samplerMain{display:grid;grid-template-rows:1fr auto auto;gap:12px}
   .samplerBlock{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
   .samplerList{display:flex;flex-direction:column;gap:6px;overflow:auto;min-height:0}
   .samplerItem{padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);cursor:pointer;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -268,8 +268,6 @@
   .samplerPianoMap th,.samplerPianoMap td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left}
   .samplerPianoMap tr:last-child td{border-bottom:none}
   .samplerPianoMap .inRange{color:var(--accent)}
-  #samplerProgramList{max-height:180px}
-  #view-sampler{overflow:auto}
 
 
 </style>
@@ -498,7 +496,7 @@
             <div class="small" id="samplerDropStatus" style="margin-top:8px">Aucun sample importé.</div>
           </div>
           <div class="samplerBlock">
-            <div class="title">🎹 Sampler Touski — Gestionnaire visuel</div>
+            <div class="title">🎹 Saple to Key — Gestionnaire visuel</div>
             <div class="samplerGrid2">
               <div class="samplerMetric"><div class="small">Root détectée: <b id="samplerRootNote">—</b></div></div>
               <div class="samplerMetric"><div class="small">Fréquence: <b id="samplerRootHz">—</b></div></div>
@@ -519,12 +517,6 @@
             </div>
             <div class="small" id="samplerLoopStatus">Loop sustain editor prêt.</div>
             <div class="small">Extrapolation des notes: mapping automatique du sample root vers toutes les notes du piano roll.</div>
-            <div class="samplerGrid2">
-              <input id="samplerProgramName" class="mixSmallSel" placeholder="Nom programmation (ex: Piano à queue)" aria-label="Nom de programmation Sampler Touski">
-              <button class="btn2" id="samplerSaveProgram">💾 Enregistrer programmation</button>
-            </div>
-            <div class="small">Nomme puis enregistre ici (sans prompt) pour retrouver la programmation dans l'instrument Sampler Touski du piano roll.</div>
-            <div id="samplerProgramList" class="samplerList"></div>
             <div class="samplerPianoMap" id="samplerPianoMap"></div>
           </div>
         </section>
