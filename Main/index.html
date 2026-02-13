@@ -260,9 +260,8 @@
   .samplerMetric .small b{color:var(--text)}
   .samplerWave{position:relative}
   .samplerWave canvas{display:block;width:100%;height:140px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#070b12}
-  .samplerLoopEditor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .samplerLoopEditor label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted)}
-  .samplerLoopEditor input[type="range"]{width:100%}
+  .samplerToolbar{display:flex;gap:8px;flex-wrap:wrap}
+  .samplerToolbar .btn2.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(39,224,163,.45) inset}
   .samplerLegend{display:flex;gap:10px;flex-wrap:wrap}
   .samplerLegend span{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
   .samplerLegend i{width:10px;height:10px;border-radius:50%;display:inline-block}
@@ -513,19 +512,12 @@
               <span><i style="background:#ff4b4b"></i>End Loop</span>
               <span><i style="background:#36b7ff"></i>Release</span>
             </div>
-            <div class="samplerLoopEditor">
-              <label>Key Action
-                <input id="samplerPosAction" type="range" min="0" max="100" value="0">
-              </label>
-              <label>Loop Start
-                <input id="samplerLoopStart" type="range" min="0" max="100" value="15">
-              </label>
-              <label>Loop End
-                <input id="samplerLoopEnd" type="range" min="0" max="100" value="90">
-              </label>
-              <label>Release Point
-                <input id="samplerReleasePoint" type="range" min="0" max="100" value="100">
-              </label>
+            <div class="samplerToolbar">
+              <button class="btn2 active" id="samplerModeAction">Key Action</button>
+              <button class="btn2" id="samplerModeLoopStart">Loop Start</button>
+              <button class="btn2" id="samplerModeLoopEnd">Loop End</button>
+              <button class="btn2" id="samplerModeRelease">Release</button>
+              <button class="btn2" id="samplerWizardLoop">🪄 Wizard Loop</button>
             </div>
             <div class="small" id="samplerLoopStatus">Loop sustain editor prêt.</div>
             <div class="small">Extrapolation des notes: mapping automatique du sample root vers toutes les notes du piano roll.</div>

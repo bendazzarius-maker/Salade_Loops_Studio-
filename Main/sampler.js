@@ -18,10 +18,11 @@
   const waveCanvas = document.getElementById("samplerWaveCanvas");
   const pianoMapEl = document.getElementById("samplerPianoMap");
   const loopStatusEl = document.getElementById("samplerLoopStatus");
-  const posActionEl = document.getElementById("samplerPosAction");
-  const loopStartEl = document.getElementById("samplerLoopStart");
-  const loopEndEl = document.getElementById("samplerLoopEnd");
-  const releasePointEl = document.getElementById("samplerReleasePoint");
+  const modeActionBtn = document.getElementById("samplerModeAction");
+  const modeLoopStartBtn = document.getElementById("samplerModeLoopStart");
+  const modeLoopEndBtn = document.getElementById("samplerModeLoopEnd");
+  const modeReleaseBtn = document.getElementById("samplerModeRelease");
+  const wizardLoopBtn = document.getElementById("samplerWizardLoop");
   const programNameEl = document.getElementById("samplerProgramName");
   const programSelectEl = document.getElementById("samplerProgramSelect");
   const programSaveBtn = document.getElementById("samplerProgramSave");
@@ -32,6 +33,22 @@
   let audioCtx = null;
   let analysisToken = 0;
   let analysisState = null;
+  const markerState = {
+    pos_action: 0,
+    pos_loop_start: 0.15,
+    pos_loop_end: 0.9,
+    pos_release: 1,
+  };
+  const viewState = {
+    start: 0,
+    end: 1,
+    ampZoom: 1,
+    mode: "pos_action",
+    draggingMarker: null,
+    isPanning: false,
+    panAnchorX: 0,
+    panStartView: 0,
+  };
 
   function midiToName(midi) {
     const idx = ((midi % 12) + 12) % 12;
@@ -87,11 +104,34 @@
   }
 
   function getMarkerPositions() {
-    const pos_action = clamp01(Number(posActionEl?.value || 0) / 100);
-    const pos_loop_start = clamp01(Number(loopStartEl?.value || 15) / 100);
-    const pos_loop_end = clamp01(Number(loopEndEl?.value || 90) / 100);
-    const pos_release = clamp01(Number(releasePointEl?.value || 100) / 100);
-    return { pos_action, pos_loop_start, pos_loop_end, pos_release };
+    return { ...markerState };
+  }
+
+  function setMarkerPositions(next = {}) {
+    if (Number.isFinite(+next.pos_action)) markerState.pos_action = clamp01(+next.pos_action);
+    if (Number.isFinite(+next.pos_loop_start)) markerState.pos_loop_start = clamp01(+next.pos_loop_start);
+    if (Number.isFinite(+next.pos_loop_end)) markerState.pos_loop_end = clamp01(+next.pos_loop_end);
+    if (Number.isFinite(+next.pos_release)) markerState.pos_release = clamp01(+next.pos_release);
+
+    markerState.pos_loop_start = Math.max(markerState.pos_action + 0.001, markerState.pos_loop_start);
+    markerState.pos_loop_end = Math.max(markerState.pos_loop_start + 0.001, markerState.pos_loop_end);
+    markerState.pos_release = Math.max(markerState.pos_loop_end, markerState.pos_release);
+
+    markerState.pos_action = clamp01(markerState.pos_action);
+    markerState.pos_loop_start = clamp01(markerState.pos_loop_start);
+    markerState.pos_loop_end = clamp01(markerState.pos_loop_end);
+    markerState.pos_release = clamp01(markerState.pos_release);
+  }
+
+  function setEditMode(mode) {
+    viewState.mode = mode;
+    const pairs = [
+      [modeActionBtn, "pos_action"],
+      [modeLoopStartBtn, "pos_loop_start"],
+      [modeLoopEndBtn, "pos_loop_end"],
+      [modeReleaseBtn, "pos_release"],
+    ];
+    for (const [btn, markerKey] of pairs) btn?.classList.toggle("active", markerKey === mode);
   }
 
   function updateLoopStatus() {
@@ -100,18 +140,6 @@
     const start = Math.round(pos_loop_start * 100);
     const end = Math.round(pos_loop_end * 100);
     const release = Math.round(pos_release * 100);
-    if (start <= action) {
-      setLoopStatus("Zone invalide: Start Loop doit être après Key Action.");
-      return;
-    }
-    if (end <= start + 1) {
-      setLoopStatus("Zone invalide: End Loop doit être > Start Loop.");
-      return;
-    }
-    if (release < end) {
-      setLoopStatus("Zone invalide: Release Point doit être ≥ End Loop.");
-      return;
-    }
     setLoopStatus(`Key Action ${action}% → ${start}% • Loop ${start}% ↔ ${end}% • Release jusqu'à ${release}%`);
   }
 
@@ -186,12 +214,7 @@
     const rows = [];
     for (let midi = minMidi; midi <= maxMidi; midi += 1) {
       const semitones = midi - rootMidi;
-      rows.push({
-        midi,
-        note: midiToName(midi),
-        semitones,
-        ratio: Math.pow(2, semitones / 12),
-      });
+      rows.push({ midi, note: midiToName(midi), semitones, ratio: Math.pow(2, semitones / 12) });
     }
     return rows;
   }
@@ -210,8 +233,36 @@
       const sign = row.semitones > 0 ? "+" : "";
       html += `<tr class="${cls}"><td>${row.note}</td><td>${sign}${row.semitones} st</td><td>${row.ratio.toFixed(4)}x</td></tr>`;
     }
-    html += '</tbody></table>';
+    html += "</tbody></table>";
     pianoMapEl.innerHTML = html;
+  }
+
+  function normalizeInView(normPos) {
+    return (normPos - viewState.start) / Math.max(1e-6, (viewState.end - viewState.start));
+  }
+
+  function canvasXToNorm(x) {
+    const ratio = clamp01(x / waveCanvas.width);
+    return viewState.start + ratio * (viewState.end - viewState.start);
+  }
+
+  function nearestZeroCrossing(data, sampleIndex, radius = 256) {
+    let best = Math.max(1, Math.min(data.length - 2, sampleIndex));
+    let bestScore = Infinity;
+    const from = Math.max(1, best - radius);
+    const to = Math.min(data.length - 2, best + radius);
+    for (let i = from; i <= to; i += 1) {
+      const a = data[i - 1];
+      const b = data[i];
+      const crossing = (a <= 0 && b >= 0) || (a >= 0 && b <= 0);
+      if (!crossing) continue;
+      const score = Math.abs(i - sampleIndex);
+      if (score < bestScore) {
+        best = i;
+        bestScore = score;
+      }
+    }
+    return best;
   }
 
   function drawWaveform(buffer) {
@@ -224,37 +275,245 @@
     if (!buffer) return;
 
     const data = buffer.getChannelData(0);
-    const step = Math.max(1, Math.floor(data.length / waveCanvas.width));
     const h = waveCanvas.height;
     const mid = h / 2;
+    const start = Math.floor(viewState.start * (data.length - 1));
+    const end = Math.max(start + 2, Math.floor(viewState.end * (data.length - 1)));
+    const range = end - start;
+
     ctx.strokeStyle = "#27e0a3";
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = 0; x < waveCanvas.width; x += 1) {
-      const idx = Math.min(data.length - 1, x * step);
-      const y = mid + data[idx] * (mid * 0.9);
+      const idx = Math.min(data.length - 1, start + Math.floor((x / waveCanvas.width) * range));
+      const y = mid + data[idx] * (mid * 0.9 * viewState.ampZoom);
       if (x === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
     ctx.stroke();
 
-    const { pos_action, pos_loop_start, pos_loop_end, pos_release } = getMarkerPositions();
     const markerDefs = [
-      { pct: pos_action, color: "#d04cff" },
-      { pct: pos_loop_start, color: "#f5ea2f" },
-      { pct: pos_loop_end, color: "#ff4b4b" },
-      { pct: pos_release, color: "#36b7ff" },
+      { key: "pos_action", color: "#d04cff" },
+      { key: "pos_loop_start", color: "#f5ea2f" },
+      { key: "pos_loop_end", color: "#ff4b4b" },
+      { key: "pos_release", color: "#36b7ff" },
     ];
 
     for (const marker of markerDefs) {
-      const x = marker.pct * waveCanvas.width;
+      const inView = normalizeInView(markerState[marker.key]);
+      if (inView < 0 || inView > 1) continue;
+      const x = inView * waveCanvas.width;
       ctx.strokeStyle = marker.color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = viewState.draggingMarker === marker.key ? 3 : 2;
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h);
       ctx.stroke();
     }
+
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = "11px sans-serif";
+    ctx.fillText(`Zoom X ${(1 / (viewState.end - viewState.start)).toFixed(2)}x | Zoom Y ${viewState.ampZoom.toFixed(2)}x`, 10, 16);
+  }
+
+  function placeMarkerFromCanvasX(x) {
+    if (!analysisState?.buffer || !waveCanvas) return;
+    const data = analysisState.buffer.getChannelData(0);
+    const raw = canvasXToNorm(x);
+    const sampleIndex = Math.floor(clamp01(raw) * (data.length - 1));
+    const snapped = nearestZeroCrossing(data, sampleIndex);
+    const snappedNorm = snapped / Math.max(1, data.length - 1);
+    setMarkerPositions({ [viewState.mode]: snappedNorm });
+    updateLoopStatus();
+    drawWaveform(analysisState.buffer);
+  }
+
+  function markerFromCanvasX(x, thresholdPx = 9) {
+    const candidates = ["pos_action", "pos_loop_start", "pos_loop_end", "pos_release"];
+    for (const key of candidates) {
+      const markerX = normalizeInView(markerState[key]) * waveCanvas.width;
+      if (Math.abs(markerX - x) <= thresholdPx) return key;
+    }
+    return null;
+  }
+
+  function installWaveInteractions() {
+    if (!waveCanvas) return;
+
+    waveCanvas.addEventListener("wheel", (event) => {
+      if (!analysisState?.buffer) return;
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? 1 : -1;
+
+      if (event.shiftKey) {
+        const nextAmp = viewState.ampZoom * (direction > 0 ? 0.9 : 1.1);
+        viewState.ampZoom = Math.max(0.35, Math.min(8, nextAmp));
+      } else {
+        const pivot = canvasXToNorm(event.offsetX);
+        const currentRange = viewState.end - viewState.start;
+        const nextRange = Math.max(0.01, Math.min(1, currentRange * (direction > 0 ? 1.08 : 0.92)));
+        const anchor = clamp01((pivot - viewState.start) / currentRange);
+        let nextStart = pivot - anchor * nextRange;
+        nextStart = Math.max(0, Math.min(1 - nextRange, nextStart));
+        viewState.start = nextStart;
+        viewState.end = nextStart + nextRange;
+      }
+      drawWaveform(analysisState.buffer);
+    }, { passive: false });
+
+    waveCanvas.addEventListener("mousedown", (event) => {
+      if (!analysisState?.buffer) return;
+      if (event.button === 1) {
+        event.preventDefault();
+        viewState.isPanning = true;
+        viewState.panAnchorX = event.clientX;
+        viewState.panStartView = viewState.start;
+        return;
+      }
+      if (event.button !== 0) return;
+
+      const marker = markerFromCanvasX(event.offsetX);
+      if (marker) {
+        viewState.draggingMarker = marker;
+        drawWaveform(analysisState.buffer);
+        return;
+      }
+      placeMarkerFromCanvasX(event.offsetX);
+    });
+
+    waveCanvas.addEventListener("mousemove", (event) => {
+      if (!analysisState?.buffer) return;
+      if (viewState.isPanning) {
+        const range = viewState.end - viewState.start;
+        if (range >= 0.999) return;
+        const deltaNorm = (event.clientX - viewState.panAnchorX) / waveCanvas.width;
+        let nextStart = viewState.panStartView - deltaNorm * range;
+        nextStart = Math.max(0, Math.min(1 - range, nextStart));
+        viewState.start = nextStart;
+        viewState.end = nextStart + range;
+        drawWaveform(analysisState.buffer);
+        return;
+      }
+      if (!viewState.draggingMarker) return;
+      const data = analysisState.buffer.getChannelData(0);
+      const raw = canvasXToNorm(event.offsetX);
+      const idx = Math.floor(clamp01(raw) * (data.length - 1));
+      const snapped = nearestZeroCrossing(data, idx);
+      setMarkerPositions({ [viewState.draggingMarker]: snapped / Math.max(1, data.length - 1) });
+      updateLoopStatus();
+      drawWaveform(analysisState.buffer);
+    });
+
+    const releaseDrag = () => {
+      if (!analysisState?.buffer) return;
+      viewState.draggingMarker = null;
+      viewState.isPanning = false;
+      drawWaveform(analysisState.buffer);
+    };
+
+    waveCanvas.addEventListener("mouseup", releaseDrag);
+    waveCanvas.addEventListener("mouseleave", releaseDrag);
+  }
+
+  function normalizedAutoCorrelation(data, startA, startB, size) {
+    let corr = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < size; i += 1) {
+      const a = data[startA + i] || 0;
+      const b = data[startB + i] || 0;
+      corr += a * b;
+      normA += a * a;
+      normB += b * b;
+    }
+    return corr / (Math.sqrt(normA * normB) || 1);
+  }
+
+  function estimateCycleLength(data, sampleRate, index) {
+    const minLag = Math.max(8, Math.floor(sampleRate / 1800));
+    const maxLag = Math.min(Math.floor(sampleRate / 30), 4096);
+    const start = Math.max(0, index - 4096);
+    const win = data.subarray(start, Math.min(data.length, start + 8192));
+    let bestLag = 0;
+    let bestScore = -1;
+    for (let lag = minLag; lag <= maxLag; lag += 1) {
+      let corr = 0;
+      let normA = 0;
+      let normB = 0;
+      const end = win.length - lag;
+      if (end <= 128) continue;
+      for (let i = 0; i < end; i += 1) {
+        const a = win[i];
+        const b = win[i + lag];
+        corr += a * b;
+        normA += a * a;
+        normB += b * b;
+      }
+      const score = corr / (Math.sqrt(normA * normB) || 1);
+      if (score > bestScore) {
+        bestScore = score;
+        bestLag = lag;
+      }
+    }
+    return bestLag > 0 ? bestLag : Math.max(32, Math.floor(sampleRate / 220));
+  }
+
+  function findPerfectLoop(startZone, endZone) {
+    if (!analysisState?.buffer) return null;
+    const buffer = analysisState.buffer;
+    const data = buffer.getChannelData(0);
+    const sr = buffer.sampleRate || 44100;
+
+    const startFrom = Math.floor(clamp01(startZone.start) * (data.length - 1));
+    const startTo = Math.floor(clamp01(startZone.end) * (data.length - 1));
+    const endFrom = Math.floor(clamp01(endZone.start) * (data.length - 1));
+    const endTo = Math.floor(clamp01(endZone.end) * (data.length - 1));
+
+    const startCrossings = [];
+    const endCrossings = [];
+    for (let i = Math.max(1, startFrom); i < Math.min(data.length - 1, startTo); i += 1) {
+      if ((data[i - 1] <= 0 && data[i] >= 0) || (data[i - 1] >= 0 && data[i] <= 0)) startCrossings.push(i);
+    }
+    for (let i = Math.max(1, endFrom); i < Math.min(data.length - 1, endTo); i += 1) {
+      if ((data[i - 1] <= 0 && data[i] >= 0) || (data[i - 1] >= 0 && data[i] <= 0)) endCrossings.push(i);
+    }
+    if (!startCrossings.length || !endCrossings.length) return null;
+
+    const cycle = estimateCycleLength(data, sr, startCrossings[0]);
+    const window = Math.max(128, Math.min(1024, Math.floor(cycle * 2.5)));
+
+    let best = null;
+    const stepStart = Math.max(1, Math.floor(startCrossings.length / 120));
+    const stepEnd = Math.max(1, Math.floor(endCrossings.length / 120));
+
+    for (let si = 0; si < startCrossings.length; si += stepStart) {
+      const s = startCrossings[si];
+      const ampS = Math.abs(data[s]);
+      for (let ei = 0; ei < endCrossings.length; ei += stepEnd) {
+        const e = endCrossings[ei];
+        if (e <= s + window) continue;
+
+        const cycleCount = (e - s) / cycle;
+        const nearestEven = Math.max(2, Math.round(cycleCount / 2) * 2);
+        const cycleError = Math.abs(cycleCount - nearestEven);
+        if (cycleError > 0.75) continue;
+
+        const ampE = Math.abs(data[e]);
+        const ampDiff = Math.abs(ampS - ampE);
+        const corrStart = Math.max(0, Math.min(data.length - window - 1, s - Math.floor(window / 2)));
+        const corrEnd = Math.max(0, Math.min(data.length - window - 1, e - Math.floor(window / 2)));
+        const corr = normalizedAutoCorrelation(data, corrStart, corrEnd, window);
+        const score = corr - (ampDiff * 2.5) - (cycleError * 0.2);
+
+        if (!best || score > best.score) best = { start: s, end: e, score, corr, ampDiff, cycleError };
+      }
+    }
+
+    if (!best) return null;
+    return {
+      pos_loop_start: best.start / Math.max(1, data.length - 1),
+      pos_loop_end: best.end / Math.max(1, data.length - 1),
+    };
   }
 
   async function analyzeImportedSample(sample) {
@@ -271,6 +530,9 @@
       const freq = detectRootFrequency(buffer);
       const rootMidi = frequencyToMidi(freq || 0);
       analysisState = { sample, buffer, freq, rootMidi };
+      viewState.start = 0;
+      viewState.end = 1;
+      viewState.ampZoom = 1;
       drawWaveform(buffer);
       if (!isFinite(rootMidi)) {
         if (rootNoteEl) rootNoteEl.textContent = "Non détectée";
@@ -281,8 +543,7 @@
 
       if (rootNoteEl) rootNoteEl.textContent = `${midiToName(rootMidi)} (MIDI ${rootMidi})`;
       if (rootHzEl) rootHzEl.textContent = `${formatHz(freq)} • cible ${formatHz(midiToFrequency(rootMidi))}`;
-      const mapping = extrapolatePianoMap(rootMidi);
-      renderPianoMap(mapping, rootMidi);
+      renderPianoMap(extrapolatePianoMap(rootMidi), rootMidi);
     } catch (error) {
       if (token !== analysisToken) return;
       if (rootNoteEl) rootNoteEl.textContent = "Erreur";
@@ -299,7 +560,6 @@
       rootsEl.innerHTML = '<div class="small">Aucun dossier configuré.</div>';
       return;
     }
-
     for (const root of snapshot.roots) {
       const btn = document.createElement("button");
       btn.className = "samplerItem" + (root.rootPath === snapshot.activeRootPath ? " active" : "");
@@ -315,13 +575,11 @@
     if (!browserEl || !rootLabelEl) return;
     const activeRoot = snapshot.activeRoot;
     browserEl.innerHTML = "";
-
     if (!activeRoot) {
       rootLabelEl.textContent = "Aucun dossier sélectionné";
       browserEl.innerHTML = '<div class="small">Ajoutez un dossier pour indexer vos samples .wav/.mp3/.ogg.</div>';
       return;
     }
-
     rootLabelEl.textContent = `${activeRoot.rootName} — ${activeRoot.files.length} samples indexés`;
     if (!activeRoot.files.length) {
       browserEl.innerHTML = '<div class="small">Aucun fichier supporté trouvé dans ce dossier.</div>';
@@ -334,18 +592,13 @@
       item.draggable = true;
       item.innerHTML = `<span>${makeItemLabel(sample)}</span><span class="small">${sample.ext}</span>`;
       item.title = sample.relativePath || sample.name;
-
-      item.addEventListener("click", () => {
-        directory.selectSample(sample);
-      });
-
+      item.addEventListener("click", () => directory.selectSample(sample));
       item.addEventListener("dragstart", (event) => {
         directory.setDragSample(sample);
         event.dataTransfer.effectAllowed = "copy";
         event.dataTransfer.setData("application/x-sls-sample", JSON.stringify(sample));
         event.dataTransfer.setData("text/plain", sample.path);
       });
-
       browserEl.appendChild(item);
     }
   }
@@ -361,7 +614,6 @@
       }
       return;
     }
-
     if (selectedNameEl) selectedNameEl.textContent = `Pré-écoute: ${selected.relativePath || selected.name}`;
     if (previewEl) {
       const newSrc = sampleToPreviewUrl(selected);
@@ -391,8 +643,8 @@
     const rootHzFromUI = Number.parseFloat(String(rootHzEl?.textContent || "").match(/([\d.]+)\s*Hz/)?.[1] || "");
     const suggestedName = sampleSuggestedProgramName(sample) || "Sampler Program";
     const rawName = String(programNameEl?.value || suggestedName).trim();
-
     const positions = getMarkerPositions();
+
     return {
       id: sourceProgramId || undefined,
       name: rawName || suggestedName,
@@ -470,9 +722,7 @@
   addRootBtn?.addEventListener("click", async () => {
     await withBusyButton(addRootBtn, async () => {
       const result = await directory.addRootsFromDialog();
-      if (!result?.ok && !result?.canceled) {
-        setStatus(`Erreur ajout dossier: ${result?.error || "inconnue"}`);
-      }
+      if (!result?.ok && !result?.canceled) setStatus(`Erreur ajout dossier: ${result?.error || "inconnue"}`);
     });
   });
 
@@ -488,9 +738,7 @@
     dropZoneEl.classList.add("dragover");
   });
 
-  dropZoneEl?.addEventListener("dragleave", () => {
-    dropZoneEl.classList.remove("dragover");
-  });
+  dropZoneEl?.addEventListener("dragleave", () => dropZoneEl.classList.remove("dragover"));
 
   dropZoneEl?.addEventListener("drop", (event) => {
     event.preventDefault();
@@ -514,11 +762,28 @@
     directory.importSample(sample);
   });
 
-  [posActionEl, loopStartEl, loopEndEl, releasePointEl].forEach((control) => {
-    control?.addEventListener("input", () => {
-      updateLoopStatus();
-      drawWaveform(analysisState?.buffer || null);
-    });
+  modeActionBtn?.addEventListener("click", () => setEditMode("pos_action"));
+  modeLoopStartBtn?.addEventListener("click", () => setEditMode("pos_loop_start"));
+  modeLoopEndBtn?.addEventListener("click", () => setEditMode("pos_loop_end"));
+  modeReleaseBtn?.addEventListener("click", () => setEditMode("pos_release"));
+
+  wizardLoopBtn?.addEventListener("click", () => {
+    if (!analysisState?.buffer) {
+      setLoopStatus("Importez un sample pour utiliser Wizard Loop.");
+      return;
+    }
+    const found = findPerfectLoop(
+      { start: markerState.pos_loop_start, end: Math.min(1, markerState.pos_loop_start + 0.2) },
+      { start: Math.max(markerState.pos_loop_start + 0.02, markerState.pos_loop_end - 0.2), end: markerState.pos_release }
+    );
+    if (!found) {
+      setLoopStatus("Wizard Loop: aucune boucle idéale trouvée dans les zones sélectionnées.");
+      return;
+    }
+    setMarkerPositions(found);
+    updateLoopStatus();
+    drawWaveform(analysisState.buffer);
+    setLoopStatus(`${loopStatusEl.textContent} • Wizard: zéro crossing + corrélation OK.`);
   });
 
   programSelectEl?.addEventListener("change", () => {
@@ -533,8 +798,7 @@
       return;
     }
 
-    const currentProgramId = programSelectEl?.value || null;
-    const payload = toProgramPayload(imported, currentProgramId || null);
+    const payload = toProgramPayload(imported, programSelectEl?.value || null);
     const result = directory.saveProgram(payload);
     if (!result?.ok) {
       setProgramStatus(`Erreur sauvegarde programme: ${result?.error || "inconnue"}`);
@@ -553,14 +817,12 @@
     }
 
     if (program.sample) directory.importSample(program.sample);
-    const posAction = Number.isFinite(+program.posAction) ? +program.posAction : 0;
-    const posLoopStart = Number.isFinite(+program.posLoopStart) ? +program.posLoopStart : ((Number(program.loopStartPct) || 15) / 100);
-    const posLoopEnd = Number.isFinite(+program.posLoopEnd) ? +program.posLoopEnd : ((Number(program.loopEndPct) || 90) / 100);
-    const posRelease = Number.isFinite(+program.posRelease) ? +program.posRelease : 1;
-    if (posActionEl) posActionEl.value = String(Math.round(100 * clamp01(posAction)));
-    if (loopStartEl) loopStartEl.value = String(Math.round(100 * clamp01(posLoopStart)));
-    if (loopEndEl) loopEndEl.value = String(Math.round(100 * clamp01(posLoopEnd)));
-    if (releasePointEl) releasePointEl.value = String(Math.round(100 * clamp01(posRelease)));
+    setMarkerPositions({
+      pos_action: Number.isFinite(+program.posAction) ? +program.posAction : 0,
+      pos_loop_start: Number.isFinite(+program.posLoopStart) ? +program.posLoopStart : ((Number(program.loopStartPct) || 15) / 100),
+      pos_loop_end: Number.isFinite(+program.posLoopEnd) ? +program.posLoopEnd : ((Number(program.loopEndPct) || 90) / 100),
+      pos_release: Number.isFinite(+program.posRelease) ? +program.posRelease : 1,
+    });
     if (programNameEl) programNameEl.value = program.name || "";
     directory.setActiveProgram(program.id);
     updateLoopStatus();
@@ -573,6 +835,8 @@
     render(event.detail || directory.getSnapshot());
   });
 
+  setEditMode("pos_action");
+  installWaveInteractions();
   updateLoopStatus();
   drawWaveform(null);
   directory.restorePersistedRoots().then(() => render(directory.getSnapshot()));
