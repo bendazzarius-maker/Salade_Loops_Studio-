@@ -236,7 +236,7 @@ function renderInstrumentPanel(){
 
 if(!window.__samplerProgramPanelRefreshHook){
   window.__samplerProgramPanelRefreshHook = true;
-  window.addEventListener("sampler-programs:changed", ()=>{
-    try{ renderInstrumentPanel(); }catch(_){ }
-  });
+  const refresh = ()=>{ try{ renderInstrumentPanel(); }catch(_){ } };
+  window.addEventListener("sampler-programs:changed", refresh);
+  window.addEventListener("sampler-directory:change", refresh);
 }

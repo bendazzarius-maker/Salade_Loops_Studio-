@@ -15,6 +15,7 @@
     programsRootPath: null,
     categories: [""],
     activeCategory: "",
+    autoRefreshTimer: null,
   };
 
   function saveRootsToStorage() {
@@ -65,7 +66,7 @@
     return global.samplerFS.scanDirectories(rootPaths);
   }
 
-  async function refreshProgramsFromDisk(forceEmit = false) {
+  async function refreshProgramsFromDisk() {
     if (!global.samplerFS?.listPrograms) return { ok: false, error: "listPrograms indisponible" };
     const result = await global.samplerFS.listPrograms();
     if (!result?.ok) return result || { ok: false, error: "Erreur de scan programmes" };
@@ -73,14 +74,6 @@
     const programs = Array.isArray(result.programs) ? result.programs.filter((x) => x && typeof x === "object") : [];
     const categories = new Set([""]);
     for (const p of programs) categories.add(String(p.category || ""));
-
-    const prevFingerprint = JSON.stringify({
-      root: directoryState.programsRootPath || "",
-      active: directoryState.activeProgramId || "",
-      category: directoryState.activeCategory || "",
-      categories: directoryState.categories,
-      programs: directoryState.programs.map((p) => `${p.id || ""}|${p.updatedAt || ""}|${p.name || ""}`),
-    });
 
     directoryState.programsRootPath = result.rootPath || null;
     directoryState.programs = programs;
@@ -93,21 +86,21 @@
       directoryState.activeCategory = "";
       saveLastCategory("");
     }
-
-    const nextFingerprint = JSON.stringify({
-      root: directoryState.programsRootPath || "",
-      active: directoryState.activeProgramId || "",
-      category: directoryState.activeCategory || "",
-      categories: directoryState.categories,
-      programs: directoryState.programs.map((p) => `${p.id || ""}|${p.updatedAt || ""}|${p.name || ""}`),
-    });
-
-    if (forceEmit || prevFingerprint !== nextFingerprint) emitChange();
+    emitChange();
     return { ok: true, programs: directoryState.programs, rootPath: directoryState.programsRootPath };
   }
+
+  function ensureAutoRefresh() {
+    if (directoryState.autoRefreshTimer) return;
+    directoryState.autoRefreshTimer = setInterval(() => {
+      refreshProgramsFromDisk().catch(() => {});
+    }, 3500);
+  }
+
   async function restorePersistedRoots() {
     directoryState.activeCategory = loadLastCategory();
-    await refreshProgramsFromDisk(true);
+    await refreshProgramsFromDisk();
+    ensureAutoRefresh();
 
     const savedPaths = loadRootPathsFromStorage();
     if (!savedPaths.length) {
@@ -179,7 +172,7 @@
     if (result?.ok) {
       directoryState.activeCategory = String(result.relativeDir || "");
       saveLastCategory(directoryState.activeCategory);
-      await refreshProgramsFromDisk(true);
+      await refreshProgramsFromDisk();
     }
     return result;
   }
@@ -206,7 +199,7 @@
       directoryState.activeCategory = String(payload.relativeDir || "");
       saveLastCategory(directoryState.activeCategory);
     }
-    await refreshProgramsFromDisk(true);
+    await refreshProgramsFromDisk();
     return { ok: true, program: getProgram(directoryState.activeProgramId) || result.program, filePath: result.filePath, relativeFilePath: result.relativeFilePath };
   }
 

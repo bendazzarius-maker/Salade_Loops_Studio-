@@ -308,13 +308,12 @@ async function scanProgramsTree(rootDir) {
       try {
         const raw = await fs.readFile(fullPath, "utf-8");
         const parsed = JSON.parse(raw);
-        const relativeFilePath = path.relative(rootDir, fullPath).replace(/\\/g, "/");
         programs.push({
           ...parsed,
-          id: relativeFilePath,
+          id: parsed.id || path.relative(rootDir, fullPath).replace(/\\/g, "/"),
           filePath: fullPath,
-          relativeFilePath,
-          category: path.dirname(relativeFilePath).replace(/\\/g, "/") || "",
+          relativeFilePath: path.relative(rootDir, fullPath).replace(/\\/g, "/"),
+          category: path.dirname(path.relative(rootDir, fullPath)).replace(/\\/g, "/") || "",
         });
       } catch (error) {
         console.warn("[Sampler] invalid program file", fullPath, error?.message || error);
@@ -364,19 +363,17 @@ ipcMain.handle("sampler:saveProgram", async (_evt, payload = {}) => {
     outFile = path.join(dir, fileName);
   }
 
-  const relativeFilePath = path.relative(root, outFile).replace(/\\/g, "/");
   const toWrite = {
     ...program,
-    id: relativeFilePath,
     updatedAt: new Date().toISOString(),
-    category: path.dirname(relativeFilePath).replace(/\\/g, "/") || "",
+    category: path.dirname(path.relative(root, outFile)).replace(/\\/g, "/") || "",
   };
   await fs.writeFile(outFile, JSON.stringify(toWrite, null, 2), "utf-8");
   return {
     ok: true,
     rootPath: root,
     filePath: outFile,
-    relativeFilePath,
+    relativeFilePath: path.relative(root, outFile).replace(/\\/g, "/"),
     program: toWrite,
   };
 });
