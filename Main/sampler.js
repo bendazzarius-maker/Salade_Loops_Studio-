@@ -32,9 +32,12 @@
   const programSaveAsBtn = document.getElementById("samplerProgramSaveAs");
   const programLoadBtn = document.getElementById("samplerProgramLoad");
   const programStatusEl = document.getElementById("samplerProgramStatus");
+  const previewPlayBtn = document.getElementById("samplerPreviewPlay");
+  const programTreeEl = document.getElementById("samplerProgramTree");
 
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   let audioCtx = null;
+  let previewSession = null;
   let analysisToken = 0;
   let analysisState = null;
   const markerState = {
@@ -154,6 +157,97 @@
       audioCtx = new Ctor();
     }
     return audioCtx;
+  }
+
+  function stopPreviewSession() {
+    if (!previewSession) return;
+    const now = ensureAudioContext()?.currentTime || 0;
+    const fade = 0.015;
+    const elapsedSampleSec = Math.max(0, now - previewSession.startedAt);
+    let releaseStartSec = previewSession.actionSec + elapsedSampleSec;
+    if (releaseStartSec >= previewSession.loopStartSec) {
+      const loopElapsed = (releaseStartSec - previewSession.loopStartSec) % previewSession.loopLenSec;
+      releaseStartSec = previewSession.loopStartSec + loopElapsed;
+    }
+    releaseStartSec = Math.min(Math.max(previewSession.actionSec, releaseStartSec), previewSession.releaseSec);
+    const tailSec = Math.max(0.02, previewSession.releaseSec - releaseStartSec);
+    try {
+      previewSession.sustainGate?.gain.cancelScheduledValues(now);
+      previewSession.sustainGate?.gain.setValueAtTime(previewSession.sustainGate.gain.value || 1, now);
+      previewSession.sustainGate?.gain.linearRampToValueAtTime(0.0001, now + fade);
+      previewSession.releaseGate?.gain.cancelScheduledValues(now);
+      previewSession.releaseGate?.gain.setValueAtTime(previewSession.releaseGate.gain.value || 0.0001, now);
+      previewSession.releaseGate?.gain.linearRampToValueAtTime(1, now + fade);
+      previewSession.master?.gain.cancelScheduledValues(now);
+      previewSession.master?.gain.setValueAtTime(previewSession.master.gain.value || 0.95, now);
+      previewSession.master?.gain.linearRampToValueAtTime(0.0001, now + tailSec + 0.08);
+    } catch (_error) {}
+    try { previewSession.sustainSrc?.stop(now + fade + 0.05); } catch (_error) {}
+    try { previewSession.releaseSrc?.start(now, releaseStartSec); } catch (_error) {}
+    try { previewSession.releaseSrc?.stop(now + tailSec + 0.08); } catch (_error) {}
+    previewSession = null;
+  }
+
+  function startPreviewSession() {
+    const imported = directory.state.importedSample;
+    if (!imported) {
+      setLoopStatus("Preview Play: importez un sample d'abord.");
+      return;
+    }
+    if (!Number.isFinite(analysisState?.rootMidi)) {
+      setLoopStatus("Preview Play: root note analysée requise.");
+      return;
+    }
+    const buffer = analysisState?.buffer;
+    const ctx = ensureAudioContext();
+    if (!buffer || !ctx) return;
+
+    stopPreviewSession();
+    const positions = getMarkerPositions();
+    const actionSec = positions.pos_action * buffer.duration;
+    const loopStartSec = positions.pos_loop_start * buffer.duration;
+    const loopEndSec = positions.pos_loop_end * buffer.duration;
+    const releaseSec = positions.pos_release * buffer.duration;
+    const loopLenSec = Math.max(0.001, loopEndSec - loopStartSec);
+    const now = ctx.currentTime;
+
+    const master = ctx.createGain();
+    const sustainGate = ctx.createGain();
+    const releaseGate = ctx.createGain();
+    master.connect(ctx.destination);
+    sustainGate.connect(master);
+    releaseGate.connect(master);
+    master.gain.setValueAtTime(0.95, now);
+    sustainGate.gain.setValueAtTime(1, now);
+    releaseGate.gain.setValueAtTime(0.0001, now);
+
+    const sustainSrc = ctx.createBufferSource();
+    sustainSrc.buffer = buffer;
+    sustainSrc.playbackRate.setValueAtTime(1, now);
+    sustainSrc.loop = true;
+    sustainSrc.loopStart = loopStartSec;
+    sustainSrc.loopEnd = loopEndSec;
+    sustainSrc.connect(sustainGate);
+    sustainSrc.start(now, actionSec);
+
+    const releaseSrc = ctx.createBufferSource();
+    releaseSrc.buffer = buffer;
+    releaseSrc.playbackRate.setValueAtTime(1, now);
+    releaseSrc.connect(releaseGate);
+
+    previewSession = {
+      startedAt: now,
+      actionSec,
+      loopStartSec,
+      loopLenSec,
+      releaseSec,
+      master,
+      sustainGate,
+      releaseGate,
+      sustainSrc,
+      releaseSrc,
+    };
+    setLoopStatus("Preview Play: action → loop (maintenu), relâchez pour la phase release.");
   }
 
   async function loadSampleBuffer(sample) {
@@ -739,6 +833,61 @@
     }
   }
 
+  function buildProgramTree(snapshot) {
+    const tree = { __path: "", __children: new Map(), __count: 0 };
+    for (const program of (snapshot.programs || [])) {
+      const category = String(program.category || "").trim();
+      const parts = category ? category.split("/").filter(Boolean) : [];
+      let cursor = tree;
+      for (const part of parts) {
+        if (!cursor.__children.has(part)) cursor.__children.set(part, { __path: cursor.__path ? `${cursor.__path}/${part}` : part, __children: new Map(), __count: 0 });
+        cursor = cursor.__children.get(part);
+      }
+      cursor.__count += 1;
+    }
+    return tree;
+  }
+
+  function renderProgramTree(snapshot) {
+    if (!programTreeEl) return;
+    const tree = buildProgramTree(snapshot);
+    programTreeEl.innerHTML = "";
+
+    const makeNode = (label, relativeDir, depth, count) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "samplerTreeNode" + ((snapshot.activeCategory || "") === relativeDir ? " active" : "");
+      btn.style.paddingLeft = `${8 + depth * 16}px`;
+      btn.innerHTML = `<span>${label}</span><span class="small">${count}</span>`;
+      btn.addEventListener("click", () => {
+        directory.setActiveCategory(relativeDir);
+        if (programCategoryEl) programCategoryEl.value = relativeDir;
+      });
+      return btn;
+    };
+
+    const rootCount = (snapshot.programs || []).filter((p) => !(p.category || "")).length;
+    programTreeEl.appendChild(makeNode("(racine)", "", 0, rootCount));
+
+    function walk(node, depth = 0) {
+      const entries = Array.from(node.__children.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+      for (const [name, child] of entries) {
+        let total = child.__count;
+        const stack = [child];
+        while (stack.length) {
+          const x = stack.pop();
+          for (const sub of x.__children.values()) {
+            total += sub.__count;
+            stack.push(sub);
+          }
+        }
+        programTreeEl.appendChild(makeNode(name, child.__path, depth + 1, total));
+        walk(child, depth + 1);
+      }
+    }
+    walk(tree);
+  }
+
   function render(snapshot) {
     renderRoots(snapshot);
     renderBrowser(snapshot);
@@ -746,6 +895,7 @@
     renderImported(snapshot);
     renderCategories(snapshot);
     renderPrograms(snapshot);
+    renderProgramTree(snapshot);
   }
 
   async function withBusyButton(button, job) {
@@ -870,7 +1020,9 @@
       setProgramStatus("Entrez un nom de sous-dossier.");
       return;
     }
-    const result = await directory.createCategory(value);
+    const base = String(programCategoryEl?.value || "").trim().replace(/^\/+|\/+$/g, "");
+    const relative = value.includes("/") ? value : (base ? `${base}/${value}` : value);
+    const result = await directory.createCategory(relative);
     if (!result?.ok) {
       setProgramStatus(`Erreur création dossier: ${result?.error || "inconnue"}`);
       return;
@@ -905,6 +1057,15 @@
   global.addEventListener("sampler-directory:change", (event) => {
     render(event.detail || directory.getSnapshot());
   });
+
+  previewPlayBtn?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    startPreviewSession();
+  });
+  const releasePreview = () => stopPreviewSession();
+  previewPlayBtn?.addEventListener("pointerup", releasePreview);
+  previewPlayBtn?.addEventListener("pointerleave", releasePreview);
+  previewPlayBtn?.addEventListener("pointercancel", releasePreview);
 
   setEditMode("pos_action");
   installWaveInteractions();

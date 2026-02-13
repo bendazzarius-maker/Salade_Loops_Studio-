@@ -74,11 +74,33 @@ function _makeInstrumentControl(ctrl, params, onChange){
   }
   else if(ctrl.type === "select"){
     const select = document.createElement("select");
-    for(const opt of (ctrl.options||[])){
-      const o = document.createElement("option");
-      o.value = opt.value;
-      o.textContent = opt.label;
-      select.appendChild(o);
+    const options = ctrl.options || [];
+    const grouped = new Map();
+    for(const opt of options){
+      const group = (opt && opt.group!=null) ? String(opt.group) : "";
+      if(!grouped.has(group)) grouped.set(group, []);
+      grouped.get(group).push(opt);
+    }
+
+    for(const [groupName, groupOptions] of grouped.entries()){
+      if(groupName){
+        const og = document.createElement("optgroup");
+        og.label = groupName;
+        for(const opt of groupOptions){
+          const o = document.createElement("option");
+          o.value = opt.value;
+          o.textContent = opt.label;
+          og.appendChild(o);
+        }
+        select.appendChild(og);
+      } else {
+        for(const opt of groupOptions){
+          const o = document.createElement("option");
+          o.value = opt.value;
+          o.textContent = opt.label;
+          select.appendChild(o);
+        }
+      }
     }
     select.value = (params[key]!=null) ? params[key] : (ctrl.default!=null?ctrl.default:"");
     select.addEventListener("change", ()=>onChange(key, select.value));
