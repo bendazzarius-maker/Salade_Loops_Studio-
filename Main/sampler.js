@@ -653,7 +653,7 @@
     analyzeImportedSample(imported);
   }
 
-  function toProgramPayload(sample, sourceProgram = null, mode = "update") {
+  function toProgramPayload(sample, sourceProgram = null) {
     const rootMidiFromUI = Number.parseInt(String(rootNoteEl?.textContent || "").match(/MIDI\s*(-?\d+)/)?.[1] || "", 10);
     const rootHzFromUI = Number.parseFloat(String(rootHzEl?.textContent || "").match(/([\d.]+)\s*Hz/)?.[1] || "");
     const suggestedName = sampleSuggestedProgramName(sample) || "Sampler Program";
@@ -661,9 +661,9 @@
     const positions = getMarkerPositions();
 
     return {
-      id: mode === "update" ? (sourceProgram?.id || undefined) : undefined,
-      filePath: mode === "update" ? (sourceProgram?.filePath || null) : null,
-      relativeFilePath: mode === "update" ? (sourceProgram?.relativeFilePath || null) : null,
+      id: sourceProgram?.id || undefined,
+      filePath: sourceProgram?.filePath || null,
+      relativeFilePath: sourceProgram?.relativeFilePath || null,
       category: programCategoryEl?.value || sourceProgram?.category || "",
       name: rawName || suggestedName,
       sample: sample || null,
@@ -841,7 +841,7 @@
     }
 
     const current = directory.getProgram(programSelectEl?.value || null);
-    const payload = toProgramPayload(imported, current, mode);
+    const payload = toProgramPayload(imported, current);
     const opts = {
       mode,
       relativeDir: programCategoryEl?.value || "",
