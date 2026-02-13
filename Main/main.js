@@ -308,12 +308,15 @@ async function scanProgramsTree(rootDir) {
       try {
         const raw = await fs.readFile(fullPath, "utf-8");
         const parsed = JSON.parse(raw);
+        const relativeFilePath = path.relative(rootDir, fullPath).replace(/\\/g, "/");
         programs.push({
           ...parsed,
-          id: parsed.id || path.relative(rootDir, fullPath).replace(/\\/g, "/"),
+          // Force a stable unique id derived from file path.
+          // This avoids id collisions when a program is saved "as" from another one.
+          id: relativeFilePath,
           filePath: fullPath,
-          relativeFilePath: path.relative(rootDir, fullPath).replace(/\\/g, "/"),
-          category: path.dirname(path.relative(rootDir, fullPath)).replace(/\\/g, "/") || "",
+          relativeFilePath,
+          category: path.dirname(relativeFilePath).replace(/\\/g, "/") || "",
         });
       } catch (error) {
         console.warn("[Sampler] invalid program file", fullPath, error?.message || error);
@@ -363,17 +366,20 @@ ipcMain.handle("sampler:saveProgram", async (_evt, payload = {}) => {
     outFile = path.join(dir, fileName);
   }
 
+  const relativeFilePath = path.relative(root, outFile).replace(/\\/g, "/");
+
   const toWrite = {
     ...program,
+    id: relativeFilePath,
     updatedAt: new Date().toISOString(),
-    category: path.dirname(path.relative(root, outFile)).replace(/\\/g, "/") || "",
+    category: path.dirname(relativeFilePath).replace(/\\/g, "/") || "",
   };
   await fs.writeFile(outFile, JSON.stringify(toWrite, null, 2), "utf-8");
   return {
     ok: true,
     rootPath: root,
     filePath: outFile,
-    relativeFilePath: path.relative(root, outFile).replace(/\\/g, "/"),
+    relativeFilePath,
     program: toWrite,
   };
 });
