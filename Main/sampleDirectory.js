@@ -16,7 +16,16 @@
     categories: [""],
     activeCategory: "",
     autoRefreshTimer: null,
+    lastProgramsSignature: "",
   };
+
+  function computeProgramsSignature(programs = [], rootPath = "") {
+    const parts = [String(rootPath || "")];
+    for (const p of programs) {
+      parts.push([p?.id || "", p?.updatedAt || "", p?.name || "", p?.category || ""].join("|"));
+    }
+    return parts.join("::");
+  }
 
   function saveRootsToStorage() {
     try {
@@ -78,15 +87,21 @@
     directoryState.programsRootPath = result.rootPath || null;
     directoryState.programs = programs;
     directoryState.categories = Array.from(categories).sort((a, b) => a.localeCompare(b));
+    const nextSignature = computeProgramsSignature(directoryState.programs, directoryState.programsRootPath);
+    const changed = nextSignature !== directoryState.lastProgramsSignature;
+    directoryState.lastProgramsSignature = nextSignature;
 
+    let stateAdjusted = false;
     if (!directoryState.programs.find((p) => p.id === directoryState.activeProgramId)) {
       directoryState.activeProgramId = directoryState.programs[0]?.id || null;
+      stateAdjusted = true;
     }
     if (!directoryState.categories.includes(directoryState.activeCategory)) {
       directoryState.activeCategory = "";
       saveLastCategory("");
+      stateAdjusted = true;
     }
-    emitChange();
+    if (changed || stateAdjusted) emitChange();
     return { ok: true, programs: directoryState.programs, rootPath: directoryState.programsRootPath };
   }
 
@@ -95,6 +110,27 @@
     directoryState.autoRefreshTimer = setInterval(() => {
       refreshProgramsFromDisk().catch(() => {});
     }, 3500);
+  }
+
+  async function getProgramsRoot() {
+    if (!global.samplerFS?.getProgramsRoot) return { ok: false, error: "getProgramsRoot indisponible" };
+    const result = await global.samplerFS.getProgramsRoot();
+    if (result?.ok) {
+      directoryState.programsRootPath = result.rootPath || null;
+      emitChange();
+    }
+    return result;
+  }
+
+  async function chooseProgramsRoot() {
+    if (!global.samplerFS?.setProgramsRoot) return { ok: false, error: "setProgramsRoot indisponible" };
+    const result = await global.samplerFS.setProgramsRoot(null);
+    if (result?.ok) {
+      directoryState.programsRootPath = result.rootPath || null;
+      await refreshProgramsFromDisk();
+      emitChange();
+    }
+    return result;
   }
 
   async function restorePersistedRoots() {
@@ -271,6 +307,8 @@
     getProgram,
     createCategory,
     saveProgram,
+    getProgramsRoot,
+    chooseProgramsRoot,
     setActiveProgram,
     setActiveCategory,
     importPrograms,

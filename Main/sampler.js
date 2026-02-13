@@ -13,6 +13,8 @@
   const dropStatusEl = document.getElementById("samplerDropStatus");
   const addRootBtn = document.getElementById("samplerAddRoot");
   const rescanBtn = document.getElementById("samplerRescan");
+  const programsRootBtn = document.getElementById("samplerProgramsRootBtn");
+  const programsRootLabelEl = document.getElementById("samplerProgramsRootLabel");
   const rootNoteEl = document.getElementById("samplerRootNote");
   const rootHzEl = document.getElementById("samplerRootHz");
   const waveCanvas = document.getElementById("samplerWaveCanvas");
@@ -737,6 +739,7 @@
     const imported = snapshot.importedSample;
     if (!imported) {
       setStatus("Aucun sample importé.");
+      lastImportedPath = "";
       drawWaveform(null);
       if (rootNoteEl) rootNoteEl.textContent = "—";
       if (rootHzEl) rootHzEl.textContent = "—";
@@ -744,7 +747,17 @@
       return;
     }
     setStatus(`Import prêt: ${imported.relativePath || imported.name} (analyse root note en cours).`);
-    analyzeImportedSample(imported);
+    if (String(imported.path || "") !== lastImportedPath) {
+      lastImportedPath = String(imported.path || "");
+      analyzeImportedSample(imported);
+    }
+  }
+
+  function renderProgramsRoot(snapshot) {
+    if (!programsRootLabelEl) return;
+    const root = String(snapshot.programsRootPath || "").trim();
+    programsRootLabelEl.textContent = root || "Chemin non défini";
+    programsRootLabelEl.title = root;
   }
 
   function toProgramPayload(sample, sourceProgram = null, mode = "saveAs") {
@@ -925,6 +938,15 @@
     });
   });
 
+  programsRootBtn?.addEventListener("click", async () => {
+    await withBusyButton(programsRootBtn, async () => {
+      const result = await directory.chooseProgramsRoot();
+      if (!result?.ok && !result?.canceled) {
+        setProgramStatus(`Erreur dossier maître: ${result?.error || "inconnue"}`);
+      }
+    });
+  });
+
   dropZoneEl?.addEventListener("dragover", (event) => {
     event.preventDefault();
     dropZoneEl.classList.add("dragover");
@@ -1071,5 +1093,8 @@
   installWaveInteractions();
   updateLoopStatus();
   drawWaveform(null);
-  directory.restorePersistedRoots().then(() => render(directory.getSnapshot()));
+  directory.restorePersistedRoots().then(async () => {
+    await directory.getProgramsRoot().catch(() => {});
+    render(directory.getSnapshot());
+  });
 })(window);
