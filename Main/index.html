@@ -260,9 +260,12 @@
   .samplerMetric .small b{color:var(--text)}
   .samplerWave{position:relative}
   .samplerWave canvas{display:block;width:100%;height:140px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#070b12}
-  .samplerLoopEditor{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .samplerLoopEditor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .samplerLoopEditor label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted)}
   .samplerLoopEditor input[type="range"]{width:100%}
+  .samplerLegend{display:flex;gap:10px;flex-wrap:wrap}
+  .samplerLegend span{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+  .samplerLegend i{width:10px;height:10px;border-radius:50%;display:inline-block}
   .samplerPianoMap{max-height:180px;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px}
   .samplerPianoMap table{width:100%;border-collapse:collapse;font-size:11px}
   .samplerPianoMap th,.samplerPianoMap td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left}
@@ -504,15 +507,24 @@
             <div class="samplerWave">
               <canvas id="samplerWaveCanvas" width="900" height="140"></canvas>
             </div>
+            <div class="samplerLegend">
+              <span><i style="background:#d04cff"></i>Key Action</span>
+              <span><i style="background:#f5ea2f"></i>Start Loop</span>
+              <span><i style="background:#ff4b4b"></i>End Loop</span>
+              <span><i style="background:#36b7ff"></i>Release</span>
+            </div>
             <div class="samplerLoopEditor">
+              <label>Key Action
+                <input id="samplerPosAction" type="range" min="0" max="100" value="0">
+              </label>
               <label>Loop Start
                 <input id="samplerLoopStart" type="range" min="0" max="100" value="15">
               </label>
               <label>Loop End
                 <input id="samplerLoopEnd" type="range" min="0" max="100" value="90">
               </label>
-              <label>Sustain
-                <input id="samplerSustain" type="range" min="0" max="100" value="72">
+              <label>Release Point
+                <input id="samplerReleasePoint" type="range" min="0" max="100" value="100">
               </label>
             </div>
             <div class="small" id="samplerLoopStatus">Loop sustain editor prêt.</div>

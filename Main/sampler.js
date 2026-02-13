@@ -18,9 +18,10 @@
   const waveCanvas = document.getElementById("samplerWaveCanvas");
   const pianoMapEl = document.getElementById("samplerPianoMap");
   const loopStatusEl = document.getElementById("samplerLoopStatus");
+  const posActionEl = document.getElementById("samplerPosAction");
   const loopStartEl = document.getElementById("samplerLoopStart");
   const loopEndEl = document.getElementById("samplerLoopEnd");
-  const sustainEl = document.getElementById("samplerSustain");
+  const releasePointEl = document.getElementById("samplerReleasePoint");
   const programNameEl = document.getElementById("samplerProgramName");
   const programSelectEl = document.getElementById("samplerProgramSelect");
   const programSaveBtn = document.getElementById("samplerProgramSave");
@@ -81,15 +82,37 @@
     if (programStatusEl) programStatusEl.textContent = message;
   }
 
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function getMarkerPositions() {
+    const pos_action = clamp01(Number(posActionEl?.value || 0) / 100);
+    const pos_loop_start = clamp01(Number(loopStartEl?.value || 15) / 100);
+    const pos_loop_end = clamp01(Number(loopEndEl?.value || 90) / 100);
+    const pos_release = clamp01(Number(releasePointEl?.value || 100) / 100);
+    return { pos_action, pos_loop_start, pos_loop_end, pos_release };
+  }
+
   function updateLoopStatus() {
-    const start = Number(loopStartEl?.value || 0);
-    const end = Number(loopEndEl?.value || 100);
-    const sustain = Number(sustainEl?.value || 70);
-    if (end <= start + 2) {
-      setLoopStatus("Loop invalide: Loop End doit être > Loop Start + 2.");
+    const { pos_action, pos_loop_start, pos_loop_end, pos_release } = getMarkerPositions();
+    const action = Math.round(pos_action * 100);
+    const start = Math.round(pos_loop_start * 100);
+    const end = Math.round(pos_loop_end * 100);
+    const release = Math.round(pos_release * 100);
+    if (start <= action) {
+      setLoopStatus("Zone invalide: Start Loop doit être après Key Action.");
       return;
     }
-    setLoopStatus(`Sustain editor: loop ${start}% → ${end}% • sustain ${sustain}%`);
+    if (end <= start + 1) {
+      setLoopStatus("Zone invalide: End Loop doit être > Start Loop.");
+      return;
+    }
+    if (release < end) {
+      setLoopStatus("Zone invalide: Release Point doit être ≥ End Loop.");
+      return;
+    }
+    setLoopStatus(`Key Action ${action}% → ${start}% • Loop ${start}% ↔ ${end}% • Release jusqu'à ${release}%`);
   }
 
   function ensureAudioContext() {
@@ -215,23 +238,23 @@
     }
     ctx.stroke();
 
-    const startPct = Number(loopStartEl?.value || 15) / 100;
-    const endPct = Number(loopEndEl?.value || 90) / 100;
-    const sustainPct = Number(sustainEl?.value || 72) / 100;
+    const { pos_action, pos_loop_start, pos_loop_end, pos_release } = getMarkerPositions();
+    const markerDefs = [
+      { pct: pos_action, color: "#d04cff" },
+      { pct: pos_loop_start, color: "#f5ea2f" },
+      { pct: pos_loop_end, color: "#ff4b4b" },
+      { pct: pos_release, color: "#36b7ff" },
+    ];
 
-    ctx.strokeStyle = "rgba(112,167,255,.95)";
-    ctx.beginPath();
-    ctx.moveTo(startPct * waveCanvas.width, 0);
-    ctx.lineTo(startPct * waveCanvas.width, h);
-    ctx.moveTo(endPct * waveCanvas.width, 0);
-    ctx.lineTo(endPct * waveCanvas.width, h);
-    ctx.stroke();
-
-    ctx.strokeStyle = "rgba(39,224,163,.95)";
-    ctx.beginPath();
-    ctx.moveTo(sustainPct * waveCanvas.width, 0);
-    ctx.lineTo(sustainPct * waveCanvas.width, h);
-    ctx.stroke();
+    for (const marker of markerDefs) {
+      const x = marker.pct * waveCanvas.width;
+      ctx.strokeStyle = marker.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
   }
 
   async function analyzeImportedSample(sample) {
@@ -369,15 +392,20 @@
     const suggestedName = sampleSuggestedProgramName(sample) || "Sampler Program";
     const rawName = String(programNameEl?.value || suggestedName).trim();
 
+    const positions = getMarkerPositions();
     return {
       id: sourceProgramId || undefined,
       name: rawName || suggestedName,
       sample: sample || null,
       rootMidi: Number.isFinite(analysisState?.rootMidi) ? analysisState.rootMidi : (Number.isFinite(rootMidiFromUI) ? rootMidiFromUI : null),
       rootHz: Number.isFinite(analysisState?.freq) ? analysisState.freq : (Number.isFinite(rootHzFromUI) ? rootHzFromUI : null),
-      loopStartPct: Number(loopStartEl?.value || 15),
-      loopEndPct: Number(loopEndEl?.value || 90),
-      sustainPct: Number(sustainEl?.value || 72),
+      posAction: positions.pos_action,
+      posLoopStart: positions.pos_loop_start,
+      posLoopEnd: positions.pos_loop_end,
+      posRelease: positions.pos_release,
+      loopStartPct: Math.round(positions.pos_loop_start * 100),
+      loopEndPct: Math.round(positions.pos_loop_end * 100),
+      sustainPct: Math.round(positions.pos_loop_end * 100),
     };
   }
 
@@ -486,7 +514,7 @@
     directory.importSample(sample);
   });
 
-  [loopStartEl, loopEndEl, sustainEl].forEach((control) => {
+  [posActionEl, loopStartEl, loopEndEl, releasePointEl].forEach((control) => {
     control?.addEventListener("input", () => {
       updateLoopStatus();
       drawWaveform(analysisState?.buffer || null);
@@ -525,9 +553,14 @@
     }
 
     if (program.sample) directory.importSample(program.sample);
-    if (loopStartEl) loopStartEl.value = String(program.loopStartPct ?? 15);
-    if (loopEndEl) loopEndEl.value = String(program.loopEndPct ?? 90);
-    if (sustainEl) sustainEl.value = String(program.sustainPct ?? 72);
+    const posAction = Number.isFinite(+program.posAction) ? +program.posAction : 0;
+    const posLoopStart = Number.isFinite(+program.posLoopStart) ? +program.posLoopStart : ((Number(program.loopStartPct) || 15) / 100);
+    const posLoopEnd = Number.isFinite(+program.posLoopEnd) ? +program.posLoopEnd : ((Number(program.loopEndPct) || 90) / 100);
+    const posRelease = Number.isFinite(+program.posRelease) ? +program.posRelease : 1;
+    if (posActionEl) posActionEl.value = String(Math.round(100 * clamp01(posAction)));
+    if (loopStartEl) loopStartEl.value = String(Math.round(100 * clamp01(posLoopStart)));
+    if (loopEndEl) loopEndEl.value = String(Math.round(100 * clamp01(posLoopEnd)));
+    if (releasePointEl) releasePointEl.value = String(Math.round(100 * clamp01(posRelease)));
     if (programNameEl) programNameEl.value = program.name || "";
     directory.setActiveProgram(program.id);
     updateLoopStatus();
