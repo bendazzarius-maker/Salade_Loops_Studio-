@@ -270,6 +270,11 @@
   .samplerPianoMap th,.samplerPianoMap td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left}
   .samplerPianoMap tr:last-child td{border-bottom:none}
   .samplerPianoMap .inRange{color:var(--accent)}
+  .samplerTree{border:1px solid rgba(255,255,255,.1);border-radius:10px;max-height:180px;overflow:auto;padding:6px;background:rgba(255,255,255,.03)}
+  .samplerTreeNode{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:1px solid transparent;background:transparent;color:var(--text);padding:5px 8px;border-radius:8px;cursor:pointer;text-align:left}
+  .samplerTreeNode:hover{background:rgba(255,255,255,.08)}
+  .samplerTreeNode.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
+  .samplerTreeNode .small{opacity:.85}
 
 
 </style>
@@ -518,6 +523,7 @@
               <button class="btn2" id="samplerModeLoopEnd">Loop End</button>
               <button class="btn2" id="samplerModeRelease">Release</button>
               <button class="btn2" id="samplerWizardLoop">🪄 Wizard Loop</button>
+              <button class="btn2" id="samplerPreviewPlay">▶ Preview Play</button>
             </div>
             <div class="small" id="samplerLoopStatus">Loop sustain editor prêt.</div>
             <div class="small">Extrapolation des notes: mapping automatique du sample root vers toutes les notes du piano roll.</div>
@@ -525,6 +531,10 @@
           </div>
           <div class="samplerBlock">
             <div class="title">💾 Programmes Sampler Touski</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn2" id="samplerProgramsRootBtn">📁 Dossier maître programmes</button>
+              <div class="small" id="samplerProgramsRootLabel" style="flex:1;min-width:240px">Chemin non défini</div>
+            </div>
             <div class="samplerGrid2">
               <label class="small">Nom du programme
                 <input id="samplerProgramName" type="text" placeholder="Kick Punchy, Bass Warm..." style="width:100%;margin-top:6px">
@@ -539,6 +549,8 @@
                 <button class="btn2" id="samplerProgramCreateCategory">+ Créer</button>
               </div>
             </label>
+            <div class="small">Arborescence des programmes (Parent/Enfant)</div>
+            <div id="samplerProgramTree" class="samplerTree"></div>
             <label class="small" style="display:block;margin-top:8px">Programmes enregistrés
               <select id="samplerProgramSelect" style="width:100%;margin-top:6px"></select>
             </label>

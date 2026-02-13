@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("samplerFS", {
   pickDirectories: () => ipcRenderer.invoke("sampler:pickDirectories"),
   scanDirectories: (directories) => ipcRenderer.invoke("sampler:scanDirectories", { directories }),
   listPrograms: () => ipcRenderer.invoke("sampler:listPrograms"),
+  getProgramsRoot: () => ipcRenderer.invoke("sampler:getProgramsRoot"),
+  setProgramsRoot: (rootPath) => ipcRenderer.invoke("sampler:setProgramsRoot", { rootPath }),
   createCategory: (relativeDir) => ipcRenderer.invoke("sampler:createCategory", { relativeDir }),
   saveProgram: (payload) => ipcRenderer.invoke("sampler:saveProgram", payload),
 });
