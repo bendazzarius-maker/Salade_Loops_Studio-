@@ -159,6 +159,14 @@
       sample: programData.sample || null,
       rootMidi: Number.isFinite(+programData.rootMidi) ? +programData.rootMidi : null,
       rootHz: Number.isFinite(+programData.rootHz) ? +programData.rootHz : null,
+      posAction: Number.isFinite(+programData.posAction) ? Math.max(0, Math.min(1, +programData.posAction)) : 0,
+      posLoopStart: Number.isFinite(+programData.posLoopStart)
+        ? Math.max(0, Math.min(1, +programData.posLoopStart))
+        : (Number.isFinite(+programData.loopStartPct) ? Math.max(0, Math.min(1, (+programData.loopStartPct / 100))) : 0.15),
+      posLoopEnd: Number.isFinite(+programData.posLoopEnd)
+        ? Math.max(0, Math.min(1, +programData.posLoopEnd))
+        : (Number.isFinite(+programData.loopEndPct) ? Math.max(0, Math.min(1, (+programData.loopEndPct / 100))) : 0.9),
+      posRelease: Number.isFinite(+programData.posRelease) ? Math.max(0, Math.min(1, +programData.posRelease)) : 1,
       loopStartPct: Number.isFinite(+programData.loopStartPct) ? +programData.loopStartPct : 15,
       loopEndPct: Number.isFinite(+programData.loopEndPct) ? +programData.loopEndPct : 90,
       sustainPct: Number.isFinite(+programData.sustainPct) ? +programData.sustainPct : 72,

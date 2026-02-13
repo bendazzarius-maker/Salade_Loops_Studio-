@@ -68,6 +68,32 @@
     return buffer;
   }
 
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function resolveNormalizedPositions(program) {
+    const pos_action = Number.isFinite(+program?.posAction) ? clamp01(+program.posAction) : 0;
+    const pos_loop_start = Number.isFinite(+program?.posLoopStart)
+      ? clamp01(+program.posLoopStart)
+      : clamp01((Number(program?.loopStartPct) || 15) / 100);
+    const pos_loop_end = Number.isFinite(+program?.posLoopEnd)
+      ? clamp01(+program.posLoopEnd)
+      : clamp01((Number(program?.loopEndPct) || 90) / 100);
+    const pos_release = Number.isFinite(+program?.posRelease) ? clamp01(+program.posRelease) : 1;
+
+    const orderedLoopStart = Math.max(pos_action + 0.001, pos_loop_start);
+    const orderedLoopEnd = Math.max(orderedLoopStart + 0.001, pos_loop_end);
+    const orderedRelease = Math.max(orderedLoopEnd, pos_release);
+
+    return {
+      pos_action,
+      pos_loop_start: Math.min(0.999, orderedLoopStart),
+      pos_loop_end: Math.min(1, orderedLoopEnd),
+      pos_release: Math.min(1, orderedRelease),
+    };
+  }
+
   function makeSchema(paramsRef) {
     const selected = String(paramsRef?.programId || defaultProgramId());
     return {
@@ -123,35 +149,69 @@
           .then((buffer) => {
             if (!buffer || !ctx) return;
             const rootMidi = Number.isFinite(+program.rootMidi) ? +program.rootMidi : 60;
-
-            const src = ctx.createBufferSource();
-            src.buffer = buffer;
-            src.playbackRate.setValueAtTime(Math.pow(2, (midi - rootMidi) / 12), t);
-
-            const g = ctx.createGain();
+            const playbackRate = Math.pow(2, (midi - rootMidi) / 12);
             const gain = Math.max(0.0001, (+p.gain || 1) * Math.max(0, Math.min(1, vel)));
             const atk = Math.max(0.001, +p.attack || 0.002);
             const rel = Math.max(0.01, +p.release || 0.18);
             const hold = Math.max(atk + 0.01, dur);
+            const keyUpTime = t + hold;
+            const fadeMs = 0.005;
 
-            g.gain.setValueAtTime(0.0001, t);
-            g.gain.linearRampToValueAtTime(gain, t + atk);
-            g.gain.setValueAtTime(gain, t + hold);
-            g.gain.linearRampToValueAtTime(0.0001, t + hold + rel);
+            const positions = resolveNormalizedPositions(program);
+            const actionSec = positions.pos_action * buffer.duration;
+            const loopStartSec = positions.pos_loop_start * buffer.duration;
+            const loopEndSec = positions.pos_loop_end * buffer.duration;
+            const releaseSec = positions.pos_release * buffer.duration;
+            const loopLenSec = Math.max(0.001, loopEndSec - loopStartSec);
 
-            src.connect(g);
-            g.connect(out);
+            const amp = ctx.createGain();
+            const sustainBus = ctx.createGain();
+            const releaseBus = ctx.createGain();
 
-            const startNorm = Math.max(0, Math.min(100, +program.loopStartPct || 0)) / 100;
-            const endNorm = Math.max(startNorm + 0.01, Math.min(100, +program.loopEndPct || 100)) / 100;
-            const startSec = buffer.duration * startNorm;
-            const endSec = buffer.duration * endNorm;
+            amp.gain.setValueAtTime(0.0001, t);
+            amp.gain.linearRampToValueAtTime(gain, t + atk);
+            amp.gain.setValueAtTime(gain, keyUpTime);
+            amp.gain.linearRampToValueAtTime(0.0001, keyUpTime + rel);
 
-            src.loop = true;
-            src.loopStart = startSec;
-            src.loopEnd = endSec;
-            src.start(t, startSec);
-            src.stop(t + hold + rel + 0.05);
+            sustainBus.gain.setValueAtTime(1, t);
+            sustainBus.gain.setValueAtTime(1, keyUpTime);
+            sustainBus.gain.linearRampToValueAtTime(0.0001, keyUpTime + fadeMs);
+
+            releaseBus.gain.setValueAtTime(0.0001, t);
+            releaseBus.gain.setValueAtTime(0.0001, keyUpTime - fadeMs);
+            releaseBus.gain.linearRampToValueAtTime(1, keyUpTime + fadeMs);
+
+            amp.connect(out);
+            sustainBus.connect(amp);
+            releaseBus.connect(amp);
+
+            const sustainSrc = ctx.createBufferSource();
+            sustainSrc.buffer = buffer;
+            sustainSrc.playbackRate.setValueAtTime(playbackRate, t);
+            sustainSrc.loop = true;
+            sustainSrc.loopStart = loopStartSec;
+            sustainSrc.loopEnd = loopEndSec;
+            sustainSrc.connect(sustainBus);
+            sustainSrc.start(t, actionSec);
+            sustainSrc.stop(keyUpTime + fadeMs + 0.02);
+
+            const elapsedSampleSec = Math.max(0, (keyUpTime - t) * playbackRate);
+            let releaseStartSec = actionSec + elapsedSampleSec;
+            if (releaseStartSec >= loopStartSec) {
+              const loopElapsed = (releaseStartSec - loopStartSec) % loopLenSec;
+              releaseStartSec = loopStartSec + loopElapsed;
+            }
+
+            const clippedReleaseStart = Math.min(Math.max(actionSec, releaseStartSec), releaseSec);
+            const releaseDurationSec = (releaseSec - clippedReleaseStart) / playbackRate;
+            if (releaseDurationSec > 0.001) {
+              const releaseSrc = ctx.createBufferSource();
+              releaseSrc.buffer = buffer;
+              releaseSrc.playbackRate.setValueAtTime(playbackRate, keyUpTime);
+              releaseSrc.connect(releaseBus);
+              releaseSrc.start(keyUpTime, clippedReleaseStart);
+              releaseSrc.stop(keyUpTime + releaseDurationSec + rel + 0.02);
+            }
           })
           .catch((error) => {
             console.warn("[Sampler Touski] playback decode error", error);
