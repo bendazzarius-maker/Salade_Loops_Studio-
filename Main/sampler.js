@@ -40,7 +40,6 @@
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   let audioCtx = null;
   let previewSession = null;
-  let lastImportedPath = "";
   let analysisToken = 0;
   let analysisState = null;
   const markerState = {
@@ -910,7 +909,6 @@
     renderCategories(snapshot);
     renderPrograms(snapshot);
     renderProgramTree(snapshot);
-    renderProgramsRoot(snapshot);
   }
 
   async function withBusyButton(button, job) {
