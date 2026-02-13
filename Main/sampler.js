@@ -24,8 +24,12 @@
   const modeReleaseBtn = document.getElementById("samplerModeRelease");
   const wizardLoopBtn = document.getElementById("samplerWizardLoop");
   const programNameEl = document.getElementById("samplerProgramName");
+  const programCategoryEl = document.getElementById("samplerProgramCategory");
+  const programNewCategoryEl = document.getElementById("samplerProgramNewCategory");
+  const programCreateCategoryBtn = document.getElementById("samplerProgramCreateCategory");
   const programSelectEl = document.getElementById("samplerProgramSelect");
-  const programSaveBtn = document.getElementById("samplerProgramSave");
+  const programUpdateBtn = document.getElementById("samplerProgramUpdate");
+  const programSaveAsBtn = document.getElementById("samplerProgramSaveAs");
   const programLoadBtn = document.getElementById("samplerProgramLoad");
   const programStatusEl = document.getElementById("samplerProgramStatus");
 
@@ -328,6 +332,15 @@
     drawWaveform(analysisState.buffer);
   }
 
+
+  function eventToCanvasX(event) {
+    if (!waveCanvas) return 0;
+    const rect = waveCanvas.getBoundingClientRect();
+    if (!rect.width) return 0;
+    const ratio = (event.clientX - rect.left) / rect.width;
+    return clamp01(ratio) * waveCanvas.width;
+  }
+
   function markerFromCanvasX(x, thresholdPx = 9) {
     const candidates = ["pos_action", "pos_loop_start", "pos_loop_end", "pos_release"];
     for (const key of candidates) {
@@ -349,7 +362,7 @@
         const nextAmp = viewState.ampZoom * (direction > 0 ? 0.9 : 1.1);
         viewState.ampZoom = Math.max(0.35, Math.min(8, nextAmp));
       } else {
-        const pivot = canvasXToNorm(event.offsetX);
+        const pivot = canvasXToNorm(eventToCanvasX(event));
         const currentRange = viewState.end - viewState.start;
         const nextRange = Math.max(0.01, Math.min(1, currentRange * (direction > 0 ? 1.08 : 0.92)));
         const anchor = clamp01((pivot - viewState.start) / currentRange);
@@ -372,13 +385,14 @@
       }
       if (event.button !== 0) return;
 
-      const marker = markerFromCanvasX(event.offsetX);
+      const clickX = eventToCanvasX(event);
+      const marker = markerFromCanvasX(clickX);
       if (marker) {
         viewState.draggingMarker = marker;
         drawWaveform(analysisState.buffer);
         return;
       }
-      placeMarkerFromCanvasX(event.offsetX);
+      placeMarkerFromCanvasX(clickX);
     });
 
     waveCanvas.addEventListener("mousemove", (event) => {
@@ -386,7 +400,8 @@
       if (viewState.isPanning) {
         const range = viewState.end - viewState.start;
         if (range >= 0.999) return;
-        const deltaNorm = (event.clientX - viewState.panAnchorX) / waveCanvas.width;
+        const rect = waveCanvas.getBoundingClientRect();
+        const deltaNorm = (event.clientX - viewState.panAnchorX) / Math.max(1, rect.width);
         let nextStart = viewState.panStartView - deltaNorm * range;
         nextStart = Math.max(0, Math.min(1 - range, nextStart));
         viewState.start = nextStart;
@@ -396,7 +411,7 @@
       }
       if (!viewState.draggingMarker) return;
       const data = analysisState.buffer.getChannelData(0);
-      const raw = canvasXToNorm(event.offsetX);
+      const raw = canvasXToNorm(eventToCanvasX(event));
       const idx = Math.floor(clamp01(raw) * (data.length - 1));
       const snapped = nearestZeroCrossing(data, idx);
       setMarkerPositions({ [viewState.draggingMarker]: snapped / Math.max(1, data.length - 1) });
@@ -638,7 +653,7 @@
     analyzeImportedSample(imported);
   }
 
-  function toProgramPayload(sample, sourceProgramId = null) {
+  function toProgramPayload(sample, sourceProgram = null, mode = "update") {
     const rootMidiFromUI = Number.parseInt(String(rootNoteEl?.textContent || "").match(/MIDI\s*(-?\d+)/)?.[1] || "", 10);
     const rootHzFromUI = Number.parseFloat(String(rootHzEl?.textContent || "").match(/([\d.]+)\s*Hz/)?.[1] || "");
     const suggestedName = sampleSuggestedProgramName(sample) || "Sampler Program";
@@ -646,7 +661,10 @@
     const positions = getMarkerPositions();
 
     return {
-      id: sourceProgramId || undefined,
+      id: mode === "update" ? (sourceProgram?.id || undefined) : undefined,
+      filePath: mode === "update" ? (sourceProgram?.filePath || null) : null,
+      relativeFilePath: mode === "update" ? (sourceProgram?.relativeFilePath || null) : null,
+      category: programCategoryEl?.value || sourceProgram?.category || "",
       name: rawName || suggestedName,
       sample: sample || null,
       rootMidi: Number.isFinite(analysisState?.rootMidi) ? analysisState.rootMidi : (Number.isFinite(rootMidiFromUI) ? rootMidiFromUI : null),
@@ -659,6 +677,27 @@
       loopEndPct: Math.round(positions.pos_loop_end * 100),
       sustainPct: Math.round(positions.pos_loop_end * 100),
     };
+  }
+
+
+  function renderCategories(snapshot) {
+    if (!programCategoryEl) return;
+    const categories = Array.isArray(snapshot.categories) ? snapshot.categories : [""];
+    const selected = snapshot.activeCategory || "";
+    programCategoryEl.innerHTML = "";
+    for (const cat of categories) {
+      const opt = document.createElement("option");
+      opt.value = cat;
+      opt.textContent = cat || "(racine)";
+      programCategoryEl.appendChild(opt);
+    }
+    if (!categories.includes(selected)) {
+      const extra = document.createElement("option");
+      extra.value = selected;
+      extra.textContent = selected || "(racine)";
+      programCategoryEl.appendChild(extra);
+    }
+    programCategoryEl.value = selected;
   }
 
   function renderPrograms(snapshot) {
@@ -694,7 +733,9 @@
     }
     if (activeProgram) {
       const sampleName = activeProgram.sample?.relativePath || activeProgram.sample?.name || "sample non défini";
-      setProgramStatus(`Programme actif: ${activeProgram.name || "Sampler Program"} • ${sampleName}`);
+      const where = activeProgram.relativeFilePath || activeProgram.category || "(racine)";
+      if (programCategoryEl && activeProgram.category != null) programCategoryEl.value = activeProgram.category || "";
+      setProgramStatus(`Programme actif: ${activeProgram.name || "Sampler Program"} • ${sampleName} • ${where}`);
     }
   }
 
@@ -703,6 +744,7 @@
     renderBrowser(snapshot);
     renderPreview(snapshot);
     renderImported(snapshot);
+    renderCategories(snapshot);
     renderPrograms(snapshot);
   }
 
@@ -791,21 +833,50 @@
     directory.setActiveProgram(id || null);
   });
 
-  programSaveBtn?.addEventListener("click", () => {
+  async function saveProgramWithMode(mode) {
     const imported = directory.state.importedSample;
     if (!imported) {
       setProgramStatus("Importez d'abord un sample avant d'enregistrer un programme.");
       return;
     }
 
-    const payload = toProgramPayload(imported, programSelectEl?.value || null);
-    const result = directory.saveProgram(payload);
+    const current = directory.getProgram(programSelectEl?.value || null);
+    const payload = toProgramPayload(imported, current, mode);
+    const opts = {
+      mode,
+      relativeDir: programCategoryEl?.value || "",
+      targetFilePath: mode === "update" ? current?.filePath : null,
+    };
+    const result = await directory.saveProgram(payload, opts);
     if (!result?.ok) {
       setProgramStatus(`Erreur sauvegarde programme: ${result?.error || "inconnue"}`);
       return;
     }
-    setProgramStatus(`Programme sauvegardé: ${result.program.name}`);
-    global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: result.program }));
+    setProgramStatus(`Programme sauvegardé: ${result.program?.name || payload.name}`);
+    global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: result.program || payload }));
+  }
+
+  programUpdateBtn?.addEventListener("click", () => saveProgramWithMode("update"));
+  programSaveAsBtn?.addEventListener("click", () => saveProgramWithMode("saveAs"));
+
+
+  programCategoryEl?.addEventListener("change", () => {
+    directory.setActiveCategory(programCategoryEl.value || "");
+  });
+
+  programCreateCategoryBtn?.addEventListener("click", async () => {
+    const value = String(programNewCategoryEl?.value || "").trim();
+    if (!value) {
+      setProgramStatus("Entrez un nom de sous-dossier.");
+      return;
+    }
+    const result = await directory.createCategory(value);
+    if (!result?.ok) {
+      setProgramStatus(`Erreur création dossier: ${result?.error || "inconnue"}`);
+      return;
+    }
+    if (programNewCategoryEl) programNewCategoryEl.value = "";
+    setProgramStatus(`Catégorie prête: ${result.relativeDir || "(racine)"}`);
   });
 
   programLoadBtn?.addEventListener("click", () => {
