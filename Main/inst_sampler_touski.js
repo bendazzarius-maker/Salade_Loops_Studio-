@@ -25,7 +25,8 @@
     }
     return programs.map((p) => {
       const note = Number.isFinite(+p.rootMidi) ? midiToName(+p.rootMidi) : "—";
-      return { value: String(p.id), label: `${p.name} • ${note}` };
+      const cat = p.category ? `[${p.category}] ` : "";
+      return { value: String(p.id), label: `${cat}${p.name} • ${note}` };
     });
   }
 

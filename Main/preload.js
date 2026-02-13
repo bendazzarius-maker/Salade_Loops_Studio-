@@ -12,4 +12,7 @@ contextBridge.exposeInMainWorld("audioNative", {
 contextBridge.exposeInMainWorld("samplerFS", {
   pickDirectories: () => ipcRenderer.invoke("sampler:pickDirectories"),
   scanDirectories: (directories) => ipcRenderer.invoke("sampler:scanDirectories", { directories }),
+  listPrograms: () => ipcRenderer.invoke("sampler:listPrograms"),
+  createCategory: (relativeDir) => ipcRenderer.invoke("sampler:createCategory", { relativeDir }),
+  saveProgram: (payload) => ipcRenderer.invoke("sampler:saveProgram", payload),
 });
