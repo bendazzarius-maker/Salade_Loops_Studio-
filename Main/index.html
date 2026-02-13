@@ -529,12 +529,22 @@
               <label class="small">Nom du programme
                 <input id="samplerProgramName" type="text" placeholder="Kick Punchy, Bass Warm..." style="width:100%;margin-top:6px">
               </label>
-              <label class="small">Programmes enregistrés
-                <select id="samplerProgramSelect" style="width:100%;margin-top:6px"></select>
+              <label class="small">Catégorie (sous-dossier)
+                <select id="samplerProgramCategory" style="width:100%;margin-top:6px"></select>
               </label>
             </div>
+            <label class="small" style="display:block;margin-top:8px">Nouveau sous-dossier
+              <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+                <input id="samplerProgramNewCategory" type="text" placeholder="ex: Keys/Bright" style="flex:1;min-width:180px">
+                <button class="btn2" id="samplerProgramCreateCategory">+ Créer</button>
+              </div>
+            </label>
+            <label class="small" style="display:block;margin-top:8px">Programmes enregistrés
+              <select id="samplerProgramSelect" style="width:100%;margin-top:6px"></select>
+            </label>
             <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-              <button class="btn2" id="samplerProgramSave">💾 Enregistrer le paramétrage</button>
+              <button class="btn2" id="samplerProgramUpdate">📝 Mettre à jour</button>
+              <button class="btn2" id="samplerProgramSaveAs">💾 Enregistrer sous</button>
               <button class="btn2" id="samplerProgramLoad">↩ Charger le programme</button>
             </div>
             <div class="small" id="samplerProgramStatus" style="margin-top:8px">Aucun programme enregistré.</div>
