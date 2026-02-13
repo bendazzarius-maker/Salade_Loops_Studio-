@@ -205,6 +205,11 @@ ipcMain.handle("project:load", async () => {
 // SAMPLER LIBRARY
 // -----------------------------------------------------------------------------
 const SUPPORTED_SAMPLE_EXTENSIONS = new Set([".wav", ".mp3", ".ogg"]);
+const PROGRAM_FILE_EXT = ".slsprog.json";
+
+function samplerProgramsRoot() {
+  return path.join(app.getPath("documents"), "Sl studio", "sampleTouski");
+}
 
 async function scanSamplerDirectory(rootDir) {
   const files = [];
@@ -275,4 +280,103 @@ ipcMain.handle("sampler:scanDirectories", async (_evt, payload = {}) => {
   }
 
   return { ok: true, roots: indexed };
+});
+
+async function ensureSamplerProgramsRoot() {
+  const root = samplerProgramsRoot();
+  await fs.mkdir(root, { recursive: true });
+  return root;
+}
+
+async function scanProgramsTree(rootDir) {
+  const programs = [];
+
+  async function walk(currentDir) {
+    let entries = [];
+    try {
+      entries = await fs.readdir(currentDir, { withFileTypes: true });
+    } catch (_error) {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(PROGRAM_FILE_EXT)) continue;
+      try {
+        const raw = await fs.readFile(fullPath, "utf-8");
+        const parsed = JSON.parse(raw);
+        const relativeFilePath = path.relative(rootDir, fullPath).replace(/\\/g, "/");
+        programs.push({
+          ...parsed,
+          id: relativeFilePath,
+          filePath: fullPath,
+          relativeFilePath,
+          category: path.dirname(relativeFilePath).replace(/\\/g, "/") || "",
+        });
+      } catch (error) {
+        console.warn("[Sampler] invalid program file", fullPath, error?.message || error);
+      }
+    }
+  }
+
+  await walk(rootDir);
+  programs.sort((a, b) => String(a.relativeFilePath).localeCompare(String(b.relativeFilePath)));
+  return programs;
+}
+
+ipcMain.handle("sampler:listPrograms", async () => {
+  const root = await ensureSamplerProgramsRoot();
+  const programs = await scanProgramsTree(root);
+  return { ok: true, rootPath: root, programs };
+});
+
+ipcMain.handle("sampler:createCategory", async (_evt, payload = {}) => {
+  const root = await ensureSamplerProgramsRoot();
+  const rel = String(payload.relativeDir || "").trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const target = path.resolve(root, rel || ".");
+  if (!target.startsWith(path.resolve(root))) return { ok: false, error: "Chemin invalide" };
+  await fs.mkdir(target, { recursive: true });
+  return { ok: true, relativeDir: rel };
+});
+
+ipcMain.handle("sampler:saveProgram", async (_evt, payload = {}) => {
+  const root = await ensureSamplerProgramsRoot();
+  const program = payload.program && typeof payload.program === "object" ? payload.program : null;
+  if (!program) return { ok: false, error: "Programme invalide" };
+
+  const mode = payload.mode === "update" ? "update" : "saveAs";
+  const relativeDir = String(payload.relativeDir || "").trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const cleanName = String(program.name || "Sampler Program").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
+  const fileName = `${cleanName || "Sampler Program"}${PROGRAM_FILE_EXT}`;
+
+  let outFile = "";
+  if (mode === "update" && payload.targetFilePath) {
+    const requested = path.resolve(String(payload.targetFilePath));
+    if (requested.startsWith(path.resolve(root))) outFile = requested;
+  }
+  if (!outFile) {
+    const dir = path.resolve(root, relativeDir || ".");
+    if (!dir.startsWith(path.resolve(root))) return { ok: false, error: "Dossier invalide" };
+    await fs.mkdir(dir, { recursive: true });
+    outFile = path.join(dir, fileName);
+  }
+
+  const relativeFilePath = path.relative(root, outFile).replace(/\\/g, "/");
+  const toWrite = {
+    ...program,
+    id: relativeFilePath,
+    updatedAt: new Date().toISOString(),
+    category: path.dirname(relativeFilePath).replace(/\\/g, "/") || "",
+  };
+  await fs.writeFile(outFile, JSON.stringify(toWrite, null, 2), "utf-8");
+  return {
+    ok: true,
+    rootPath: root,
+    filePath: outFile,
+    relativeFilePath,
+    program: toWrite,
+  };
 });

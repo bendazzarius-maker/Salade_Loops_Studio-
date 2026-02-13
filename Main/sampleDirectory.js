@@ -2,7 +2,7 @@
 /* ---------------- sample bank Manager includ---------------- */
 (function initSampleDirectory(global) {
   const STORAGE_KEY = "sls.sampler.roots.v1";
-  const PROGRAMS_KEY = "sls.sampler.programs.v1";
+  const LAST_CATEGORY_KEY = "sls.sampler.category.v1";
 
   const directoryState = {
     roots: [],
@@ -12,11 +12,11 @@
     dragSample: null,
     programs: [],
     activeProgramId: null,
+    programsRootPath: null,
+    categories: [""],
+    activeCategory: "",
+    autoRefreshTimer: null,
   };
-
-  function uid(prefix = "sp") {
-    return `${prefix}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
-  }
 
   function saveRootsToStorage() {
     try {
@@ -38,30 +38,18 @@
     }
   }
 
-  function saveProgramsToStorage() {
+  function loadLastCategory() {
     try {
-      const payload = {
-        activeProgramId: directoryState.activeProgramId,
-        programs: directoryState.programs,
-      };
-      localStorage.setItem(PROGRAMS_KEY, JSON.stringify(payload));
-    } catch (error) {
-      console.warn("[SamplerDirectory] program storage write failed:", error);
+      return String(localStorage.getItem(LAST_CATEGORY_KEY) || "");
+    } catch (_error) {
+      return "";
     }
   }
 
-  function loadProgramsFromStorage() {
+  function saveLastCategory(value) {
     try {
-      const raw = localStorage.getItem(PROGRAMS_KEY);
-      if (!raw) return { programs: [], activeProgramId: null };
-      const parsed = JSON.parse(raw);
-      const programs = Array.isArray(parsed?.programs) ? parsed.programs.filter((x) => x && typeof x === "object") : [];
-      const activeProgramId = typeof parsed?.activeProgramId === "string" ? parsed.activeProgramId : null;
-      return { programs, activeProgramId };
-    } catch (error) {
-      console.warn("[SamplerDirectory] program storage parse failed:", error);
-      return { programs: [], activeProgramId: null };
-    }
+      localStorage.setItem(LAST_CATEGORY_KEY, String(value || ""));
+    } catch (_error) {}
   }
 
   async function pickRootDirectories() {
@@ -78,10 +66,41 @@
     return global.samplerFS.scanDirectories(rootPaths);
   }
 
+  async function refreshProgramsFromDisk() {
+    if (!global.samplerFS?.listPrograms) return { ok: false, error: "listPrograms indisponible" };
+    const result = await global.samplerFS.listPrograms();
+    if (!result?.ok) return result || { ok: false, error: "Erreur de scan programmes" };
+
+    const programs = Array.isArray(result.programs) ? result.programs.filter((x) => x && typeof x === "object") : [];
+    const categories = new Set([""]);
+    for (const p of programs) categories.add(String(p.category || ""));
+
+    directoryState.programsRootPath = result.rootPath || null;
+    directoryState.programs = programs;
+    directoryState.categories = Array.from(categories).sort((a, b) => a.localeCompare(b));
+
+    if (!directoryState.programs.find((p) => p.id === directoryState.activeProgramId)) {
+      directoryState.activeProgramId = directoryState.programs[0]?.id || null;
+    }
+    if (!directoryState.categories.includes(directoryState.activeCategory)) {
+      directoryState.activeCategory = "";
+      saveLastCategory("");
+    }
+    emitChange();
+    return { ok: true, programs: directoryState.programs, rootPath: directoryState.programsRootPath };
+  }
+
+  function ensureAutoRefresh() {
+    if (directoryState.autoRefreshTimer) return;
+    directoryState.autoRefreshTimer = setInterval(() => {
+      refreshProgramsFromDisk().catch(() => {});
+    }, 3500);
+  }
+
   async function restorePersistedRoots() {
-    const storedPrograms = loadProgramsFromStorage();
-    directoryState.programs = storedPrograms.programs;
-    directoryState.activeProgramId = storedPrograms.activeProgramId;
+    directoryState.activeCategory = loadLastCategory();
+    await refreshProgramsFromDisk();
+    ensureAutoRefresh();
 
     const savedPaths = loadRootPathsFromStorage();
     if (!savedPaths.length) {
@@ -147,60 +166,59 @@
     return directoryState.programs.find((x) => x.id === programId) || null;
   }
 
-  function saveProgram(programData) {
+  async function createCategory(relativeDir) {
+    if (!global.samplerFS?.createCategory) return { ok: false, error: "createCategory indisponible" };
+    const result = await global.samplerFS.createCategory(relativeDir);
+    if (result?.ok) {
+      directoryState.activeCategory = String(result.relativeDir || "");
+      saveLastCategory(directoryState.activeCategory);
+      await refreshProgramsFromDisk();
+    }
+    return result;
+  }
+
+  async function saveProgram(programData, options = {}) {
     if (!programData || typeof programData !== "object") {
       return { ok: false, error: "programData invalide" };
     }
-    const id = typeof programData.id === "string" && programData.id ? programData.id : uid("sampler");
-    const name = String(programData.name || "Sampler Program").trim();
-    const next = {
-      id,
-      name: name || "Sampler Program",
-      sample: programData.sample || null,
-      rootMidi: Number.isFinite(+programData.rootMidi) ? +programData.rootMidi : null,
-      rootHz: Number.isFinite(+programData.rootHz) ? +programData.rootHz : null,
-      posAction: Number.isFinite(+programData.posAction) ? Math.max(0, Math.min(1, +programData.posAction)) : 0,
-      posLoopStart: Number.isFinite(+programData.posLoopStart)
-        ? Math.max(0, Math.min(1, +programData.posLoopStart))
-        : (Number.isFinite(+programData.loopStartPct) ? Math.max(0, Math.min(1, (+programData.loopStartPct / 100))) : 0.15),
-      posLoopEnd: Number.isFinite(+programData.posLoopEnd)
-        ? Math.max(0, Math.min(1, +programData.posLoopEnd))
-        : (Number.isFinite(+programData.loopEndPct) ? Math.max(0, Math.min(1, (+programData.loopEndPct / 100))) : 0.9),
-      posRelease: Number.isFinite(+programData.posRelease) ? Math.max(0, Math.min(1, +programData.posRelease)) : 1,
-      loopStartPct: Number.isFinite(+programData.loopStartPct) ? +programData.loopStartPct : 15,
-      loopEndPct: Number.isFinite(+programData.loopEndPct) ? +programData.loopEndPct : 90,
-      sustainPct: Number.isFinite(+programData.sustainPct) ? +programData.sustainPct : 72,
-      updatedAt: new Date().toISOString(),
+    if (!global.samplerFS?.saveProgram) {
+      return { ok: false, error: "saveProgram indisponible" };
+    }
+
+    const payload = {
+      program: { ...programData },
+      mode: options.mode === "update" ? "update" : "saveAs",
+      relativeDir: String(options.relativeDir || directoryState.activeCategory || ""),
+      targetFilePath: options.targetFilePath || null,
     };
+    const result = await global.samplerFS.saveProgram(payload);
+    if (!result?.ok) return result || { ok: false, error: "saveProgram échec" };
 
-    const index = directoryState.programs.findIndex((x) => x.id === id || x.name === next.name);
-    if (index >= 0) directoryState.programs[index] = next;
-    else directoryState.programs.push(next);
-
-    directoryState.activeProgramId = next.id;
-    saveProgramsToStorage();
-    emitChange();
-    return { ok: true, program: next };
+    directoryState.activeProgramId = result.program?.id || result.relativeFilePath || null;
+    if (payload.relativeDir != null) {
+      directoryState.activeCategory = String(payload.relativeDir || "");
+      saveLastCategory(directoryState.activeCategory);
+    }
+    await refreshProgramsFromDisk();
+    return { ok: true, program: getProgram(directoryState.activeProgramId) || result.program, filePath: result.filePath, relativeFilePath: result.relativeFilePath };
   }
 
   function setActiveProgram(programId) {
     directoryState.activeProgramId = programId || null;
-    saveProgramsToStorage();
+    emitChange();
+  }
+
+  function setActiveCategory(relativeDir) {
+    directoryState.activeCategory = String(relativeDir || "");
+    saveLastCategory(directoryState.activeCategory);
     emitChange();
   }
 
   function importPrograms(payload, merge = true) {
-    if (!payload) return { ok: false, error: "payload absent" };
-    const incoming = Array.isArray(payload.programs) ? payload.programs : [];
-    directoryState.programs = merge ? [...directoryState.programs] : [];
-    for (const entry of incoming) {
-      saveProgram({ ...entry, id: entry.id || uid("sampler") });
-    }
-    if (!merge) {
-      directoryState.activeProgramId = payload.activeProgramId || directoryState.programs[0]?.id || null;
-      saveProgramsToStorage();
-      emitChange();
-    }
+    if (!payload || !Array.isArray(payload.programs)) return { ok: false, error: "payload absent" };
+    directoryState.programs = merge ? [...directoryState.programs, ...payload.programs] : payload.programs.slice();
+    if (!directoryState.activeProgramId) directoryState.activeProgramId = payload.activeProgramId || directoryState.programs[0]?.id || null;
+    emitChange();
     return { ok: true };
   }
 
@@ -208,6 +226,9 @@
     return {
       activeProgramId: directoryState.activeProgramId,
       programs: directoryState.programs.slice(),
+      programsRootPath: directoryState.programsRootPath,
+      categories: directoryState.categories.slice(),
+      activeCategory: directoryState.activeCategory,
     };
   }
 
@@ -230,12 +251,16 @@
       programs: listPrograms(),
       activeProgramId: directoryState.activeProgramId,
       activeProgram: getProgram(directoryState.activeProgramId),
+      programsRootPath: directoryState.programsRootPath,
+      categories: directoryState.categories.slice(),
+      activeCategory: directoryState.activeCategory,
     };
   }
 
   global.sampleDirectory = {
     state: directoryState,
     restorePersistedRoots,
+    refreshProgramsFromDisk,
     addRootsFromDialog,
     rescanCurrentRoots,
     setActiveRoot,
@@ -244,8 +269,10 @@
     importSample,
     listPrograms,
     getProgram,
+    createCategory,
     saveProgram,
     setActiveProgram,
+    setActiveCategory,
     importPrograms,
     exportPrograms,
     getSnapshot,
