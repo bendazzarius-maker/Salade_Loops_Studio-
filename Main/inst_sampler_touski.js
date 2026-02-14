@@ -25,8 +25,14 @@
     }
     return programs.map((p) => {
       const note = Number.isFinite(+p.rootMidi) ? midiToName(+p.rootMidi) : "—";
-      const cat = p.category ? `[${p.category}] ` : "";
-      return { value: String(p.id), label: `${cat}${p.name} • ${note}` };
+      const hierarchy = String(p.category || "").split("/").filter(Boolean);
+      const depthPad = hierarchy.length ? `${"· ".repeat(Math.max(0, hierarchy.length - 1))}` : "";
+      const folderHint = hierarchy.length ? `${hierarchy.join(" › ")} › ` : "";
+      return {
+        value: String(p.id),
+        label: `${depthPad}${folderHint}${p.name} • ${note}`,
+        group: hierarchy[0] || "",
+      };
     });
   }
 

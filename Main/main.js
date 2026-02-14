@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs/promises");
 const fsSync = require("fs");
 const { spawn } = require("child_process");
+const os = require("os");
 
 let mainWindow = null;
 
@@ -150,6 +151,7 @@ function createWindow() {
 app.setName("Salad Loops Studio");
 
 app.whenReady().then(() => {
+  readSamplerConfig().catch(() => {});
   createWindow();
   startAudioEngine();
 
@@ -207,8 +209,30 @@ ipcMain.handle("project:load", async () => {
 const SUPPORTED_SAMPLE_EXTENSIONS = new Set([".wav", ".mp3", ".ogg"]);
 const PROGRAM_FILE_EXT = ".slsprog.json";
 
+const SAMPLER_CONFIG_FILE = path.join(app.getPath("userData"), "sampler-programs-config.json");
+let samplerProgramsRootOverride = null;
+
+async function readSamplerConfig() {
+  try {
+    const raw = await fs.readFile(SAMPLER_CONFIG_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.programsRootPath === "string" && parsed.programsRootPath.trim()) {
+      samplerProgramsRootOverride = parsed.programsRootPath.trim();
+    }
+  } catch (_error) {
+    samplerProgramsRootOverride = null;
+  }
+}
+
+async function writeSamplerConfig() {
+  const payload = { programsRootPath: samplerProgramsRootOverride || "" };
+  await fs.mkdir(path.dirname(SAMPLER_CONFIG_FILE), { recursive: true });
+  await fs.writeFile(SAMPLER_CONFIG_FILE, JSON.stringify(payload, null, 2), "utf-8");
+}
+
 function samplerProgramsRoot() {
-  return path.join(app.getPath("documents"), "Sl studio", "sampleTouski");
+  if (samplerProgramsRootOverride) return samplerProgramsRootOverride;
+  return path.join(app.getPath("documents"), "SL-Studio", "samplerTouski");
 }
 
 async function scanSamplerDirectory(rootDir) {
@@ -333,6 +357,32 @@ ipcMain.handle("sampler:listPrograms", async () => {
   const root = await ensureSamplerProgramsRoot();
   const programs = await scanProgramsTree(root);
   return { ok: true, rootPath: root, programs };
+});
+
+ipcMain.handle("sampler:getProgramsRoot", async () => {
+  const root = await ensureSamplerProgramsRoot();
+  return { ok: true, rootPath: root };
+});
+
+ipcMain.handle("sampler:setProgramsRoot", async (_evt, payload = {}) => {
+  const win = BrowserWindow.getFocusedWindow() || mainWindow;
+  let target = String(payload.rootPath || "").trim();
+
+  if (!target) {
+    const picked = await dialog.showOpenDialog(win, {
+      title: "Choisir le dossier maître des programmes Sampler Touski",
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: samplerProgramsRoot(),
+    });
+    if (picked.canceled || !picked.filePaths?.[0]) return { ok: false, canceled: true };
+    target = String(picked.filePaths[0] || "").trim();
+  }
+
+  const resolved = path.resolve(target || os.homedir());
+  await fs.mkdir(resolved, { recursive: true });
+  samplerProgramsRootOverride = resolved;
+  await writeSamplerConfig();
+  return { ok: true, rootPath: resolved };
 });
 
 ipcMain.handle("sampler:createCategory", async (_evt, payload = {}) => {
