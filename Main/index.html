@@ -99,6 +99,12 @@
     width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);
     color:var(--text);padding:8px 10px;border-radius:12px;font-weight:900;outline:0
   }
+  select,
+  select option,
+  select optgroup{
+    background:#031033;
+    color:#fff;
+  }
   input[type="color"]{
     width:42px;height:30px;border-radius:10px;border:1px solid rgba(255,255,255,.14);
     background:transparent;padding:0;cursor:pointer
@@ -250,9 +256,10 @@
   .samplerMain{display:grid;grid-template-rows:1fr auto auto;gap:12px}
   .samplerBlock{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
   .samplerList{display:flex;flex-direction:column;gap:6px;overflow:auto;min-height:0}
-  .samplerItem{padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);cursor:pointer;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .samplerItem{padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#fff;cursor:pointer;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px}
   .samplerItem:hover{background:rgba(255,255,255,.08)}
   .samplerItem.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
+  .samplerItem .small{color:#d7e6ff;opacity:.92}
   .samplerDropZone{border:2px dashed rgba(112,167,255,.45);border-radius:12px;padding:18px;text-align:center;color:var(--muted);font-weight:800}
   .samplerDropZone.dragover{border-color:var(--accent);color:var(--accent);background:rgba(39,224,163,.08)}
   .samplerGrid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
