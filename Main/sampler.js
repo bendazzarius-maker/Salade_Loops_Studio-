@@ -36,6 +36,7 @@
   const programStatusEl = document.getElementById("samplerProgramStatus");
   const previewPlayBtn = document.getElementById("samplerPreviewPlay");
   const programTreeEl = document.getElementById("samplerProgramTree");
+  const samplerSplitterEl = document.getElementById("samplerSplitter");
 
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   let audioCtx = null;
@@ -524,6 +525,50 @@
 
     waveCanvas.addEventListener("mouseup", releaseDrag);
     waveCanvas.addEventListener("mouseleave", releaseDrag);
+  }
+
+
+  function installSamplerSplitter() {
+    if (!samplerSplitterEl) return;
+    const root = document.documentElement;
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 320;
+
+    const stopDrag = () => {
+      if (!dragging) return;
+      dragging = false;
+      samplerSplitterEl.classList.remove("dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", stopDrag);
+    };
+
+    const onMove = (event) => {
+      if (!dragging) return;
+      const delta = event.clientX - startX;
+      const next = Math.max(220, Math.min(520, startWidth + delta));
+      root.style.setProperty("--sampler-side-col", `${next}px`);
+    };
+
+    samplerSplitterEl.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      dragging = true;
+      startX = event.clientX;
+      const current = getComputedStyle(root).getPropertyValue("--sampler-side-col").trim();
+      startWidth = Number.parseFloat(current) || 320;
+      samplerSplitterEl.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", stopDrag);
+      event.preventDefault();
+    });
+
+    samplerSplitterEl.addEventListener("dblclick", () => {
+      root.style.setProperty("--sampler-side-col", "320px");
+    });
   }
 
   function normalizedAutoCorrelation(data, startA, startB, size) {
@@ -1091,6 +1136,7 @@
 
   setEditMode("pos_action");
   installWaveInteractions();
+  installSamplerSplitter();
   updateLoopStatus();
   drawWaveform(null);
   directory.restorePersistedRoots().then(async () => {
