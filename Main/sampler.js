@@ -109,6 +109,22 @@
     if (programStatusEl) programStatusEl.textContent = message;
   }
 
+  async function autoplaySelectedSample(url) {
+    if (!previewEl || !url) return;
+    try {
+      previewEl.pause();
+      if (previewEl.src !== url) {
+        previewEl.src = url;
+        previewEl.load();
+      }
+      previewEl.currentTime = 0;
+      const playPromise = previewEl.play();
+      if (playPromise && typeof playPromise.then === "function") await playPromise;
+    } catch (error) {
+      console.warn("[Sampler] auto-preview impossible", error);
+    }
+  }
+
   function clamp01(value) {
     return Math.max(0, Math.min(1, Number(value) || 0));
   }
@@ -770,14 +786,9 @@
       }
       return;
     }
-    if (selectedNameEl) selectedNameEl.textContent = `Pré-écoute: ${selected.relativePath || selected.name}`;
-    if (previewEl) {
-      const newSrc = sampleToPreviewUrl(selected);
-      if (previewEl.src !== newSrc) {
-        previewEl.src = newSrc;
-        previewEl.load();
-      }
-    }
+    if (selectedNameEl) selectedNameEl.textContent = `Pré-écoute auto: ${selected.relativePath || selected.name}`;
+    const newSrc = sampleToPreviewUrl(selected);
+    autoplaySelectedSample(newSrc);
   }
 
   function renderImported(snapshot) {
