@@ -3,7 +3,17 @@
   window.__INSTRUMENTS__ = window.__INSTRUMENTS__ || {};
 
   const CACHE = new Map();
+  const SHIFT_CACHE = new Map();
   let audioCtx = null;
+  const safeRequire = (typeof window !== "undefined" && (window.require || null)) || (typeof require === "function" ? require : null);
+  let PitchShifter = null;
+  if (safeRequire) {
+    try {
+      PitchShifter = safeRequire("./pitchShifter");
+    } catch (_error) {
+      PitchShifter = null;
+    }
+  }
 
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   function midiToName(midi) {
@@ -73,6 +83,60 @@
     const buffer = await ctx.decodeAudioData(raw.slice(0));
     CACHE.set(key, buffer);
     return buffer;
+  }
+
+  function buildShiftCacheKey(program, midi) {
+    const samplePath = String(program?.sample?.path || "");
+    const rootMidi = Number.isFinite(+program?.rootMidi) ? +program.rootMidi : 60;
+    return `${samplePath}::${rootMidi}::${midi}`;
+  }
+
+  function copyMonoDataFromBuffer(buffer) {
+    const source = buffer.getChannelData(0);
+    const mono = new Float32Array(source.length);
+    mono.set(source);
+    return mono;
+  }
+
+  function buildBufferFromMono(ctx, monoData, sampleRate, channelCount) {
+    const ch = Math.max(1, channelCount || 1);
+    const out = ctx.createBuffer(ch, monoData.length, sampleRate);
+    for (let c = 0; c < ch; c += 1) out.getChannelData(c).set(monoData);
+    return out;
+  }
+
+
+  function ratioFromProgramMap(program, midi, rootMidi) {
+    const rows = Array.isArray(program?.noteMap) ? program.noteMap : null;
+    if (rows) {
+      const hit = rows.find((row) => Number(row?.midi) === midi);
+      if (hit && isFinite(hit.ratio) && hit.ratio > 0) return +hit.ratio;
+    }
+    return Math.pow(2, (midi - rootMidi) / 12);
+  }
+
+  async function getPitchShiftedBuffer(program, sourceBuffer, midi) {
+    if (!sourceBuffer || !PitchShifter) return sourceBuffer;
+
+    const rootMidi = Number.isFinite(+program?.rootMidi) ? +program.rootMidi : 60;
+    if (midi === rootMidi) return sourceBuffer;
+
+    const cacheKey = buildShiftCacheKey(program, midi);
+    if (SHIFT_CACHE.has(cacheKey)) return SHIFT_CACHE.get(cacheKey);
+
+    const pitchFactor = ratioFromProgramMap(program, midi, rootMidi);
+    const shifter = new PitchShifter({
+      fftSize: 2048,
+      overlap: 0.75,
+      hopSize: 512,
+      sampleRate: sourceBuffer.sampleRate || 44100,
+    });
+
+    const mono = copyMonoDataFromBuffer(sourceBuffer);
+    const shiftedMono = shifter.process(mono, pitchFactor);
+    const shifted = buildBufferFromMono(ensureCtx(), shiftedMono, sourceBuffer.sampleRate || 44100, sourceBuffer.numberOfChannels || 1);
+    SHIFT_CACHE.set(cacheKey, shifted);
+    return shifted;
   }
 
   function clamp01(value) {
@@ -153,10 +217,20 @@
         if (!program?.sample?.path) return;
 
         decodeProgramBuffer(program)
-          .then((buffer) => {
+          .then(async (decodedBuffer) => {
+            let buffer = decodedBuffer;
+            const shouldUsePhaseVocoder = String(program?.pitchInterpolation?.engine || "phase-vocoder") === "phase-vocoder";
+            if (shouldUsePhaseVocoder && PitchShifter) {
+              try {
+                buffer = await getPitchShiftedBuffer(program, decodedBuffer, midi);
+              } catch (error) {
+                console.warn("[Sampler Touski] pitch interpolation fallback (rate)", error);
+                buffer = decodedBuffer;
+              }
+            }
             if (!buffer || !ctx) return;
             const rootMidi = Number.isFinite(+program.rootMidi) ? +program.rootMidi : 60;
-            const playbackRate = Math.pow(2, (midi - rootMidi) / 12);
+            const playbackRate = shouldUsePhaseVocoder && PitchShifter ? 1 : ratioFromProgramMap(program, midi, rootMidi);
             const gain = Math.max(0.0001, (+p.gain || 1) * Math.max(0, Math.min(1, vel)));
             const atk = Math.max(0.001, +p.attack || 0.002);
             const rel = Math.max(0.01, +p.release || 0.18);

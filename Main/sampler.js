@@ -822,6 +822,12 @@
     const suggestedName = sampleSuggestedProgramName(sample) || "Sampler Program";
     const rawName = String(programNameEl?.value || suggestedName).trim();
     const positions = getMarkerPositions();
+    const resolvedRootMidi = Number.isFinite(analysisState?.rootMidi)
+      ? analysisState.rootMidi
+      : (Number.isFinite(rootMidiFromUI) ? rootMidiFromUI : null);
+    const professionalNoteMap = Number.isFinite(resolvedRootMidi)
+      ? extrapolatePianoMap(resolvedRootMidi).map((row) => ({ midi: row.midi, ratio: row.ratio }))
+      : [];
 
     return {
       id: mode === "update" ? (sourceProgram?.id || undefined) : undefined,
@@ -830,8 +836,14 @@
       category: programCategoryEl?.value || sourceProgram?.category || "",
       name: rawName || suggestedName,
       sample: sample || null,
-      rootMidi: Number.isFinite(analysisState?.rootMidi) ? analysisState.rootMidi : (Number.isFinite(rootMidiFromUI) ? rootMidiFromUI : null),
+      rootMidi: resolvedRootMidi,
       rootHz: Number.isFinite(analysisState?.freq) ? analysisState.freq : (Number.isFinite(rootHzFromUI) ? rootHzFromUI : null),
+      noteMap: professionalNoteMap,
+      pitchInterpolation: {
+        engine: "phase-vocoder",
+        fftSize: 2048,
+        overlap: 0.75,
+      },
       posAction: positions.pos_action,
       posLoopStart: positions.pos_loop_start,
       posLoopEnd: positions.pos_loop_end,
