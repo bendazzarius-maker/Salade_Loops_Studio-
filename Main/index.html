@@ -20,6 +20,9 @@
     --plist-step-w: 40px;
     --steps-per-bar: 16;
     --bars: 64;
+    --left-col: 320px;
+    --right-col: 320px;
+    --sampler-side-col: 320px;
   }
   *{box-sizing:border-box;margin:0;padding:0;user-select:none}
   html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;overflow:hidden}
@@ -61,11 +64,11 @@
   .tbtn.mode{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:var(--text)}
   .tbtn.mode.active{background:rgba(39,224,163,.18);border-color:rgba(39,224,163,.38)}
 
-  .layout{height:calc(100% - 52px);display:grid;grid-template-columns: 320px 1fr 320px;}
+  .layout{height:calc(100% - 52px);display:grid;grid-template-columns: minmax(250px,var(--left-col)) minmax(0,1fr) minmax(260px,var(--right-col));}
   .left,.right{background:var(--panel);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column}
   .left{border-right:1px solid var(--line)}
   .right{border-left:1px solid var(--line)}
-  .center{position:relative;overflow:hidden}
+  .center{position:relative;overflow:hidden;min-width:0}
 
   .section{padding:14px;border-bottom:1px solid var(--line)}
   .title{font-weight:900;font-size:11px;letter-spacing:1px;color:var(--accent2);display:flex;gap:8px;align-items:center;margin-bottom:10px}
@@ -251,9 +254,11 @@
   .autoStep.on{background:rgba(255,77,109,.25)}
   .autoLegend{font-size:11px;color:var(--muted);line-height:1.2}
 
-  .samplerLayout{display:grid;grid-template-columns:320px 1fr;gap:12px;padding:12px;min-height:calc(100% - 40px)}
-  .samplerSide,.samplerMain{min-height:0}
-  .samplerMain{display:grid;grid-template-rows:1fr auto auto;gap:12px}
+  .samplerLayout{display:grid;grid-template-columns:minmax(240px,var(--sampler-side-col)) 10px minmax(0,1fr);gap:12px;padding:12px;flex:1;min-height:0;overflow:hidden}
+  .samplerSide,.samplerMain{min-height:0;overflow:auto}
+  .samplerMain{display:flex;flex-direction:column;gap:12px;padding-right:2px}
+  .samplerSplitter{border-radius:999px;background:rgba(112,167,255,.2);border:1px solid rgba(112,167,255,.35);cursor:col-resize;align-self:stretch;transition:background .15s ease}
+  .samplerSplitter:hover,.samplerSplitter.dragging{background:rgba(39,224,163,.32);border-color:rgba(39,224,163,.55)}
   .samplerBlock{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
   .samplerList{display:flex;flex-direction:column;gap:6px;overflow:auto;min-height:0}
   .samplerItem{padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#fff;cursor:pointer;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -501,11 +506,12 @@
             <div id="samplerBrowser" class="samplerList"></div>
           </div>
         </aside>
+        <div class="samplerSplitter" id="samplerSplitter" title="Handler général : redimensionner la colonne dossiers/samples"></div>
         <section class="samplerMain">
           <div class="samplerBlock">
             <div class="title">🎧 Pré-écoute et import</div>
             <div class="small" id="samplerSelectedName">Sélectionnez un sample pour pré-écoute.</div>
-            <audio id="samplerPreview" controls preload="none" style="width:100%;margin:10px 0 12px"></audio>
+            <audio id="samplerPreview" preload="none" style="display:none" aria-hidden="true"></audio>
             <div id="samplerDropZone" class="samplerDropZone">Glissez-déposez un sample ici pour l'import Sampler Touski.</div>
             <div class="small" id="samplerDropStatus" style="margin-top:8px">Aucun sample importé.</div>
           </div>
