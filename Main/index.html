@@ -255,7 +255,8 @@
   .autoLegend{font-size:11px;color:var(--muted);line-height:1.2}
 
   .samplerLayout{display:grid;grid-template-columns:minmax(240px,var(--sampler-side-col)) 10px minmax(0,1fr);gap:12px;padding:12px;flex:1;min-height:0;overflow:hidden}
-  .samplerSide,.samplerMain{min-height:0;overflow:auto}
+  .samplerSide,.samplerMain{min-height:0;min-width:0;overflow:auto}
+  .samplerSide{display:flex;flex-direction:column;gap:12px;padding-right:2px}
   .samplerMain{display:flex;flex-direction:column;gap:12px;padding-right:2px}
   .samplerSplitter{border-radius:999px;background:rgba(112,167,255,.2);border:1px solid rgba(112,167,255,.35);cursor:col-resize;align-self:stretch;transition:background .15s ease}
   .samplerSplitter:hover,.samplerSplitter.dragging{background:rgba(39,224,163,.32);border-color:rgba(39,224,163,.55)}
@@ -273,6 +274,17 @@
   .samplerWave{position:relative}
   .samplerWave canvas{display:block;width:100%;height:140px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#070b12}
   .samplerToolbar{display:flex;gap:8px;flex-wrap:wrap}
+  .samplerToolbar .btn2{width:auto;flex:1 1 150px;min-width:150px;margin-bottom:0}
+  #samplerProgramsRootBtn,
+  #samplerProgramCreateCategory,
+  #samplerProgramUpdate,
+  #samplerProgramSaveAs,
+  #samplerProgramLoad{width:auto;margin-bottom:0}
+  #samplerProgramsRootBtn{flex:0 1 320px}
+  #samplerProgramCreateCategory{flex:0 0 auto}
+  #samplerProgramUpdate,
+  #samplerProgramSaveAs,
+  #samplerProgramLoad{flex:1 1 180px;min-width:160px}
   .samplerToolbar .btn2.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(39,224,163,.45) inset}
   .samplerLegend{display:flex;gap:10px;flex-wrap:wrap}
   .samplerLegend span{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
@@ -287,6 +299,17 @@
   .samplerTreeNode:hover{background:rgba(255,255,255,.08)}
   .samplerTreeNode.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
   .samplerTreeNode .small{opacity:.85}
+
+  @media (max-width: 1200px){
+    .samplerLayout{grid-template-columns:minmax(220px,var(--sampler-side-col)) 8px minmax(0,1fr);gap:10px;padding:10px}
+    .samplerToolbar .btn2{flex:1 1 130px;min-width:130px}
+  }
+
+  @media (max-width: 980px){
+    .samplerLayout{grid-template-columns:minmax(0,1fr);overflow:auto}
+    .samplerSplitter{display:none}
+    .samplerSide,.samplerMain{overflow:visible}
+  }
 
 
 </style>

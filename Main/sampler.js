@@ -548,39 +548,48 @@
     if (!samplerSplitterEl) return;
     const root = document.documentElement;
     let dragging = false;
-    let startX = 0;
+    let pointerId = null;
+    let startClientX = 0;
     let startWidth = 320;
 
     const stopDrag = () => {
       if (!dragging) return;
       dragging = false;
+      pointerId = null;
       samplerSplitterEl.classList.remove("dragging");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", stopDrag);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stopDrag);
+      window.removeEventListener("pointercancel", stopDrag);
     };
 
     const onMove = (event) => {
       if (!dragging) return;
-      const delta = event.clientX - startX;
+      if (pointerId !== null && event.pointerId !== pointerId) return;
+      const delta = event.clientX - startClientX;
       const next = Math.max(220, Math.min(520, startWidth + delta));
       root.style.setProperty("--sampler-side-col", `${next}px`);
     };
 
-    samplerSplitterEl.addEventListener("mousedown", (event) => {
-      if (event.button !== 0) return;
+    samplerSplitterEl.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 && event.pointerType !== "touch") return;
       dragging = true;
-      startX = event.clientX;
+      pointerId = event.pointerId;
+      startClientX = event.clientX;
       const current = getComputedStyle(root).getPropertyValue("--sampler-side-col").trim();
       startWidth = Number.parseFloat(current) || 320;
+      samplerSplitterEl.setPointerCapture?.(event.pointerId);
       samplerSplitterEl.classList.add("dragging");
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", stopDrag);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", stopDrag);
+      window.addEventListener("pointercancel", stopDrag);
       event.preventDefault();
     });
+
+    samplerSplitterEl.addEventListener("lostpointercapture", stopDrag);
 
     samplerSplitterEl.addEventListener("dblclick", () => {
       root.style.setProperty("--sampler-side-col", "320px");
