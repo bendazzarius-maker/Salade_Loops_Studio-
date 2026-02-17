@@ -802,10 +802,6 @@
       item.innerHTML = `<span>${makeItemLabel(sample)}</span><span class="small">${sample.ext}</span>`;
       item.title = sample.relativePath || sample.name;
       item.addEventListener("click", () => directory.selectSample(sample));
-      item.addEventListener("dblclick", () => {
-        const src = sampleToPreviewUrl(sample);
-        autoplaySelectedSample(src, true);
-      });
       item.addEventListener("dragstart", (event) => {
         directory.setDragSample(sample);
         event.dataTransfer.effectAllowed = "copy";
