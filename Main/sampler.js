@@ -829,7 +829,7 @@
     const nextPath = String(selected.path || "");
     const shouldAutoplay = nextPath && nextPath !== lastAutoPreviewPath;
     const newSrc = sampleToPreviewUrl(selected);
-    autoplaySelectedSample(newSrc, shouldAutoplay);
+    if (shouldAutoplay) autoplaySelectedSample(newSrc, true);
     if (shouldAutoplay) lastAutoPreviewPath = nextPath;
   }
 
