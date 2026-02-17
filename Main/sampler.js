@@ -127,6 +127,10 @@
         previewEl.load();
       }
       previewEl.currentTime = 0;
+      previewEl.onended = () => {
+        previewEl.pause();
+        previewEl.currentTime = 0;
+      };
       const playPromise = previewEl.play();
       if (playPromise && typeof playPromise.then === "function") await playPromise;
     } catch (error) {
@@ -797,10 +801,6 @@
       item.innerHTML = `<span>${makeItemLabel(sample)}</span><span class="small">${sample.ext}</span>`;
       item.title = sample.relativePath || sample.name;
       item.addEventListener("click", () => directory.selectSample(sample));
-      item.addEventListener("dblclick", () => {
-        const src = sampleToPreviewUrl(sample);
-        autoplaySelectedSample(src, true);
-      });
       item.addEventListener("dragstart", (event) => {
         directory.setDragSample(sample);
         event.dataTransfer.effectAllowed = "copy";
