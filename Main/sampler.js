@@ -115,7 +115,7 @@
     if (programStatusEl) programStatusEl.textContent = message;
   }
 
-  async function previewSampleOnce(url, force = false) {
+  async function autoplaySelectedSample(url, force = false) {
     if (!previewEl || !url) return;
     try {
       previewEl.loop = false;
@@ -804,14 +804,10 @@
       item.draggable = true;
       item.innerHTML = `<span>${makeItemLabel(sample)}</span><span class="small">${sample.ext}</span>`;
       item.title = sample.relativePath || sample.name;
-      item.addEventListener("click", () => {
-        directory.selectSample(sample);
-        const src = sampleToPreviewUrl(sample);
-        previewSampleOnce(src, true);
-      });
+      item.addEventListener("click", () => directory.selectSample(sample));
       item.addEventListener("dblclick", () => {
         const src = sampleToPreviewUrl(sample);
-        previewSampleOnce(src, true);
+        autoplaySelectedSample(src, true);
       });
       item.addEventListener("dragstart", (event) => {
         directory.setDragSample(sample);
@@ -836,15 +832,12 @@
       lastAutoPreviewPath = "";
       return;
     }
-    if (selectedNameEl) selectedNameEl.textContent = `Pré-écoute: ${selected.relativePath || selected.name} (1 clic = 1 lecture)`;
+    if (selectedNameEl) selectedNameEl.textContent = `Pré-écoute auto: ${selected.relativePath || selected.name}`;
     const nextPath = String(selected.path || "");
-    if (nextPath && nextPath !== lastAutoPreviewPath && previewEl) {
-      previewEl.pause();
-      previewEl.src = sampleToPreviewUrl(selected);
-      previewEl.load();
-      previewEl.currentTime = 0;
-    }
-    lastAutoPreviewPath = nextPath;
+    const shouldAutoplay = nextPath && nextPath !== lastAutoPreviewPath;
+    const newSrc = sampleToPreviewUrl(selected);
+    autoplaySelectedSample(newSrc, shouldAutoplay);
+    if (shouldAutoplay) lastAutoPreviewPath = nextPath;
   }
 
   function renderImported(snapshot) {
