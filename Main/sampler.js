@@ -6,10 +6,14 @@
 
   const rootsEl = document.getElementById("samplerRoots");
   const browserEl = document.getElementById("samplerBrowser");
+  const browserFilterEl = document.getElementById("samplerBrowserFilter");
+  const browserClearBtn = document.getElementById("samplerBrowserClear");
+  const browserCountEl = document.getElementById("samplerBrowserCount");
   const rootLabelEl = document.getElementById("samplerRootLabel");
   const selectedNameEl = document.getElementById("samplerSelectedName");
   const previewEl = document.getElementById("samplerPreview");
   const dropZoneEl = document.getElementById("samplerDropZone");
+  const importSelectedBtn = document.getElementById("samplerImportSelected");
   const dropStatusEl = document.getElementById("samplerDropStatus");
   const addRootBtn = document.getElementById("samplerAddRoot");
   const rescanBtn = document.getElementById("samplerRescan");
@@ -43,6 +47,8 @@
   let previewSession = null;
   let analysisToken = 0;
   let analysisState = null;
+  let lastAutoPreviewPath = "";
+  let browserFilterText = "";
   const markerState = {
     pos_action: 0,
     pos_loop_start: 0.15,
@@ -109,11 +115,14 @@
     if (programStatusEl) programStatusEl.textContent = message;
   }
 
-  async function autoplaySelectedSample(url) {
+  async function autoplaySelectedSample(url, force = false) {
     if (!previewEl || !url) return;
     try {
+      previewEl.loop = false;
+      const sourceChanged = previewEl.src !== url;
+      if (!force && !sourceChanged) return;
       previewEl.pause();
-      if (previewEl.src !== url) {
+      if (sourceChanged) {
         previewEl.src = url;
         previewEl.load();
       }
@@ -758,22 +767,40 @@
     browserEl.innerHTML = "";
     if (!activeRoot) {
       rootLabelEl.textContent = "Aucun dossier sélectionné";
+      if (browserCountEl) browserCountEl.textContent = "0 résultat";
       browserEl.innerHTML = '<div class="small">Ajoutez un dossier pour indexer vos samples .wav/.mp3/.ogg.</div>';
       return;
     }
     rootLabelEl.textContent = `${activeRoot.rootName} — ${activeRoot.files.length} samples indexés`;
     if (!activeRoot.files.length) {
+      if (browserCountEl) browserCountEl.textContent = "0 résultat";
       browserEl.innerHTML = '<div class="small">Aucun fichier supporté trouvé dans ce dossier.</div>';
       return;
     }
 
-    for (const sample of activeRoot.files) {
+    const term = browserFilterText.trim().toLowerCase();
+    const files = term
+      ? activeRoot.files.filter((sample) => String(sample.relativePath || sample.name || "").toLowerCase().includes(term))
+      : activeRoot.files;
+
+    if (browserCountEl) browserCountEl.textContent = `${files.length} résultat${files.length > 1 ? "s" : ""}`;
+
+    if (!files.length) {
+      browserEl.innerHTML = '<div class="small">Aucun sample ne correspond au filtre.</div>';
+      return;
+    }
+
+    for (const sample of files) {
       const item = document.createElement("div");
       item.className = "samplerItem" + (snapshot.selectedSample?.path === sample.path ? " active" : "");
       item.draggable = true;
       item.innerHTML = `<span>${makeItemLabel(sample)}</span><span class="small">${sample.ext}</span>`;
       item.title = sample.relativePath || sample.name;
       item.addEventListener("click", () => directory.selectSample(sample));
+      item.addEventListener("dblclick", () => {
+        const src = sampleToPreviewUrl(sample);
+        autoplaySelectedSample(src, true);
+      });
       item.addEventListener("dragstart", (event) => {
         directory.setDragSample(sample);
         event.dataTransfer.effectAllowed = "copy";
@@ -790,14 +817,19 @@
       if (selectedNameEl) selectedNameEl.textContent = "Sélectionnez un sample pour pré-écoute.";
       if (previewEl) {
         previewEl.pause();
+        previewEl.loop = false;
         previewEl.removeAttribute("src");
         previewEl.load();
       }
+      lastAutoPreviewPath = "";
       return;
     }
     if (selectedNameEl) selectedNameEl.textContent = `Pré-écoute auto: ${selected.relativePath || selected.name}`;
+    const nextPath = String(selected.path || "");
+    const shouldAutoplay = nextPath && nextPath !== lastAutoPreviewPath;
     const newSrc = sampleToPreviewUrl(selected);
-    autoplaySelectedSample(newSrc);
+    autoplaySelectedSample(newSrc, shouldAutoplay);
+    if (shouldAutoplay) lastAutoPreviewPath = nextPath;
   }
 
   function renderImported(snapshot) {
@@ -1022,6 +1054,26 @@
         setProgramStatus(`Erreur dossier maître: ${result?.error || "inconnue"}`);
       }
     });
+  });
+
+  browserFilterEl?.addEventListener("input", () => {
+    browserFilterText = String(browserFilterEl.value || "");
+    render(directory.getSnapshot());
+  });
+
+  browserClearBtn?.addEventListener("click", () => {
+    browserFilterText = "";
+    if (browserFilterEl) browserFilterEl.value = "";
+    render(directory.getSnapshot());
+  });
+
+  importSelectedBtn?.addEventListener("click", () => {
+    const selected = directory.state.selectedSample;
+    if (!selected) {
+      setStatus("Sélectionnez un sample dans Browser samples avant import.");
+      return;
+    }
+    directory.importSample(selected);
   });
 
   dropZoneEl?.addEventListener("dragover", (event) => {
