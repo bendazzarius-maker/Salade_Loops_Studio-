@@ -118,6 +118,7 @@
   async function autoplaySelectedSample(url, force = false) {
     if (!previewEl || !url) return;
     try {
+      stopPreviewSession();
       previewEl.loop = false;
       const sourceChanged = previewEl.src !== url;
       if (!force && !sourceChanged) return;
@@ -127,6 +128,10 @@
         previewEl.load();
       }
       previewEl.currentTime = 0;
+      previewEl.onended = () => {
+        previewEl.pause();
+        previewEl.currentTime = 0;
+      };
       const playPromise = previewEl.play();
       if (playPromise && typeof playPromise.then === "function") await playPromise;
     } catch (error) {
