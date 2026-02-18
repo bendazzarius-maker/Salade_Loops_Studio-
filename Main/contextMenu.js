@@ -14,9 +14,8 @@ function showCtx(x,y){
 }
 
 function getDupOffsetSteps(){
-  const r = (window.getTimeRulerSelection ? window.getTimeRulerSelection("roll") : {startStep:0,endStep:0});
-  const len = (r && r.endStep>r.startStep) ? (r.endStep-r.startStep) : 0;
-  return Math.max(1, len || 4);
+  // Duplicate shifts by 1 beat in 4/4 (1/4 note = 4 steps with 16 steps/bar).
+  return Math.max(1, Math.floor(state.stepsPerBar/4));
 }
 
 function ctxAction(a){
@@ -34,14 +33,13 @@ function ctxAction(a){
   }
   if(a==="paste"){
     if(!clipboard.length) return;
-    const offset=getDupOffsetSteps();
-    // Paste: new notes become selected
+    // Paste keeps exact timing placement for musical transfer across channels/patterns.
     sel.forEach(n=>n.selected=false);
     clipboard.forEach(n=>{
       ch.notes.push({
         ...n,
         id:gid("note"),
-        step:(n.step||0)+offset,
+        step:Math.max(0,(n.step||0)),
         selected:true
       });
     });
