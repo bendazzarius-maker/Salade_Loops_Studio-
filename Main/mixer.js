@@ -52,12 +52,12 @@ function _makeMasterStrip(){
   // Gain
   el.appendChild(_gainRow("Gain", 0, 1.5, 0.01, m.gain??0.85, "master", 1, (v)=>{
     m.gain = v; _apply();
-  }));
+  }, ()=>m.gain));
 
   // Pan
   el.appendChild(_knobRow("Pan", -1, 1, 0.01, m.pan??0, (v)=>{
     m.pan = v; _apply();
-  }));
+  }, ()=>m.pan));
 
   // Crossfader (0..1)
   el.appendChild(_sliderRow("Cross", 0, 1, 0.01, m.cross??0.5, (v)=>{
