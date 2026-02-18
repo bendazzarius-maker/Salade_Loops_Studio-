@@ -243,6 +243,13 @@ function _knobRow(label, min, max, step, value, onChange, getValue){
   input.type = "range";
   input.min=min; input.max=max; input.step=step; input.value=value;
   input.className = "mixKnob";
+  const knobTypeMap = {
+    "Pan": "pan",
+    "EQ Low": "bass",
+    "EQ Mid": "medium",
+    "EQ High": "high"
+  };
+  input.dataset.knobType = knobTypeMap[label] || "default";
   knobWrap.appendChild(input);
   wrap.appendChild(knobWrap);
 
