@@ -358,6 +358,7 @@ class AudioEngine{
 
     const startNode = nodes.eqHigh;
     const endNode   = isMaster ? nodes.out : nodes.xfade;
+    let meterSource = startNode;
 
     // disconnect previous
     try{ startNode.disconnect(); }catch(_){}
@@ -370,6 +371,7 @@ class AudioEngine{
     if(fxList.length===0){
       // no fx
       startNode.connect(endNode);
+      if(!isMaster && nodes.meterTap) startNode.connect(nodes.meterTap);
       return;
     }
 
@@ -378,7 +380,9 @@ class AudioEngine{
     for(let i=0;i<fxList.length-1;i++){
       fxList[i].node.output.connect(fxList[i+1].node.input);
     }
-    fxList[fxList.length-1].node.output.connect(endNode);
+    meterSource = fxList[fxList.length-1].node.output;
+    meterSource.connect(endNode);
+    if(!isMaster && nodes.meterTap) meterSource.connect(nodes.meterTap);
   }
 
   _createStripNodes(ctx, isMaster){
@@ -445,7 +449,7 @@ class AudioEngine{
       meterTap.connect(meter);
     }
 
-    return { input, gain, pan, eqLow, eqMid, eqHigh, xfade, out, meter };
+    return { input, gain, pan, eqLow, eqMid, eqHigh, xfade, out, meterTap, meter };
   }
 }
 const ae = new AudioEngine();
