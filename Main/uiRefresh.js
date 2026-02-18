@@ -246,6 +246,57 @@ function openChannelContextMenu(x, y, ch, p){
   document.addEventListener('mousedown',close,true);
 }
 
+
+
+function openPatternContextMenu(x, y, pat){
+  try{ document.getElementById('__patternCtx')?.remove(); }catch(_e){}
+  const menu=document.createElement('div');
+  menu.id='__patternCtx';
+  menu.style.position='fixed';
+  menu.style.left=Math.max(8,x)+'px';
+  menu.style.top=Math.max(8,y)+'px';
+  menu.style.zIndex='999999';
+  menu.style.minWidth='220px';
+  menu.style.background='rgba(10,14,28,0.98)';
+  menu.style.border='1px solid rgba(255,255,255,0.14)';
+  menu.style.borderRadius='10px';
+  menu.style.padding='8px';
+  menu.style.display='grid';
+  menu.style.gap='6px';
+
+  const mk=(label, fn)=>{ const b=document.createElement('button'); b.className='btn2'; b.style.textAlign='left'; b.textContent=label; b.onclick=()=>{ try{fn();}finally{menu.remove();} }; return b; };
+
+  const colorRow=document.createElement('label');
+  colorRow.className='btn2';
+  colorRow.style.display='flex';
+  colorRow.style.alignItems='center';
+  colorRow.style.justifyContent='space-between';
+  colorRow.style.gap='8px';
+  colorRow.textContent='🎨 Choix couleur pattern';
+  const picker=document.createElement('input');
+  picker.type='color';
+  picker.value=pat.color||'#27e0a3';
+  picker.oninput=()=>{ pat.color=picker.value; refreshUI(); renderPlaylist(); };
+  colorRow.appendChild(picker);
+
+  menu.appendChild(mk('✏️ Renommer', ()=>{
+    openRenameSocket(x,y,pat.name,(v)=>{ pat.name=v; refreshUI(); renderPlaylist(); });
+  }));
+  menu.appendChild(colorRow);
+  menu.appendChild(mk('🧬 Dupliquer vers nouveau slot', ()=>{
+    const cp = (typeof clonePatternToNewSlot==='function') ? clonePatternToNewSlot(pat.id) : null;
+    if(cp) _safeToast(`Pattern dupliquée: ${cp.name}`);
+  }));
+  menu.appendChild(mk('🗑️ Supprimer', ()=>{
+    const ok = (typeof deletePattern==='function') ? deletePattern(pat.id) : false;
+    if(ok) _safeToast(`Pattern supprimée: ${pat.name}`);
+  }));
+
+  document.body.appendChild(menu);
+  const close=(ev)=>{ if(!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown',close,true);} };
+  document.addEventListener('mousedown',close,true);
+}
+
 // Floating rename socket (right-click pattern button)
 function openRenameSocket(x, y, initialValue, onSubmit){
   try{ document.getElementById('__renameSocket')?.remove(); }catch(_e){}
@@ -427,13 +478,10 @@ function refreshUI(){
       });
     });
 
-    // rename on right click
+    // right click: full pattern context menu (rename/color/duplicate/delete)
     b.addEventListener("contextmenu",(e)=>{
       e.preventDefault();
-      openRenameSocket(e.clientX, e.clientY, p.name, (v)=>{
-        p.name = v;
-        refreshUI(); renderPlaylist();
-      });
+      openPatternContextMenu(e.clientX, e.clientY, p);
     });
 
     const col=document.createElement("input");
