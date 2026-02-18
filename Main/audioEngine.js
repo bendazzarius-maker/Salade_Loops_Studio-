@@ -134,18 +134,25 @@ class AudioEngine{
       analyser._meterData = data;
       analyser.getFloatTimeDomainData(data);
 
-      // Mesure RMS puis conversion en dB pour une lecture visuelle plus utile.
-      // -72 dB = silence visuel, 0 dB = pleine échelle.
+      // Mix RMS + peak pour une lecture plus vivante même sur des sons courts/transients.
+      // Le gamma (<1) augmente la sensibilité visuelle dans les bas niveaux.
       let sum = 0;
+      let peak = 0;
       for(let i=0;i<data.length;i++){
         const v = data[i];
+        const a = Math.abs(v);
         sum += v * v;
+        if(a > peak) peak = a;
       }
+
       const rms = Math.sqrt(sum / Math.max(1, data.length));
       const db = 20 * Math.log10(Math.max(rms, 1e-8));
-      const floorDb = -72;
-      const norm = (db - floorDb) / Math.abs(floorDb);
-      return clamp(norm, 0, 1);
+      const floorDb = -84;
+      const rmsNorm = clamp((db - floorDb) / Math.abs(floorDb), 0, 1);
+      const peakNorm = clamp(peak, 0, 1);
+      const mixed = Math.max(rmsNorm, peakNorm * 0.9);
+      const visual = Math.pow(mixed, 0.62);
+      return (visual < 0.01) ? 0 : visual;
     }catch(_){
       return 0;
     }
@@ -412,8 +419,10 @@ class AudioEngine{
       meterTap.connect(meter);
       this.masterMeter = meter;
     } else {
+      // Channel meter is pre-crossfader so activity stays visible per channel
+      // even when Xfade A/B mutes a side.
       eqHigh.connect(xfade);
-      xfade.connect(meterTap);
+      eqHigh.connect(meterTap);
       meterTap.connect(meter);
     }
 
