@@ -122,16 +122,22 @@ class AudioEngine{
   _meterLevel(analyser){
     if(!this.ctx || !analyser) return 0;
     try{
-      const data = analyser._meterData || new Uint8Array(analyser.fftSize || 256);
+      const data = analyser._meterData || new Float32Array(analyser.fftSize || 256);
       analyser._meterData = data;
-      analyser.getByteTimeDomainData(data);
-      let peak = 0;
+      analyser.getFloatTimeDomainData(data);
+
+      // Mesure RMS puis conversion en dB pour une lecture visuelle plus utile.
+      // -72 dB = silence visuel, 0 dB = pleine échelle.
+      let sum = 0;
       for(let i=0;i<data.length;i++){
-        const v = (data[i]-128)/128;
-        const a = Math.abs(v);
-        if(a > peak) peak = a;
+        const v = data[i];
+        sum += v * v;
       }
-      return clamp(peak, 0, 1);
+      const rms = Math.sqrt(sum / Math.max(1, data.length));
+      const db = 20 * Math.log10(Math.max(rms, 1e-8));
+      const floorDb = -72;
+      const norm = (db - floorDb) / Math.abs(floorDb);
+      return clamp(norm, 0, 1);
     }catch(_){
       return 0;
     }
