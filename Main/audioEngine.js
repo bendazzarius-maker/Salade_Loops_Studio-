@@ -8,6 +8,8 @@ class AudioEngine{
     this.masterIn=null;     // master input (sum of channels)
     this.master=null;       // master post chain (to comp)
     this.comp=null;
+    this.masterMeter = null;
+    this.channelMeters = [];
   }
 
   async ensure(){
@@ -85,6 +87,7 @@ class AudioEngine{
     };
 
     // Create channels
+    this.channelMeters = [];
     for(let i=0;i<num;i++){
       this._addMixerChannelInternal();
     }
@@ -113,6 +116,34 @@ class AudioEngine{
       xAssign: "A",
     };
     this.mixer.channels.push(ch);
+    this.channelMeters.push(strip.meter);
+  }
+
+  _meterLevel(analyser){
+    if(!this.ctx || !analyser) return 0;
+    try{
+      const data = analyser._meterData || new Uint8Array(analyser.fftSize || 256);
+      analyser._meterData = data;
+      analyser.getByteTimeDomainData(data);
+      let peak = 0;
+      for(let i=0;i<data.length;i++){
+        const v = (data[i]-128)/128;
+        const a = Math.abs(v);
+        if(a > peak) peak = a;
+      }
+      return clamp(peak, 0, 1);
+    }catch(_){
+      return 0;
+    }
+  }
+
+  getMasterMeterLevel(){
+    return this._meterLevel(this.masterMeter);
+  }
+
+  getChannelMeterLevel(index1){
+    const idx = Math.max(1, Math.floor(index1||1)) - 1;
+    return this._meterLevel(this.channelMeters[idx]);
   }
 
   getMixerInput(index1){
@@ -341,6 +372,12 @@ class AudioEngine{
     const out = ctx.createGain();
     out.gain.value = 0.85;
 
+    const meterTap = ctx.createGain();
+    meterTap.gain.value = 1;
+    const meter = ctx.createAnalyser();
+    meter.fftSize = 256;
+    meter.smoothingTimeConstant = 0.75;
+
     // Crossfader gain (channels only)
     const xfade = ctx.createGain();
     xfade.gain.value = 1;
@@ -354,11 +391,16 @@ class AudioEngine{
 
     if(isMaster){
       eqHigh.connect(out);
+      out.connect(meterTap);
+      meterTap.connect(meter);
+      this.masterMeter = meter;
     } else {
       eqHigh.connect(xfade);
+      xfade.connect(meterTap);
+      meterTap.connect(meter);
     }
 
-    return { input, gain, pan, eqLow, eqMid, eqHigh, xfade, out };
+    return { input, gain, pan, eqLow, eqMid, eqHigh, xfade, out, meter };
   }
 }
 const ae = new AudioEngine();

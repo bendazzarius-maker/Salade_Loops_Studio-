@@ -42,6 +42,29 @@ const __lfoCurveRT = {
   lastSig: new Map(),
 };
 
+const __lfoVisualRT = {
+  fxByKey: new Map(),
+};
+
+function __lfoVisualSet(scope, chIndex1, fxIndex, pat){
+  const s = (scope||"").toLowerCase()==="master" ? "master" : "channel";
+  const key = `${s}:${Math.max(1, Math.floor(chIndex1||1))}:${Math.max(0, Math.floor(fxIndex||0))}`;
+  __lfoVisualRT.fxByKey.set(key, {
+    key,
+    patternId: pat?.id || null,
+    name: String(pat?.name || "LFO"),
+    color: String(pat?.color || "#facc15")
+  });
+}
+
+function __lfoVisualPublish(){
+  try{
+    window.__lfoVisualState = {
+      fxMap: Array.from(__lfoVisualRT.fxByKey.values())
+    };
+  }catch(_){ }
+}
+
 
 function __deepClone(obj){
   try{
@@ -308,6 +331,7 @@ function __applyLfoCurveOverrides(songStep){
           __lfoCurveRT.lastSig.set(key, sig);
           didApply = true;
         }
+        __lfoVisualSet(scope, chIndex1, fxIndex, pat);
         activeKeys.add(key);
       }
     }
@@ -405,6 +429,8 @@ function __applyLfoPresetFxOverrides(songStep){
         __lfoRT.lastSig.set(key, sig);
         didApply = true;
       }
+
+      __lfoVisualSet(scope, chIndex1, fxIndex, pat);
 
       activeKeys.add(key);
     }
@@ -611,10 +637,13 @@ function tick() {
   pb.uiAbsStep = absStep;
   pb.uiSongStep = uiStep;
 
+  __lfoVisualRT.fxByKey.clear();
+
   // LFO preset overrides must be aligned to playhead (NOT scheduling lookahead)
   try{ __applyLfoPresetFxOverrides(pb.uiSongStep); }catch(_){ }
   // LFO curve overrides (mixer/FX) aligned to playhead
   try{ __applyLfoCurveOverrides(pb.uiSongStep); }catch(_){ }
+  __lfoVisualPublish();
 
 
   try {
@@ -726,6 +755,7 @@ function pause() {
   state.playing = false;
   playBtn.textContent = "▶ Play";
   clearInterval(pb.timer); pb.timer = null;
+  try{ __lfoVisualRT.fxByKey.clear(); __lfoVisualPublish(); }catch(_){ }
 }
 
 function stop() {

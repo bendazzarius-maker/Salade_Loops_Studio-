@@ -2,6 +2,11 @@
 /* Mixer UI + routing (Master + N channels) */
 
 const FX_TYPES = ["compresseur","chorus","reverb","flanger","delay","gross beat"];
+const __mixUi = {
+  meterRAF: 0,
+  meterEntries: [],
+  controlEntries: []
+};
 
 function renderMixerUI(){
   if(typeof mixerMaster==="undefined" || !mixerMaster) return;
@@ -11,6 +16,7 @@ function renderMixerUI(){
   ensureMixerSize(Math.max(16, project.mixer.channels.length));
 
   // render master
+  __stopMixerMeters();
   mixerMaster.innerHTML = "";
   mixerChannels.innerHTML = "";
 
@@ -25,6 +31,7 @@ function renderMixerUI(){
   if(ae && ae.ctx && ae.mixer){
     ae.applyMixerModel(project.mixer);
   }
+  __startMixerMeters();
 }
 
 function _makeMasterStrip(){
@@ -40,18 +47,18 @@ function _makeMasterStrip(){
 
   const sub = document.createElement("div");
   sub.className="mixSub";
-  sub.textContent="Gain • Pan • Crossfader • EQ • FX";
+  sub.textContent="Gain • Pan • Crossfader • EQ • FX Rack";
   el.appendChild(sub);
 
   // Gain
-  el.appendChild(_sliderRow("Gain", 0, 1.5, 0.01, m.gain??0.85, (v)=>{
+  el.appendChild(_gainRow("Gain", 0, 1.5, 0.01, m.gain??0.85, "master", 1, (v)=>{
     m.gain = v; _apply();
-  }));
+  }, ()=>m.gain));
 
   // Pan
-  el.appendChild(_sliderRow("Pan", -1, 1, 0.01, m.pan??0, (v)=>{
+  el.appendChild(_knobRow("Pan", -1, 1, 0.01, m.pan??0, (v)=>{
     m.pan = v; _apply();
-  }));
+  }, ()=>m.pan));
 
   // Crossfader (0..1)
   el.appendChild(_sliderRow("Cross", 0, 1, 0.01, m.cross??0.5, (v)=>{
@@ -61,12 +68,12 @@ function _makeMasterStrip(){
   }));
 
   // EQ
-  el.appendChild(_sliderRow("EQ Low", -24, 24, 0.1, m.eqLow??0, (v)=>{ m.eqLow=v; _apply(); }));
-  el.appendChild(_sliderRow("EQ Mid", -24, 24, 0.1, m.eqMid??0, (v)=>{ m.eqMid=v; _apply(); }));
-  el.appendChild(_sliderRow("EQ High", -24, 24, 0.1, m.eqHigh??0, (v)=>{ m.eqHigh=v; _apply(); }));
+  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, m.eqLow??0, (v)=>{ m.eqLow=v; _apply(); }, ()=>m.eqLow));
+  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, m.eqMid??0, (v)=>{ m.eqMid=v; _apply(); }, ()=>m.eqMid));
+  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, m.eqHigh??0, (v)=>{ m.eqHigh=v; _apply(); }, ()=>m.eqHigh));
 
   // FX
-  el.appendChild(_fxBlock(m.fx, (newList)=>{
+  el.appendChild(_fxRack("master", 1, m.fx, (newList)=>{
     m.fx = newList; _apply();
   }));
 
@@ -107,15 +114,15 @@ function _makeChannelStrip(index1, chModel){
   el.appendChild(assignRow);
 
   // Gain / Pan / EQ
-  el.appendChild(_sliderRow("Gain", 0, 1.5, 0.01, chModel.gain??0.85, (v)=>{ chModel.gain=v; _apply(); }));
-  el.appendChild(_sliderRow("Pan", -1, 1, 0.01, chModel.pan??0, (v)=>{ chModel.pan=v; _apply(); }));
+  el.appendChild(_gainRow("Gain", 0, 1.5, 0.01, chModel.gain??0.85, "channel", index1, (v)=>{ chModel.gain=v; _apply(); }, ()=>chModel.gain));
+  el.appendChild(_knobRow("Pan", -1, 1, 0.01, chModel.pan??0, (v)=>{ chModel.pan=v; _apply(); }, ()=>chModel.pan));
 
-  el.appendChild(_sliderRow("EQ Low", -24, 24, 0.1, chModel.eqLow??0, (v)=>{ chModel.eqLow=v; _apply(); }));
-  el.appendChild(_sliderRow("EQ Mid", -24, 24, 0.1, chModel.eqMid??0, (v)=>{ chModel.eqMid=v; _apply(); }));
-  el.appendChild(_sliderRow("EQ High", -24, 24, 0.1, chModel.eqHigh??0, (v)=>{ chModel.eqHigh=v; _apply(); }));
+  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, chModel.eqLow??0, (v)=>{ chModel.eqLow=v; _apply(); }, ()=>chModel.eqLow));
+  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, chModel.eqMid??0, (v)=>{ chModel.eqMid=v; _apply(); }, ()=>chModel.eqMid));
+  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, chModel.eqHigh??0, (v)=>{ chModel.eqHigh=v; _apply(); }, ()=>chModel.eqHigh));
 
   // FX block
-  el.appendChild(_fxBlock(chModel.fx, (newList)=>{
+  el.appendChild(_fxRack("channel", index1, chModel.fx, (newList)=>{
     chModel.fx = newList; _apply();
   }));
 
@@ -157,7 +164,118 @@ function _sliderRow(label, min, max, step, value, onChange){
   return wrap;
 }
 
-function _fxBlock(fxList, onUpdate){
+function _gainRow(label, min, max, step, value, scope, chIndex1, onChange, getValue){
+  const wrap = document.createElement("div");
+  wrap.className="mixFader gainRow";
+
+  const row = document.createElement("div");
+  row.className="mixRow";
+  const l = document.createElement("label");
+  l.textContent = label;
+  row.appendChild(l);
+  const val = document.createElement("div");
+  val.className="mixSub";
+  val.textContent = String(Math.round(value*100)/100);
+  row.appendChild(val);
+  wrap.appendChild(row);
+
+  const body = document.createElement("div");
+  body.className = "gainBody";
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min=min; input.max=max; input.step=step; input.value=value;
+  input.className = "mixVertical";
+  input.addEventListener("input", ()=>{
+    const v = parseFloat(input.value);
+    val.textContent = String(Math.round(v*100)/100);
+    onChange(v);
+  });
+  body.appendChild(input);
+
+  const meter = document.createElement("div");
+  meter.className = "mixVu";
+  const fill = document.createElement("div");
+  fill.className = "mixVuFill";
+  meter.appendChild(fill);
+  body.appendChild(meter);
+  wrap.appendChild(body);
+
+  __mixUi.meterEntries.push({ scope, chIndex1, fill });
+  if(typeof getValue === "function") __mixUi.controlEntries.push({
+    getValue,
+    apply:(v)=>{
+      input.value = String(v);
+      val.textContent = String(Math.round(v*100)/100);
+    }
+  });
+  return wrap;
+}
+
+function _knobRow(label, min, max, step, value, onChange, getValue){
+  const wrap = document.createElement("div");
+  wrap.className="mixKnobRow";
+  const row = document.createElement("div");
+  row.className="mixRow";
+  const l = document.createElement("label");
+  l.textContent = label;
+  row.appendChild(l);
+  const val = document.createElement("div");
+  val.className="mixSub";
+  row.appendChild(val);
+  wrap.appendChild(row);
+
+  const knobWrap = document.createElement("div");
+  knobWrap.className = "mixKnobWrap";
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min=min; input.max=max; input.step=step; input.value=value;
+  input.className = "mixKnob";
+  knobWrap.appendChild(input);
+  wrap.appendChild(knobWrap);
+
+  const paint = ()=>{
+    const v = parseFloat(input.value);
+    const t = (v - min) / Math.max(1e-9, (max-min));
+    const deg = -135 + (270*t);
+    input.style.setProperty("--ang", `${deg}deg`);
+    val.textContent = String(Math.round(v*100)/100);
+  };
+  input.addEventListener("input", ()=>{ paint(); onChange(parseFloat(input.value)); });
+  paint();
+  if(typeof getValue === "function") __mixUi.controlEntries.push({
+    getValue,
+    apply:(v)=>{
+      input.value = String(v);
+      paint();
+    }
+  });
+  return wrap;
+}
+
+function _fxRack(scope, chIndex1, fxList, onUpdate){
+  const rack = document.createElement("div");
+  rack.className = "fxRack";
+  rack.dataset.scope = scope;
+  rack.dataset.channel = String(chIndex1);
+
+  const hdr = document.createElement("div");
+  hdr.className = "mixRow";
+  const t = document.createElement("label");
+  t.textContent = "FX Rack";
+  hdr.appendChild(t);
+  const lfoBadge = document.createElement("div");
+  lfoBadge.className = "lfoFeedbackBlock";
+  lfoBadge.dataset.scope = scope;
+  lfoBadge.dataset.channel = String(chIndex1);
+  lfoBadge.textContent = "LFO: —";
+  hdr.appendChild(lfoBadge);
+  rack.appendChild(hdr);
+
+  rack.appendChild(_fxBlock(scope, chIndex1, fxList, onUpdate, lfoBadge));
+  return rack;
+}
+
+function _fxBlock(scope, chIndex1, fxList, onUpdate, lfoBadgeEl){
   const box = document.createElement("div");
 
   const top = document.createElement("div");
@@ -192,6 +310,9 @@ function _fxBlock(fxList, onUpdate){
   (fxList||[]).forEach((fx, idx)=>{
     const item=document.createElement("div");
     item.className="fxItem";
+    item.dataset.scope = scope;
+    item.dataset.channel = String(chIndex1);
+    item.dataset.fxIndex = String(idx);
 
     const left=document.createElement("div");
     const name=document.createElement("div");
@@ -246,7 +367,96 @@ function _fxBlock(fxList, onUpdate){
   });
 
   box.appendChild(list);
+  __paintLfoVisuals(lfoBadgeEl);
   return box;
+}
+
+function __lfoMapByKey(){
+  const out = new Map();
+  const arr = window.__lfoVisualState?.fxMap || [];
+  for(const e of arr){
+    if(!e || !e.key) continue;
+    out.set(String(e.key), e);
+  }
+  return out;
+}
+
+function __paintLfoVisuals(lfoBadgeEl){
+  const map = __lfoMapByKey();
+  const firstByRack = new Map();
+  const colorByRack = new Map();
+  const items = document.querySelectorAll(".fxItem");
+  items.forEach((item)=>{
+    const rackKey = `${item.dataset.scope}:${item.dataset.channel}`;
+    const key = `${item.dataset.scope}:${item.dataset.channel}:${item.dataset.fxIndex}`;
+    const st = map.get(key);
+    if(st){
+      item.style.borderColor = st.color;
+      item.style.boxShadow = `0 0 0 1px ${st.color}55, 0 8px 18px ${st.color}33`;
+      item.style.background = `linear-gradient(145deg, ${st.color}22, rgba(0,0,0,.22) 52%)`;
+      if(!firstByRack.has(rackKey)) firstByRack.set(rackKey, st.name);
+      if(!colorByRack.has(rackKey)) colorByRack.set(rackKey, st.color);
+    }else{
+      item.style.borderColor = "";
+      item.style.boxShadow = "";
+      item.style.background = "";
+    }
+  });
+
+  const racks = document.querySelectorAll('.fxRack');
+  racks.forEach((rack)=>{
+    const rk = `${rack.dataset.scope||"channel"}:${rack.dataset.channel||"1"}`;
+    const c = colorByRack.get(rk);
+    if(c){
+      rack.style.borderColor = c;
+      rack.style.boxShadow = `0 0 0 1px ${c}33 inset, 0 6px 14px ${c}22`;
+      rack.style.background = `linear-gradient(180deg, ${c}33, rgba(0,0,0,.18))`;
+    }else{
+      rack.style.borderColor = '';
+      rack.style.boxShadow = '';
+      rack.style.background = '';
+    }
+  });
+
+  const badges = lfoBadgeEl ? [lfoBadgeEl] : Array.from(document.querySelectorAll(".lfoFeedbackBlock"));
+  badges.forEach((b)=>{
+    const rk = `${b.dataset.scope||"channel"}:${b.dataset.channel||"1"}`;
+    const n = firstByRack.get(rk) || "";
+    const c = colorByRack.get(rk) || "";
+    b.textContent = n ? `LFO: ${n}` : "LFO: —";
+    b.style.borderColor = c ? `${c}aa` : '';
+    b.style.background = c ? `${c}2e` : '';
+    b.style.color = c ? '#f2f8ff' : '';
+  });
+}
+
+function __stopMixerMeters(){
+  if(__mixUi.meterRAF){
+    cancelAnimationFrame(__mixUi.meterRAF);
+    __mixUi.meterRAF = 0;
+  }
+  __mixUi.meterEntries = [];
+  __mixUi.controlEntries = [];
+}
+
+function __startMixerMeters(){
+  const loop = ()=>{
+    __paintLfoVisuals();
+    for(const c of __mixUi.controlEntries){
+      let v = Number(c.getValue?.());
+      if(!Number.isFinite(v)) continue;
+      c.apply(v);
+    }
+    for(const m of __mixUi.meterEntries){
+      const lvl = (m.scope === "master")
+        ? (ae?.getMasterMeterLevel ? ae.getMasterMeterLevel() : 0)
+        : (ae?.getChannelMeterLevel ? ae.getChannelMeterLevel(m.chIndex1) : 0);
+      const scaled = Math.pow(Math.max(0, Math.min(1, lvl)), 0.62);
+      if(m.fill) m.fill.style.height = `${Math.max(3, Math.round(scaled*100))}%`;
+    }
+    __mixUi.meterRAF = requestAnimationFrame(loop);
+  };
+  __mixUi.meterRAF = requestAnimationFrame(loop);
 }
 
 function _divOptions(){
@@ -500,4 +710,3 @@ function _miniSlider(label, min, max, step, value, onChange){
     }
   }, { passive:false });
 })();
-
