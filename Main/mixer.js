@@ -5,7 +5,9 @@ const FX_TYPES = ["compresseur","chorus","reverb","flanger","delay","gross beat"
 const __mixUi = {
   meterRAF: 0,
   meterEntries: [],
-  controlSync: []
+  controlSync: [],
+  debug: false,
+  lastDebugTs: 0
 };
 
 function renderMixerUI(){
@@ -205,10 +207,20 @@ function _gainRow(label, min, max, step, value, scope, chIndex1, onChange, getVa
   const fill = document.createElement("div");
   fill.className = "mixVuFill";
   meter.appendChild(fill);
-  body.appendChild(meter);
+
+  const dbReadout = document.createElement("div");
+  dbReadout.className = "mixVuDb";
+  dbReadout.textContent = "-∞ dB";
+
+  const meterWrap = document.createElement("div");
+  meterWrap.className = "mixVuWrap";
+  meterWrap.appendChild(meter);
+  meterWrap.appendChild(dbReadout);
+
+  body.appendChild(meterWrap);
   wrap.appendChild(body);
 
-  __mixUi.meterEntries.push({ scope, chIndex1, fill });
+  __mixUi.meterEntries.push({ scope, chIndex1, meter, fill, dbReadout, lastNorm:0 });
   return wrap;
 }
 
@@ -419,10 +431,31 @@ function __startMixerMeters(){
   const loop = ()=>{
     __paintLfoVisuals();
     for(const m of __mixUi.meterEntries){
-      const lvl = (m.scope === "master")
-        ? (ae?.getMasterMeterLevel ? ae.getMasterMeterLevel() : 0)
-        : (ae?.getChannelMeterLevel ? ae.getChannelMeterLevel(m.chIndex1) : 0);
-      if(m.fill) m.fill.style.height = `${Math.max(0, 100 - Math.round(lvl*100))}%`;
+      const snap = (m.scope === "master")
+        ? (ae?.getMasterMeterSnapshot ? ae.getMasterMeterSnapshot() : { norm:(ae?.getMasterMeterLevel ? ae.getMasterMeterLevel() : 0), db:-60 })
+        : (ae?.getChannelMeterSnapshot ? ae.getChannelMeterSnapshot(m.chIndex1) : { norm:(ae?.getChannelMeterLevel ? ae.getChannelMeterLevel(m.chIndex1) : 0), db:-60 });
+      const norm = clamp(Number(snap?.norm)||0, 0, 1);
+      const db = Number.isFinite(Number(snap?.db)) ? Number(snap.db) : (-60 + norm * 60);
+      if(m.fill){
+        m.fill.style.height = `${Math.round(norm*100)}%`;
+        m.fill.classList.toggle("is-yellow", norm >= 0.7 && norm < 0.9);
+        m.fill.classList.toggle("is-red", norm >= 0.9);
+      }
+      if(m.dbReadout){
+        m.dbReadout.textContent = (norm <= 0.001) ? "-∞ dB" : `${Math.round(db)} dB`;
+      }
+      m.lastNorm = norm;
+    }
+    if(__mixUi.debug){
+      const now = performance.now();
+      if(now - (__mixUi.lastDebugTs||0) > 1000){
+        __mixUi.lastDebugTs = now;
+        const m = __mixUi.meterEntries[0];
+        console.debug("[MixerMeter] sample", {
+          entries: __mixUi.meterEntries.length,
+          firstNorm: m ? Number(m.lastNorm||0).toFixed(3) : "n/a"
+        });
+      }
     }
     for(const c of __mixUi.controlSync){
       if(!c || !c.input || !c.input.isConnected) continue;
@@ -691,3 +724,9 @@ function _miniSlider(label, min, max, step, value, onChange){
     }
   }, { passive:false });
 })();
+
+
+window.setMixerMeterDebug = function(enabled){
+  __mixUi.debug = !!enabled;
+  if(!enabled) __mixUi.lastDebugTs = 0;
+};

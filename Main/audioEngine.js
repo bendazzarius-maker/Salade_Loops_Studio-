@@ -127,8 +127,8 @@ class AudioEngine{
     this.channelMeters.push(strip.meter);
   }
 
-  _meterLevel(analyser){
-    if(!this.ctx || !analyser) return 0;
+  _meterSnapshot(analyser){
+    if(!this.ctx || !analyser) return { norm:0, peak:0, db:-60 };
     try{
       const data = analyser._meterData || new Float32Array(analyser.fftSize || 256);
       analyser._meterData = data;
@@ -152,19 +152,38 @@ class AudioEngine{
       const peakNorm = clamp(peak, 0, 1);
       const mixed = Math.max(rmsNorm, peakNorm * 0.9);
       const visual = Math.pow(mixed, 0.62);
-      return (visual < 0.01) ? 0 : visual;
+      const norm = (visual < 0.01) ? 0 : visual;
+      const meterDb = 20 * Math.log10(Math.max(Math.max(rms, peak * 0.85), 1e-8));
+      return {
+        norm,
+        peak: peakNorm,
+        db: clamp(meterDb, -60, 0)
+      };
     }catch(_){
-      return 0;
+      return { norm:0, peak:0, db:-60 };
     }
+  }
+
+  _meterLevel(analyser){
+    return this._meterSnapshot(analyser).norm;
   }
 
   getMasterMeterLevel(){
     return this._meterLevel(this.masterMeter);
   }
 
+  getMasterMeterSnapshot(){
+    return this._meterSnapshot(this.masterMeter);
+  }
+
   getChannelMeterLevel(index1){
     const idx = Math.max(1, Math.floor(index1||1)) - 1;
     return this._meterLevel(this.channelMeters[idx]);
+  }
+
+  getChannelMeterSnapshot(index1){
+    const idx = Math.max(1, Math.floor(index1||1)) - 1;
+    return this._meterSnapshot(this.channelMeters[idx]);
   }
 
   getMixerInput(index1){
