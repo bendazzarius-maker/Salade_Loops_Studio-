@@ -10,6 +10,7 @@ class AudioEngine{
     this.comp=null;
     this.masterMeter = null;
     this.channelMeters = [];
+    this.meterSink = null;
   }
 
   async ensure(){
@@ -24,6 +25,13 @@ class AudioEngine{
       this.comp.ratio.value = 3;
       this.comp.attack.value = 0.003;
       this.comp.release.value = 0.18;
+
+      // Silent sink to keep meter analysis branches alive.
+      // WebAudio processing is pull-based, so meter-only branches may stay idle
+      // if they are not connected to an output destination.
+      this.meterSink = this.ctx.createGain();
+      this.meterSink.gain.value = 0;
+      this.meterSink.connect(this.ctx.destination);
 
       // Build mixer (default 16 channels)
       try{
@@ -383,6 +391,9 @@ class AudioEngine{
     const meter = ctx.createAnalyser();
     meter.fftSize = 256;
     meter.smoothingTimeConstant = 0.75;
+    if(this.meterSink){
+      meter.connect(this.meterSink);
+    }
 
     // Crossfader gain (channels only)
     const xfade = ctx.createGain();
