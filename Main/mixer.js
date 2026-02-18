@@ -422,7 +422,7 @@ function __startMixerMeters(){
       const lvl = (m.scope === "master")
         ? (ae?.getMasterMeterLevel ? ae.getMasterMeterLevel() : 0)
         : (ae?.getChannelMeterLevel ? ae.getChannelMeterLevel(m.chIndex1) : 0);
-      if(m.fill) m.fill.style.height = `${Math.max(2, Math.round(lvl*100))}%`;
+      if(m.fill) m.fill.style.height = `${Math.max(0, 100 - Math.round(lvl*100))}%`;
     }
     for(const c of __mixUi.controlSync){
       if(!c || !c.input || !c.input.isConnected) continue;
