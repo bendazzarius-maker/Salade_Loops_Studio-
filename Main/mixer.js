@@ -4,8 +4,7 @@
 const FX_TYPES = ["compresseur","chorus","reverb","flanger","delay","gross beat"];
 const __mixUi = {
   meterRAF: 0,
-  meterEntries: [],
-  controlEntries: []
+  meterEntries: []
 };
 
 function renderMixerUI(){
@@ -68,9 +67,9 @@ function _makeMasterStrip(){
   }));
 
   // EQ
-  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, m.eqLow??0, (v)=>{ m.eqLow=v; _apply(); }, ()=>m.eqLow));
-  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, m.eqMid??0, (v)=>{ m.eqMid=v; _apply(); }, ()=>m.eqMid));
-  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, m.eqHigh??0, (v)=>{ m.eqHigh=v; _apply(); }, ()=>m.eqHigh));
+  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, m.eqLow??0, (v)=>{ m.eqLow=v; _apply(); }));
+  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, m.eqMid??0, (v)=>{ m.eqMid=v; _apply(); }));
+  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, m.eqHigh??0, (v)=>{ m.eqHigh=v; _apply(); }));
 
   // FX
   el.appendChild(_fxRack("master", 1, m.fx, (newList)=>{
@@ -114,12 +113,12 @@ function _makeChannelStrip(index1, chModel){
   el.appendChild(assignRow);
 
   // Gain / Pan / EQ
-  el.appendChild(_gainRow("Gain", 0, 1.5, 0.01, chModel.gain??0.85, "channel", index1, (v)=>{ chModel.gain=v; _apply(); }, ()=>chModel.gain));
-  el.appendChild(_knobRow("Pan", -1, 1, 0.01, chModel.pan??0, (v)=>{ chModel.pan=v; _apply(); }, ()=>chModel.pan));
+  el.appendChild(_gainRow("Gain", 0, 1.5, 0.01, chModel.gain??0.85, "channel", index1, (v)=>{ chModel.gain=v; _apply(); }));
+  el.appendChild(_knobRow("Pan", -1, 1, 0.01, chModel.pan??0, (v)=>{ chModel.pan=v; _apply(); }));
 
-  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, chModel.eqLow??0, (v)=>{ chModel.eqLow=v; _apply(); }, ()=>chModel.eqLow));
-  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, chModel.eqMid??0, (v)=>{ chModel.eqMid=v; _apply(); }, ()=>chModel.eqMid));
-  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, chModel.eqHigh??0, (v)=>{ chModel.eqHigh=v; _apply(); }, ()=>chModel.eqHigh));
+  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, chModel.eqLow??0, (v)=>{ chModel.eqLow=v; _apply(); }));
+  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, chModel.eqMid??0, (v)=>{ chModel.eqMid=v; _apply(); }));
+  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, chModel.eqHigh??0, (v)=>{ chModel.eqHigh=v; _apply(); }));
 
   // FX block
   el.appendChild(_fxRack("channel", index1, chModel.fx, (newList)=>{
@@ -164,7 +163,7 @@ function _sliderRow(label, min, max, step, value, onChange){
   return wrap;
 }
 
-function _gainRow(label, min, max, step, value, scope, chIndex1, onChange, getValue){
+function _gainRow(label, min, max, step, value, scope, chIndex1, onChange){
   const wrap = document.createElement("div");
   wrap.className="mixFader gainRow";
 
@@ -201,17 +200,10 @@ function _gainRow(label, min, max, step, value, scope, chIndex1, onChange, getVa
   wrap.appendChild(body);
 
   __mixUi.meterEntries.push({ scope, chIndex1, fill });
-  if(typeof getValue === "function") __mixUi.controlEntries.push({
-    getValue,
-    apply:(v)=>{
-      input.value = String(v);
-      val.textContent = String(Math.round(v*100)/100);
-    }
-  });
   return wrap;
 }
 
-function _knobRow(label, min, max, step, value, onChange, getValue){
+function _knobRow(label, min, max, step, value, onChange){
   const wrap = document.createElement("div");
   wrap.className="mixKnobRow";
   const row = document.createElement("div");
@@ -242,21 +234,12 @@ function _knobRow(label, min, max, step, value, onChange, getValue){
   };
   input.addEventListener("input", ()=>{ paint(); onChange(parseFloat(input.value)); });
   paint();
-  if(typeof getValue === "function") __mixUi.controlEntries.push({
-    getValue,
-    apply:(v)=>{
-      input.value = String(v);
-      paint();
-    }
-  });
   return wrap;
 }
 
 function _fxRack(scope, chIndex1, fxList, onUpdate){
   const rack = document.createElement("div");
   rack.className = "fxRack";
-  rack.dataset.scope = scope;
-  rack.dataset.channel = String(chIndex1);
 
   const hdr = document.createElement("div");
   hdr.className = "mixRow";
@@ -384,7 +367,6 @@ function __lfoMapByKey(){
 function __paintLfoVisuals(lfoBadgeEl){
   const map = __lfoMapByKey();
   const firstByRack = new Map();
-  const colorByRack = new Map();
   const items = document.querySelectorAll(".fxItem");
   items.forEach((item)=>{
     const rackKey = `${item.dataset.scope}:${item.dataset.channel}`;
@@ -395,38 +377,17 @@ function __paintLfoVisuals(lfoBadgeEl){
       item.style.boxShadow = `0 0 0 1px ${st.color}55, 0 8px 18px ${st.color}33`;
       item.style.background = `linear-gradient(145deg, ${st.color}22, rgba(0,0,0,.22) 52%)`;
       if(!firstByRack.has(rackKey)) firstByRack.set(rackKey, st.name);
-      if(!colorByRack.has(rackKey)) colorByRack.set(rackKey, st.color);
     }else{
       item.style.borderColor = "";
       item.style.boxShadow = "";
       item.style.background = "";
     }
   });
-
-  const racks = document.querySelectorAll('.fxRack');
-  racks.forEach((rack)=>{
-    const rk = `${rack.dataset.scope||"channel"}:${rack.dataset.channel||"1"}`;
-    const c = colorByRack.get(rk);
-    if(c){
-      rack.style.borderColor = c;
-      rack.style.boxShadow = `0 0 0 1px ${c}33 inset, 0 6px 14px ${c}22`;
-      rack.style.background = `linear-gradient(180deg, ${c}33, rgba(0,0,0,.18))`;
-    }else{
-      rack.style.borderColor = '';
-      rack.style.boxShadow = '';
-      rack.style.background = '';
-    }
-  });
-
   const badges = lfoBadgeEl ? [lfoBadgeEl] : Array.from(document.querySelectorAll(".lfoFeedbackBlock"));
   badges.forEach((b)=>{
     const rk = `${b.dataset.scope||"channel"}:${b.dataset.channel||"1"}`;
     const n = firstByRack.get(rk) || "";
-    const c = colorByRack.get(rk) || "";
     b.textContent = n ? `LFO: ${n}` : "LFO: —";
-    b.style.borderColor = c ? `${c}aa` : '';
-    b.style.background = c ? `${c}2e` : '';
-    b.style.color = c ? '#f2f8ff' : '';
   });
 }
 
@@ -436,23 +397,16 @@ function __stopMixerMeters(){
     __mixUi.meterRAF = 0;
   }
   __mixUi.meterEntries = [];
-  __mixUi.controlEntries = [];
 }
 
 function __startMixerMeters(){
   const loop = ()=>{
     __paintLfoVisuals();
-    for(const c of __mixUi.controlEntries){
-      let v = Number(c.getValue?.());
-      if(!Number.isFinite(v)) continue;
-      c.apply(v);
-    }
     for(const m of __mixUi.meterEntries){
       const lvl = (m.scope === "master")
         ? (ae?.getMasterMeterLevel ? ae.getMasterMeterLevel() : 0)
         : (ae?.getChannelMeterLevel ? ae.getChannelMeterLevel(m.chIndex1) : 0);
-      const scaled = Math.pow(Math.max(0, Math.min(1, lvl)), 0.62);
-      if(m.fill) m.fill.style.height = `${Math.max(3, Math.round(scaled*100))}%`;
+      if(m.fill) m.fill.style.height = `${Math.max(2, Math.round(lvl*100))}%`;
     }
     __mixUi.meterRAF = requestAnimationFrame(loop);
   };

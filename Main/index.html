@@ -227,12 +227,12 @@
   .fxRack{border:1px solid rgba(112,167,255,.28);border-radius:12px;padding:8px;background:linear-gradient(180deg, rgba(112,167,255,.08), rgba(0,0,0,.18));display:flex;flex-direction:column;gap:8px}
   .lfoFeedbackBlock{font-size:11px;font-weight:800;color:#d7e6ff;padding:3px 8px;border-radius:999px;border:1px solid rgba(112,167,255,.34);background:rgba(112,167,255,.14)}
   .mixKnobRow{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18)}
-  .mixKnobWrap{display:flex;align-items:center;justify-content:center;padding:6px 0;border-radius:10px;background:rgba(180,190,210,.20);border:1px solid rgba(180,190,210,.32)}
+  .mixKnobWrap{display:flex;align-items:center;justify-content:center;padding:4px 0}
   .mixKnob{
     -webkit-appearance:none;appearance:none;
     width:52px;height:52px;border-radius:50%;cursor:pointer;
-    background:radial-gradient(circle at 50% 50%, #12203a 0 52%, #091327 53% 100%);
-    border:1px solid rgba(255,255,255,.24);
+    background:radial-gradient(circle at 50% 50%, #1c2842 0 52%, #0d1528 53% 100%);
+    border:1px solid rgba(255,255,255,.2);
     position:relative;
   }
   .mixKnob::before{
@@ -245,10 +245,10 @@
   .mixKnob::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:0;height:0;opacity:0}
 
   .gainRow{padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(0,0,0,.2)}
-  .gainBody{display:flex;align-items:center;justify-content:center;gap:10px;min-height:132px;padding-right:4px;overflow:visible}
-  .mixVertical{writing-mode:vertical-lr;direction:rtl;width:24px;height:124px;margin:0}
-  .mixVu{width:16px;height:124px;border-radius:9px;border:1px solid rgba(255,255,255,.28);background:linear-gradient(0deg,#19d66f 0%, #f4d53d 56%, #ff4d6d 100%);position:relative;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
-  .mixVuFill{position:absolute;left:0;right:0;bottom:0;height:3%;background:rgba(255,255,255,.52);box-shadow:0 0 10px rgba(255,255,255,.55)}
+  .gainBody{display:flex;align-items:stretch;justify-content:center;gap:12px;min-height:122px}
+  .mixVertical{writing-mode:vertical-lr;direction:rtl;width:24px;height:116px;margin:0}
+  .mixVu{width:12px;height:116px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:linear-gradient(0deg,#19d66f 0%, #f4d53d 56%, #ff4d6d 100%);position:relative;overflow:hidden}
+  .mixVuFill{position:absolute;left:0;right:0;bottom:0;height:2%;background:rgba(255,255,255,.35);box-shadow:0 0 8px rgba(255,255,255,.45)}
 
 
 /* --- FX param editor --- */
