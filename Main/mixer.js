@@ -4,7 +4,8 @@
 const FX_TYPES = ["compresseur","chorus","reverb","flanger","delay","gross beat"];
 const __mixUi = {
   meterRAF: 0,
-  meterEntries: []
+  meterEntries: [],
+  controlSync: []
 };
 
 function renderMixerUI(){
@@ -64,12 +65,12 @@ function _makeMasterStrip(){
     m.cross = v;
     _apply();
     if(ae && ae.updateCrossfader) ae.updateCrossfader(v);
-  }));
+  }, ()=>m.cross));
 
   // EQ
-  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, m.eqLow??0, (v)=>{ m.eqLow=v; _apply(); }));
-  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, m.eqMid??0, (v)=>{ m.eqMid=v; _apply(); }));
-  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, m.eqHigh??0, (v)=>{ m.eqHigh=v; _apply(); }));
+  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, m.eqLow??0, (v)=>{ m.eqLow=v; _apply(); }, ()=>m.eqLow));
+  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, m.eqMid??0, (v)=>{ m.eqMid=v; _apply(); }, ()=>m.eqMid));
+  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, m.eqHigh??0, (v)=>{ m.eqHigh=v; _apply(); }, ()=>m.eqHigh));
 
   // FX
   el.appendChild(_fxRack("master", 1, m.fx, (newList)=>{
@@ -113,12 +114,12 @@ function _makeChannelStrip(index1, chModel){
   el.appendChild(assignRow);
 
   // Gain / Pan / EQ
-  el.appendChild(_gainRow("Gain", 0, 1.5, 0.01, chModel.gain??0.85, "channel", index1, (v)=>{ chModel.gain=v; _apply(); }));
-  el.appendChild(_knobRow("Pan", -1, 1, 0.01, chModel.pan??0, (v)=>{ chModel.pan=v; _apply(); }));
+  el.appendChild(_gainRow("Gain", 0, 1.5, 0.01, chModel.gain??0.85, "channel", index1, (v)=>{ chModel.gain=v; _apply(); }, ()=>chModel.gain));
+  el.appendChild(_knobRow("Pan", -1, 1, 0.01, chModel.pan??0, (v)=>{ chModel.pan=v; _apply(); }, ()=>chModel.pan));
 
-  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, chModel.eqLow??0, (v)=>{ chModel.eqLow=v; _apply(); }));
-  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, chModel.eqMid??0, (v)=>{ chModel.eqMid=v; _apply(); }));
-  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, chModel.eqHigh??0, (v)=>{ chModel.eqHigh=v; _apply(); }));
+  el.appendChild(_knobRow("EQ Low", -24, 24, 0.1, chModel.eqLow??0, (v)=>{ chModel.eqLow=v; _apply(); }, ()=>chModel.eqLow));
+  el.appendChild(_knobRow("EQ Mid", -24, 24, 0.1, chModel.eqMid??0, (v)=>{ chModel.eqMid=v; _apply(); }, ()=>chModel.eqMid));
+  el.appendChild(_knobRow("EQ High", -24, 24, 0.1, chModel.eqHigh??0, (v)=>{ chModel.eqHigh=v; _apply(); }, ()=>chModel.eqHigh));
 
   // FX block
   el.appendChild(_fxRack("channel", index1, chModel.fx, (newList)=>{
@@ -132,7 +133,7 @@ function _makeChannelStrip(index1, chModel){
   return el;
 }
 
-function _sliderRow(label, min, max, step, value, onChange){
+function _sliderRow(label, min, max, step, value, onChange, getValue){
   const wrap = document.createElement("div");
   wrap.className="mixFader";
 
@@ -158,12 +159,16 @@ function _sliderRow(label, min, max, step, value, onChange){
     val.textContent = String(Math.round(v*100)/100);
     onChange(v);
   });
+  __registerControlSync(input, min, max, ()=>{
+    const v = parseFloat(input.value);
+    val.textContent = String(Math.round(v*100)/100);
+  }, getValue);
   wrap.appendChild(input);
 
   return wrap;
 }
 
-function _gainRow(label, min, max, step, value, scope, chIndex1, onChange){
+function _gainRow(label, min, max, step, value, scope, chIndex1, onChange, getValue){
   const wrap = document.createElement("div");
   wrap.className="mixFader gainRow";
 
@@ -189,6 +194,10 @@ function _gainRow(label, min, max, step, value, scope, chIndex1, onChange){
     val.textContent = String(Math.round(v*100)/100);
     onChange(v);
   });
+  __registerControlSync(input, min, max, ()=>{
+    const v = parseFloat(input.value);
+    val.textContent = String(Math.round(v*100)/100);
+  }, getValue);
   body.appendChild(input);
 
   const meter = document.createElement("div");
@@ -203,7 +212,7 @@ function _gainRow(label, min, max, step, value, scope, chIndex1, onChange){
   return wrap;
 }
 
-function _knobRow(label, min, max, step, value, onChange){
+function _knobRow(label, min, max, step, value, onChange, getValue){
   const wrap = document.createElement("div");
   wrap.className="mixKnobRow";
   const row = document.createElement("div");
@@ -233,8 +242,14 @@ function _knobRow(label, min, max, step, value, onChange){
     val.textContent = String(Math.round(v*100)/100);
   };
   input.addEventListener("input", ()=>{ paint(); onChange(parseFloat(input.value)); });
+  __registerControlSync(input, min, max, paint, getValue);
   paint();
   return wrap;
+}
+
+function __registerControlSync(input, min, max, paint, getValue){
+  if(typeof getValue !== "function") return;
+  __mixUi.controlSync.push({ input, min, max, paint, getValue });
 }
 
 function _fxRack(scope, chIndex1, fxList, onUpdate){
@@ -397,6 +412,7 @@ function __stopMixerMeters(){
     __mixUi.meterRAF = 0;
   }
   __mixUi.meterEntries = [];
+  __mixUi.controlSync = [];
 }
 
 function __startMixerMeters(){
@@ -407,6 +423,17 @@ function __startMixerMeters(){
         ? (ae?.getMasterMeterLevel ? ae.getMasterMeterLevel() : 0)
         : (ae?.getChannelMeterLevel ? ae.getChannelMeterLevel(m.chIndex1) : 0);
       if(m.fill) m.fill.style.height = `${Math.max(2, Math.round(lvl*100))}%`;
+    }
+    for(const c of __mixUi.controlSync){
+      if(!c || !c.input || !c.input.isConnected) continue;
+      if(c.input.matches(":active") || c.input === document.activeElement) continue;
+      const nextRaw = Number(c.getValue());
+      if(!Number.isFinite(nextRaw)) continue;
+      const next = Math.max(c.min, Math.min(c.max, nextRaw));
+      const current = Number(c.input.value);
+      if(Math.abs(next - current) < 1e-4) continue;
+      c.input.value = String(next);
+      if(typeof c.paint === "function") c.paint();
     }
     __mixUi.meterRAF = requestAnimationFrame(loop);
   };
