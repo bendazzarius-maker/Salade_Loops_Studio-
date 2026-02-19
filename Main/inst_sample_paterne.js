@@ -121,7 +121,6 @@
             source.loop = true;
             source.loopStart = startSec;
             source.loopEnd = endSec;
-            source.playbackRate.value = noteRatio(midi, p.rootMidi, p.pitchMode);
 
             const amp = ctx.createGain();
             const gain = Math.max(0.0001, (+p.gain || 1) * Math.max(0, Math.min(1, vel)));
@@ -132,6 +131,15 @@
 
             const beatDur = (60 / state.bpm);
             const fixedDur = Math.max(1, Math.min(32, Math.floor(+p.patternBeats || 4))) * beatDur;
+
+            // Stretch de la zone Start/End pour qu'un cycle complet corresponde
+            // exactement à la longueur de pattern choisie dans l'éditeur.
+            // NOTE: en mode chromatic, la variation de hauteur impacte aussi la durée.
+            // Le stretch de base est donc calculé sur la longueur de pattern.
+            const stretchRate = loopLenSec / Math.max(0.01, fixedDur);
+            const pitchRate = noteRatio(midi, p.rootMidi, p.pitchMode);
+            source.playbackRate.value = Math.max(0.02, Math.min(16, stretchRate * pitchRate));
+
             source.start(t, startSec);
             source.stop(t + Math.max(loopLenSec * 0.5, fixedDur));
           })
