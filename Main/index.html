@@ -310,6 +310,12 @@
   .samplerSplitter{border-radius:999px;background:rgba(112,167,255,.2);border:1px solid rgba(112,167,255,.35);cursor:col-resize;align-self:stretch;transition:background .15s ease}
   .samplerSplitter:hover,.samplerSplitter.dragging{background:rgba(39,224,163,.32);border-color:rgba(39,224,163,.55)}
   .samplerBlock{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
+  .samplePatternEditor{margin:12px;border:1px solid rgba(112,167,255,.3);border-radius:12px;padding:12px;background:rgba(9,16,26,.78);display:flex;flex-direction:column;gap:10px}
+  .samplePatternEditor canvas{display:block;width:100%;height:120px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:#070b12}
+  .samplePatternRow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .samplePatternRow.samplePatternActions{grid-template-columns:minmax(0,1fr) 260px;align-items:end}
+  .samplePatternRow label{font-size:11px;color:var(--muted);font-weight:700;display:flex;flex-direction:column;gap:4px}
+  .samplePatternHint{font-size:11px;color:var(--muted)}
   .samplerBlockRoots{flex:0 0 auto}
   .samplerBlockBrowser{flex:1 1 auto;min-height:220px}
   .samplerBlockPreview{grid-area:preview}
@@ -672,6 +678,48 @@
           </div>
         </section>
       </div>
+
+      <section class="samplePatternEditor" id="samplePatternEditor">
+        <div class="title">🧩 Paterne Sample Editor</div>
+        <div class="samplePatternHint">Éditeur séparé: Start/End du wave, longueur fixe (1→32 temps), tonalité pilotée par les notes du piano roll.</div>
+        <canvas id="samplePatternWave" width="1000" height="120"></canvas>
+        <div class="samplePatternRow">
+          <label>Start (point)
+            <input id="samplePatternStart" type="number" min="0" max="1" step="0.001" value="0">
+          </label>
+          <label>End (point)
+            <input id="samplePatternEnd" type="number" min="0.001" max="1" step="0.001" value="1">
+          </label>
+          <label>Longueur paterne (temps)
+            <input id="samplePatternBeats" type="number" min="1" max="32" step="1" value="4">
+          </label>
+          <label>Mixer out
+            <select id="samplePatternMixOut"></select>
+          </label>
+        </div>
+        <div class="samplePatternRow">
+          <label>Root MIDI
+            <input id="samplePatternRootMidi" type="number" min="24" max="96" step="1" value="60">
+          </label>
+          <label>Maintien tonalité
+            <select id="samplePatternPitchMode">
+              <option value="chromatic">Chromatique piano roll</option>
+              <option value="fixed">Fixe (ignore pitch note)</option>
+            </select>
+          </label>
+          <label>Gain
+            <input id="samplePatternGain" type="range" min="0" max="1.6" step="0.01" value="1">
+          </label>
+          <label>Nom pattern
+            <input id="samplePatternName" type="text" placeholder="SP Kick Loop 01">
+          </label>
+        </div>
+        <div class="samplePatternRow samplePatternActions">
+          <div class="samplePatternHint">Drop sample sur le waveform. Molette: zoom X, Shift+molette: zoom Y, clic milieu: pan, drag lignes Start/End pour édition précise.</div>
+          <button class="btn2" id="samplePatternSavePattern">✅ Valider et enregistrer pattern</button>
+        </div>
+        <div class="small" id="samplePatternStatus">Sample Paterne prêt (drag & drop requis).</div>
+      </section>
     </div>
   </div>
 
@@ -695,6 +743,7 @@
         <option value="Pad">Pad</option>
         <option value="Drums">Drums</option>
         <option value="Sampler Touski">Sampler Touski</option>
+        <option value="Sample Paterne">Sample Paterne</option>
       </select>
       <div class="small" style="margin-top:10px">Test</div>
       <button class="btn2" id="testC4" style="justify-content:center;margin-top:8px">▶ Tester C4 (ou Drum hit)</button>
@@ -740,6 +789,7 @@
 <script defer src="./inst_pad.js"></script>
 <script defer src="./inst_drums.js"></script>
 <script defer src="./inst_sampler_touski.js"></script>
+<script defer src="./inst_sample_paterne.js"></script>
   <script defer src="./inst_violin.js"></script>
   <script defer src="./inst_subbass.js"></script>
 <script defer src="./bank.js"></script>
@@ -765,6 +815,7 @@
 <script defer src="./renderHelpers.js"></script>
 <script defer src="./sampleDirectory.js"></script>
 <script defer src="./sampler.js"></script>
+<script defer src="./samplePatternEditor.js"></script>
 <script defer src="./demoSeed.js"></script>
 <script defer src="./boot.js"></script>
 <script>
