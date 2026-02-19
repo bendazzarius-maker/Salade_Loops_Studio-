@@ -15,10 +15,15 @@
   "build": {
     "appId": "studio.saladloops.slstudio",
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Audio",
       "icon": "build/icon.png",
       "executableName": "salad-loops-studio"
     }
+  },
+  "dependencies": {
+    "fft.js": "^4.0.4"
   }
 }

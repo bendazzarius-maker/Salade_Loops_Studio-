@@ -24,7 +24,8 @@ function exportProject(){
       stepsPerBar: state.stepsPerBar
     }),
     project: deepClone(project),
-    instrumentPresets: (window.presetStore && presetStore.exportAll) ? presetStore.exportAll() : null
+    instrumentPresets: (window.presetStore && presetStore.exportAll) ? presetStore.exportAll() : null,
+    samplerPrograms: (window.sampleDirectory && sampleDirectory.exportPrograms) ? sampleDirectory.exportPrograms() : null
   };
 }
 
@@ -95,6 +96,12 @@ function importProject(data){
   try{
     if(data.instrumentPresets && window.presetStore && presetStore.importAll){
       presetStore.importAll(data.instrumentPresets, true);
+    }
+  }catch(_){ }
+
+  try{
+    if(data.samplerPrograms && window.sampleDirectory && sampleDirectory.importPrograms){
+      sampleDirectory.importPrograms(data.samplerPrograms, true);
     }
   }catch(_){ }
 

@@ -8,6 +8,9 @@ class AudioEngine{
     this.masterIn=null;     // master input (sum of channels)
     this.master=null;       // master post chain (to comp)
     this.comp=null;
+    this.masterMeter = null;
+    this.channelMeters = [];
+    this.meterSink = null;
   }
 
   async ensure(){
@@ -22,6 +25,13 @@ class AudioEngine{
       this.comp.ratio.value = 3;
       this.comp.attack.value = 0.003;
       this.comp.release.value = 0.18;
+
+      // Silent sink to keep meter analysis branches alive.
+      // WebAudio processing is pull-based, so meter-only branches may stay idle
+      // if they are not connected to an output destination.
+      this.meterSink = this.ctx.createGain();
+      this.meterSink.gain.value = 0;
+      this.meterSink.connect(this.ctx.destination);
 
       // Build mixer (default 16 channels)
       try{
@@ -85,6 +95,7 @@ class AudioEngine{
     };
 
     // Create channels
+    this.channelMeters = [];
     for(let i=0;i<num;i++){
       this._addMixerChannelInternal();
     }
@@ -113,6 +124,66 @@ class AudioEngine{
       xAssign: "A",
     };
     this.mixer.channels.push(ch);
+    this.channelMeters.push(strip.meter);
+  }
+
+  _meterSnapshot(analyser){
+    if(!this.ctx || !analyser) return { norm:0, peak:0, db:-60 };
+    try{
+      const data = analyser._meterData || new Float32Array(analyser.fftSize || 256);
+      analyser._meterData = data;
+      analyser.getFloatTimeDomainData(data);
+
+      // Mix RMS + peak pour une lecture plus vivante même sur des sons courts/transients.
+      // Le gamma (<1) augmente la sensibilité visuelle dans les bas niveaux.
+      let sum = 0;
+      let peak = 0;
+      for(let i=0;i<data.length;i++){
+        const v = data[i];
+        const a = Math.abs(v);
+        sum += v * v;
+        if(a > peak) peak = a;
+      }
+
+      const rms = Math.sqrt(sum / Math.max(1, data.length));
+      const db = 20 * Math.log10(Math.max(rms, 1e-8));
+      const floorDb = -84;
+      const rmsNorm = clamp((db - floorDb) / Math.abs(floorDb), 0, 1);
+      const peakNorm = clamp(peak, 0, 1);
+      const mixed = Math.max(rmsNorm, peakNorm * 0.9);
+      const visual = Math.pow(mixed, 0.62);
+      const norm = (visual < 0.01) ? 0 : visual;
+      const meterDb = 20 * Math.log10(Math.max(Math.max(rms, peak * 0.85), 1e-8));
+      return {
+        norm,
+        peak: peakNorm,
+        db: clamp(meterDb, -60, 0)
+      };
+    }catch(_){
+      return { norm:0, peak:0, db:-60 };
+    }
+  }
+
+  _meterLevel(analyser){
+    return this._meterSnapshot(analyser).norm;
+  }
+
+  getMasterMeterLevel(){
+    return this._meterLevel(this.masterMeter);
+  }
+
+  getMasterMeterSnapshot(){
+    return this._meterSnapshot(this.masterMeter);
+  }
+
+  getChannelMeterLevel(index1){
+    const idx = Math.max(1, Math.floor(index1||1)) - 1;
+    return this._meterLevel(this.channelMeters[idx]);
+  }
+
+  getChannelMeterSnapshot(index1){
+    const idx = Math.max(1, Math.floor(index1||1)) - 1;
+    return this._meterSnapshot(this.channelMeters[idx]);
   }
 
   getMixerInput(index1){
@@ -287,6 +358,7 @@ class AudioEngine{
 
     const startNode = nodes.eqHigh;
     const endNode   = isMaster ? nodes.out : nodes.xfade;
+    let meterSource = startNode;
 
     // disconnect previous
     try{ startNode.disconnect(); }catch(_){}
@@ -299,6 +371,7 @@ class AudioEngine{
     if(fxList.length===0){
       // no fx
       startNode.connect(endNode);
+      if(!isMaster && nodes.meterTap) startNode.connect(nodes.meterTap);
       return;
     }
 
@@ -307,7 +380,9 @@ class AudioEngine{
     for(let i=0;i<fxList.length-1;i++){
       fxList[i].node.output.connect(fxList[i+1].node.input);
     }
-    fxList[fxList.length-1].node.output.connect(endNode);
+    meterSource = fxList[fxList.length-1].node.output;
+    meterSource.connect(endNode);
+    if(!isMaster && nodes.meterTap) meterSource.connect(nodes.meterTap);
   }
 
   _createStripNodes(ctx, isMaster){
@@ -341,6 +416,15 @@ class AudioEngine{
     const out = ctx.createGain();
     out.gain.value = 0.85;
 
+    const meterTap = ctx.createGain();
+    meterTap.gain.value = 1;
+    const meter = ctx.createAnalyser();
+    meter.fftSize = 256;
+    meter.smoothingTimeConstant = 0.75;
+    if(this.meterSink){
+      meter.connect(this.meterSink);
+    }
+
     // Crossfader gain (channels only)
     const xfade = ctx.createGain();
     xfade.gain.value = 1;
@@ -354,11 +438,18 @@ class AudioEngine{
 
     if(isMaster){
       eqHigh.connect(out);
+      out.connect(meterTap);
+      meterTap.connect(meter);
+      this.masterMeter = meter;
     } else {
+      // Channel meter is pre-crossfader so activity stays visible per channel
+      // even when Xfade A/B mutes a side.
       eqHigh.connect(xfade);
+      eqHigh.connect(meterTap);
+      meterTap.connect(meter);
     }
 
-    return { input, gain, pan, eqLow, eqMid, eqHigh, xfade, out };
+    return { input, gain, pan, eqLow, eqMid, eqHigh, xfade, out, meterTap, meter };
   }
 }
 const ae = new AudioEngine();

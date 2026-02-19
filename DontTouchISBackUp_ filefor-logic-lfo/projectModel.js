@@ -143,6 +143,66 @@ function createLfoPatternPreset(name){
   return p;
 }
 
+function clonePatternToNewSlot(patternId){
+  const src = project.patterns.find(p=>p.id===patternId);
+  if(!src) return null;
+
+  const clone = JSON.parse(JSON.stringify(src));
+  clone.id = gid((isLfoPattern(src) ? "lfo" : "pat"));
+  clone.name = `${src.name} (copie)`;
+
+  if(Array.isArray(clone.channels)){
+    clone.channels = clone.channels.map((ch)=>({
+      ...ch,
+      id: gid("ch"),
+      notes: Array.isArray(ch.notes)
+        ? ch.notes.map((n)=>({ ...n, id: gid("note"), selected:false }))
+        : []
+    }));
+    clone.activeChannelId = clone.channels[0]?.id || null;
+  }
+
+  project.patterns.push(clone);
+  project.activePatternId = clone.id;
+  if(Array.isArray(clone.channels) && clone.channels.length){
+    project.activeNotesPatternId = clone.id;
+  }
+
+  refreshUI();
+  try{ renderAll(); }catch(_e){}
+  try{ renderPlaylist(); }catch(_e){}
+  return clone;
+}
+
+function deletePattern(patternId){
+  const idx = project.patterns.findIndex(p=>p.id===patternId);
+  if(idx<0) return false;
+
+  project.patterns.splice(idx, 1);
+  if(!project.patterns.length){
+    createPattern("Pattern 1");
+    return true;
+  }
+
+  if(project.activePatternId===patternId){
+    project.activePatternId = project.patterns[Math.max(0, idx-1)]?.id || project.patterns[0].id;
+  }
+  if(project.activeNotesPatternId===patternId){
+    const nextNotes = project.patterns.find(p=>Array.isArray(p.channels));
+    project.activeNotesPatternId = nextNotes?.id || null;
+  }
+
+  // remove orphan clips linked to deleted pattern
+  for(const tr of (project.playlist?.tracks || [])){
+    tr.clips = (tr.clips||[]).filter(c=>c.patternId!==patternId);
+  }
+
+  refreshUI();
+  try{ renderAll(); }catch(_e){}
+  try{ renderPlaylist(); }catch(_e){}
+  return true;
+}
+
 
 function addChannelToPattern(patternId, presetName="Piano", color="#27e0a3"){
   const p=project.patterns.find(x=>x.id===patternId); if(!p) return;

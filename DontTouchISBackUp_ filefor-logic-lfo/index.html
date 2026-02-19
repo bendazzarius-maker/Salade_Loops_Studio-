@@ -20,6 +20,9 @@
     --plist-step-w: 40px;
     --steps-per-bar: 16;
     --bars: 64;
+    --left-col: 320px;
+    --right-col: 320px;
+    --sampler-side-col: 320px;
   }
   *{box-sizing:border-box;margin:0;padding:0;user-select:none}
   html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;overflow:hidden}
@@ -61,11 +64,11 @@
   .tbtn.mode{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:var(--text)}
   .tbtn.mode.active{background:rgba(39,224,163,.18);border-color:rgba(39,224,163,.38)}
 
-  .layout{height:calc(100% - 52px);display:grid;grid-template-columns: 320px 1fr 320px;}
+  .layout{height:calc(100% - 52px);display:grid;grid-template-columns: minmax(250px,var(--left-col)) minmax(0,1fr) minmax(260px,var(--right-col));}
   .left,.right{background:var(--panel);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column}
   .left{border-right:1px solid var(--line)}
   .right{border-left:1px solid var(--line)}
-  .center{position:relative;overflow:hidden}
+  .center{position:relative;overflow:hidden;min-width:0}
 
   .section{padding:14px;border-bottom:1px solid var(--line)}
   .title{font-weight:900;font-size:11px;letter-spacing:1px;color:var(--accent2);display:flex;gap:8px;align-items:center;margin-bottom:10px}
@@ -98,6 +101,12 @@
   select, input[type="range"], input[type="text"], input[type="number"]{
     width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);
     color:var(--text);padding:8px 10px;border-radius:12px;font-weight:900;outline:0
+  }
+  select,
+  select option,
+  select optgroup{
+    background:#031033;
+    color:#fff;
   }
   input[type="color"]{
     width:42px;height:30px;border-radius:10px;border:1px solid rgba(255,255,255,.14);
@@ -215,6 +224,55 @@
   .btnTiny{padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:#0b1020;color:var(--text);cursor:pointer}
   .btnTiny:hover{border-color:rgba(112,167,255,.8)}
 
+  .fxRack{border:1px solid rgba(112,167,255,.28);border-radius:12px;padding:8px;background:linear-gradient(180deg, rgba(112,167,255,.08), rgba(0,0,0,.18));display:flex;flex-direction:column;gap:8px}
+  .lfoFeedbackBlock{font-size:11px;font-weight:800;color:#d7e6ff;padding:3px 8px;border-radius:999px;border:1px solid rgba(112,167,255,.34);background:rgba(112,167,255,.14)}
+  .mixKnobRow{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18)}
+  .mixKnobWrap{display:flex;align-items:center;justify-content:center;padding:8px 0;border-radius:10px;background:#d0d0ca;border:1px solid rgba(255,255,255,.4)}
+  .mixKnob{
+    --knob-indicator:#27e0a3;
+    -webkit-appearance:none;appearance:none;
+    width:58px;height:58px;cursor:pointer;
+    background:transparent;border:0;outline:none;
+    position:relative;
+  }
+  .mixKnob::-webkit-slider-runnable-track{
+    width:58px;height:58px;border-radius:50%;
+    background:radial-gradient(circle at 50% 50%, #232323 0 60%, #1a1a1a 61% 100%);
+    border:2px solid #5b5b5b;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+  }
+  .mixKnob::-moz-range-track{
+    width:58px;height:58px;border-radius:50%;
+    background:radial-gradient(circle at 50% 50%, #232323 0 60%, #1a1a1a 61% 100%);
+    border:2px solid #5b5b5b;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+  }
+  .mixKnob::before{
+    content:"";position:absolute;left:50%;top:50%;width:6px;height:24px;border-radius:1px;
+    transform-origin:50% 83%;
+    transform:translate(-50%,-86%) rotate(var(--ang, 0deg));
+    background:var(--knob-indicator);
+    box-shadow:none;
+    pointer-events:none;
+  }
+  .mixKnob::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:0;height:0;opacity:0}
+  .mixKnob::-moz-range-thumb{width:0;height:0;opacity:0;border:0}
+
+  .mixKnob[data-knob-type="pan"]{ --knob-indicator:#00e7ff; }
+  .mixKnob[data-knob-type="high"]{ --knob-indicator:#fff200; }
+  .mixKnob[data-knob-type="medium"]{ --knob-indicator:#ff7a00; }
+  .mixKnob[data-knob-type="bass"]{ --knob-indicator:#f80000; }
+
+  .gainRow{padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(0,0,0,.2)}
+  .gainBody{display:flex;align-items:flex-end;justify-content:center;gap:12px;min-height:122px}
+  .mixVertical{writing-mode:vertical-lr;direction:rtl;width:24px;height:116px;margin:0}
+  .mixVuWrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .mixVu{width:12px;height:116px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(8,10,16,.78);position:relative;overflow:hidden}
+  .mixVuFill{position:absolute;left:0;right:0;bottom:0;height:0%;background:#19d66f;box-shadow:0 -6px 12px rgba(0,0,0,.25);pointer-events:none;transition:height 60ms linear, background 80ms linear}
+  .mixVuFill.is-yellow{background:#f4d53d}
+  .mixVuFill.is-red{background:#ff4d6d}
+  .mixVuDb{font-size:11px;color:var(--muted);min-width:44px;text-align:center;font-variant-numeric:tabular-nums}
+
 
 /* --- FX param editor --- */
 .fxParams{ margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,.08); }
@@ -244,6 +302,76 @@
   .autoStep{border-right:1px solid rgba(255,255,255,.06);flex:0 0 auto;display:flex;align-items:flex-end;justify-content:center;font-size:11px;color:rgba(255,255,255,.7)}
   .autoStep.on{background:rgba(255,77,109,.25)}
   .autoLegend{font-size:11px;color:var(--muted);line-height:1.2}
+
+  .samplerLayout{display:grid;grid-template-columns:minmax(240px,var(--sampler-side-col)) 10px minmax(0,1fr);gap:12px;padding:12px;flex:1;min-height:0;overflow:hidden}
+  .samplerSide,.samplerMain{min-height:0;min-width:0;overflow:auto}
+  .samplerSide{display:flex;flex-direction:column;gap:12px;padding-right:2px}
+  .samplerMain{display:flex;flex-direction:column;gap:12px;padding-right:2px}
+  .samplerSplitter{border-radius:999px;background:rgba(112,167,255,.2);border:1px solid rgba(112,167,255,.35);cursor:col-resize;align-self:stretch;transition:background .15s ease}
+  .samplerSplitter:hover,.samplerSplitter.dragging{background:rgba(39,224,163,.32);border-color:rgba(39,224,163,.55)}
+  .samplerBlock{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
+  .samplerBlockRoots{flex:0 0 auto}
+  .samplerBlockBrowser{flex:1 1 auto;min-height:220px}
+  .samplerBlockPreview{grid-area:preview}
+  .samplerBlockKey{grid-area:key}
+  .samplerBlockPrograms{grid-area:programs}
+  .samplerSubhead{font-size:11px;color:var(--muted);font-weight:800;line-height:1.35}
+  .samplerMeta{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .samplerMeta .small{margin:0}
+  .samplerSearch{display:flex;gap:8px;align-items:center}
+  .samplerSearch input{min-width:140px}
+  .samplerActions{display:flex;gap:8px;flex-wrap:wrap}
+  .samplerActions .btn2{width:auto;flex:1 1 170px;min-width:170px;margin-bottom:0}
+  .samplerList{display:flex;flex-direction:column;gap:6px;overflow:auto;min-height:0}
+  .samplerItem{padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#fff;cursor:pointer;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .samplerItem:hover{background:rgba(255,255,255,.08)}
+  .samplerItem.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
+  .samplerItem .small{color:#d7e6ff;opacity:.92}
+  .samplerDropZone{border:2px dashed rgba(112,167,255,.45);border-radius:12px;padding:18px;text-align:center;color:var(--muted);font-weight:800}
+  .samplerDropZone.dragover{border-color:var(--accent);color:var(--accent);background:rgba(39,224,163,.08)}
+  .samplerGrid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .samplerMetric{padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.04)}
+  .samplerMetric .small b{color:var(--text)}
+  .samplerWave{position:relative}
+  .samplerWave canvas{display:block;width:100%;height:140px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#070b12}
+  .samplerToolbar{display:flex;gap:8px;flex-wrap:wrap}
+  .samplerToolbar .btn2{width:auto;flex:1 1 150px;min-width:150px;margin-bottom:0}
+  #samplerProgramsRootBtn,
+  #samplerProgramCreateCategory,
+  #samplerProgramUpdate,
+  #samplerProgramSaveAs,
+  #samplerProgramLoad{width:auto;margin-bottom:0}
+  #samplerProgramsRootBtn{flex:0 1 320px}
+  #samplerProgramCreateCategory{flex:0 0 auto}
+  #samplerProgramUpdate,
+  #samplerProgramSaveAs,
+  #samplerProgramLoad{flex:1 1 180px;min-width:160px}
+  .samplerToolbar .btn2.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(39,224,163,.45) inset}
+  .samplerLegend{display:flex;gap:10px;flex-wrap:wrap}
+  .samplerLegend span{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+  .samplerLegend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .samplerPianoMap{max-height:180px;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px}
+  .samplerPianoMap table{width:100%;border-collapse:collapse;font-size:11px}
+  .samplerPianoMap th,.samplerPianoMap td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left}
+  .samplerPianoMap tr:last-child td{border-bottom:none}
+  .samplerPianoMap .inRange{color:var(--accent)}
+  .samplerTree{border:1px solid rgba(255,255,255,.1);border-radius:10px;max-height:180px;overflow:auto;padding:6px;background:rgba(255,255,255,.03)}
+  .samplerTreeNode{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:1px solid transparent;background:transparent;color:var(--text);padding:5px 8px;border-radius:8px;cursor:pointer;text-align:left}
+  .samplerTreeNode:hover{background:rgba(255,255,255,.08)}
+  .samplerTreeNode.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
+  .samplerTreeNode .small{opacity:.85}
+
+  @media (max-width: 1200px){
+    .samplerLayout{grid-template-columns:minmax(220px,var(--sampler-side-col)) 8px minmax(0,1fr);gap:10px;padding:10px}
+    .samplerToolbar .btn2{flex:1 1 130px;min-width:130px}
+  }
+
+  @media (max-width: 980px){
+    .samplerLayout{grid-template-columns:minmax(0,1fr);overflow:auto}
+    .samplerSplitter{display:none}
+    .samplerSide,.samplerMain{overflow:visible}
+  }
+
 
 </style>
 </head>
@@ -446,8 +574,104 @@
 
 
     <div class="view" id="view-sampler">
-      <div class="viewhead"><div class="headleft"><div class="small">Sampler (stub)</div></div></div>
-      <div style="padding:14px" class="small">Waveform + loop start/end + base note à venir.</div>
+      <div class="viewhead"><div class="headleft"><div class="small">Sampler Touski — Bibliothèque</div></div></div>
+      <div class="samplerLayout">
+        <aside class="samplerSide">
+          <div class="samplerBlock samplerBlockRoots">
+            <div class="title">📂 Dossiers sources</div>
+            <button class="btn2" id="samplerAddRoot">+ Ajouter dossier</button>
+            <button class="btn2" id="samplerRescan">↻ Rescanner</button>
+            <div class="samplerSubhead">Chemins persistés localement pour éviter la reconfiguration à chaque démarrage.</div>
+            <div id="samplerRoots" class="samplerList"></div>
+          </div>
+          <div class="samplerBlock samplerBlockBrowser">
+            <div class="title">🗂️ Browser samples</div>
+            <div class="samplerMeta">
+              <div class="small" id="samplerRootLabel">Aucun dossier sélectionné</div>
+              <div class="small" id="samplerBrowserCount">0 résultat</div>
+            </div>
+            <div class="samplerSearch">
+              <input id="samplerBrowserFilter" type="text" placeholder="Filtrer: kick, snare, bass...">
+              <button class="btn2" id="samplerBrowserClear">✖ Effacer</button>
+            </div>
+            <div id="samplerBrowser" class="samplerList"></div>
+          </div>
+        </aside>
+        <div class="samplerSplitter" id="samplerSplitter" title="Handler général : redimensionner la colonne dossiers/samples"></div>
+        <section class="samplerMain">
+          <div class="samplerBlock samplerBlockPreview">
+            <div class="title">🎧 Pré-écoute et import</div>
+            <div class="small" id="samplerSelectedName">Sélectionnez un sample pour pré-écoute.</div>
+            <div class="samplerSubhead">Simple clic = pré-écoute one-shot • Double clic = rejouer • Import direct sans drag/drop.</div>
+            <audio id="samplerPreview" preload="none" style="display:none" aria-hidden="true"></audio>
+            <div class="samplerActions">
+              <button class="btn2" id="samplerImportSelected">⬇ Importer le sample sélectionné</button>
+            </div>
+            <div id="samplerDropZone" class="samplerDropZone">Glissez-déposez un sample ici pour l'import Sampler Touski.</div>
+            <div class="small" id="samplerDropStatus" style="margin-top:8px">Aucun sample importé.</div>
+          </div>
+          <div class="samplerBlock samplerBlockKey">
+            <div class="title">🎹 Sample to Key — Gestionnaire visuel</div>
+            <div class="samplerGrid2">
+              <div class="samplerMetric"><div class="small">Root détectée: <b id="samplerRootNote">—</b></div></div>
+              <div class="samplerMetric"><div class="small">Fréquence: <b id="samplerRootHz">—</b></div></div>
+            </div>
+            <div class="samplerWave">
+              <canvas id="samplerWaveCanvas" width="900" height="140"></canvas>
+            </div>
+            <div class="samplerLegend">
+              <span><i style="background:#d04cff"></i>Key Action</span>
+              <span><i style="background:#f5ea2f"></i>Start Loop</span>
+              <span><i style="background:#ff4b4b"></i>End Loop</span>
+              <span><i style="background:#36b7ff"></i>Release</span>
+            </div>
+            <div class="samplerToolbar">
+              <button class="btn2 active" id="samplerModeAction">Key Action</button>
+              <button class="btn2" id="samplerModeLoopStart">Loop Start</button>
+              <button class="btn2" id="samplerModeLoopEnd">Loop End</button>
+              <button class="btn2" id="samplerModeRelease">Release</button>
+              <button class="btn2" id="samplerWizardLoop">🪄 Wizard Loop</button>
+              <button class="btn2" id="samplerPreviewPlay">▶ Preview Play</button>
+            </div>
+            <div class="small" id="samplerLoopStatus">Loop sustain editor prêt.</div>
+            <div class="small">Extrapolation des notes: mapping automatique du sample root vers toutes les notes du piano roll.</div>
+            <div class="samplerPianoMap" id="samplerPianoMap"></div>
+          </div>
+          <div class="samplerBlock samplerBlockPrograms">
+            <div class="title">💾 Programmes Sampler Touski — Gestion visuelle</div>
+            <div class="samplerSubhead">Classez en catégories, sauvegardez, puis rechargez rapidement vos programmes.</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn2" id="samplerProgramsRootBtn">📁 Dossier maître programmes</button>
+              <div class="small samplerProgramsRootLabel" id="samplerProgramsRootLabel">Chemin non défini</div>
+            </div>
+            <div class="samplerGrid2">
+              <label class="small">Nom du programme
+                <input id="samplerProgramName" type="text" placeholder="Kick Punchy, Bass Warm..." style="width:100%;margin-top:6px">
+              </label>
+              <label class="small">Catégorie (sous-dossier)
+                <select id="samplerProgramCategory" style="width:100%;margin-top:6px"></select>
+              </label>
+            </div>
+            <label class="small" style="display:block;margin-top:8px">Nouveau sous-dossier
+              <div class="samplerProgramNewCatRow">
+                <input id="samplerProgramNewCategory" type="text" placeholder="ex: Keys/Bright">
+                <button class="btn2" id="samplerProgramCreateCategory">+ Créer</button>
+              </div>
+            </label>
+            <div class="small">Arborescence des programmes (Parent/Enfant)</div>
+            <div id="samplerProgramTree" class="samplerTree"></div>
+            <label class="small" style="display:block;margin-top:8px">Programmes enregistrés
+              <select id="samplerProgramSelect" style="width:100%;margin-top:6px"></select>
+            </label>
+            <div class="samplerProgramActions">
+              <button class="btn2" id="samplerProgramUpdate">📝 Mettre à jour</button>
+              <button class="btn2" id="samplerProgramSaveAs">💾 Enregistrer sous</button>
+              <button class="btn2" id="samplerProgramLoad">↩ Charger le programme</button>
+            </div>
+            <div class="small" id="samplerProgramStatus" style="margin-top:8px">Aucun programme enregistré.</div>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
 
@@ -470,6 +694,7 @@
         <option value="Lead">Lead</option>
         <option value="Pad">Pad</option>
         <option value="Drums">Drums</option>
+        <option value="Sampler Touski">Sampler Touski</option>
       </select>
       <div class="small" style="margin-top:10px">Test</div>
       <button class="btn2" id="testC4" style="justify-content:center;margin-top:8px">▶ Tester C4 (ou Drum hit)</button>
@@ -514,6 +739,7 @@
 <script defer src="./inst_lead.js"></script>
 <script defer src="./inst_pad.js"></script>
 <script defer src="./inst_drums.js"></script>
+<script defer src="./inst_sampler_touski.js"></script>
   <script defer src="./inst_violin.js"></script>
   <script defer src="./inst_subbass.js"></script>
 <script defer src="./bank.js"></script>
@@ -537,6 +763,7 @@
 <script defer src="./mixer.js"></script>
   <script defer src="./wiring.js"></script>
 <script defer src="./renderHelpers.js"></script>
+<script defer src="./sampleDirectory.js"></script>
 <script defer src="./sampler.js"></script>
 <script defer src="./demoSeed.js"></script>
 <script defer src="./boot.js"></script>
