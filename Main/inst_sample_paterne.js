@@ -2,19 +2,8 @@
 (function () {
   window.__INSTRUMENTS__ = window.__INSTRUMENTS__ || {};
 
-  const safeRequire = (typeof window !== "undefined" && (window.require || null)) || (typeof require === "function" ? require : null);
-  let PitchShifter = null;
-  if (safeRequire) {
-    try {
-      PitchShifter = safeRequire("./pitchShifter");
-    } catch (_error) {
-      PitchShifter = null;
-    }
-  }
-
   let audioCtx = null;
   const BUFFER_CACHE = new Map();
-  const PROCESS_CACHE = new Map();
 
   function ensureCtx() {
     if (!audioCtx) {
@@ -50,37 +39,6 @@
   function noteRatio(midi, rootMidi, pitchMode) {
     if (String(pitchMode) === "fixed") return 1;
     return Math.pow(2, ((+midi || 60) - (+rootMidi || 60)) / 12);
-  }
-
-  function extractMonoSegment(buffer, startNorm, endNorm) {
-    const data = buffer.getChannelData(0);
-    const startIndex = Math.max(0, Math.min(data.length - 2, Math.floor(startNorm * (data.length - 1))));
-    const endIndex = Math.max(startIndex + 1, Math.min(data.length - 1, Math.floor(endNorm * (data.length - 1))));
-    const mono = new Float32Array(Math.max(1, endIndex - startIndex));
-    mono.set(data.subarray(startIndex, endIndex));
-    return mono;
-  }
-
-  function buildBufferFromMono(ctx, monoData, sampleRate, channelCount) {
-    const ch = Math.max(1, channelCount || 1);
-    const out = ctx.createBuffer(ch, monoData.length, sampleRate);
-    for (let c = 0; c < ch; c += 1) out.getChannelData(c).set(monoData);
-    return out;
-  }
-
-  function buildProcessKey(path, params, midi, bpm, stretchRate, pitchCompFactor) {
-    return [
-      String(path || ""),
-      (Number(params.startNorm) || 0).toFixed(5),
-      (Number(params.endNorm) || 1).toFixed(5),
-      Math.max(1, Math.min(32, Math.floor(+params.patternBeats || 4))),
-      (Number(bpm) || 120).toFixed(3),
-      Number(midi) || 60,
-      (Number(stretchRate) || 1).toFixed(6),
-      (Number(pitchCompFactor) || 1).toFixed(6),
-      Number(params.rootMidi) || 60,
-      String(params.pitchMode || "chromatic"),
-    ].join("::");
   }
 
   function makeSchema() {
@@ -146,62 +104,39 @@
         const out = outBus || ae.master;
         if (!p.samplePath) return;
 
-        const beats = Math.max(1, Math.min(32, Math.floor(+p.patternBeats || 4)));
-        const beatDur = 60 / Math.max(20, +state.bpm || 120);
-        const targetDurSec = beats * beatDur;
-
         decodeSample(p.samplePath)
-          .then((decodedBuffer) => {
-            if (!decodedBuffer || !ctx) return;
+          .then((buffer) => {
+            if (!buffer || !ctx) return;
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
 
             const startNorm = clamp01(p.startNorm, 0);
             const endNormRaw = clamp01(p.endNorm, 1);
             const endNorm = Math.max(startNorm + 0.001, endNormRaw);
-            const segmentDurSec = Math.max(0.01, (endNorm - startNorm) * decodedBuffer.duration);
 
-            const stretchRate = Math.max(0.25, Math.min(4, segmentDurSec / Math.max(0.01, targetDurSec)));
-            const tonalRatio = noteRatio(midi, p.rootMidi, p.pitchMode);
-            const pitchCompFactor = tonalRatio / stretchRate;
-            const processKey = buildProcessKey(p.samplePath, p, midi, state.bpm, stretchRate, pitchCompFactor);
+            const startSec = startNorm * buffer.duration;
+            const endSec = endNorm * buffer.duration;
+            const loopLenSec = Math.max(0.01, endSec - startSec);
 
-            let segmentBufferPromise = PROCESS_CACHE.get(processKey);
-            if (!segmentBufferPromise) {
-              segmentBufferPromise = Promise.resolve().then(() => {
-                const monoSeg = extractMonoSegment(decodedBuffer, startNorm, endNorm);
-                const canShift = PitchShifter && isFinite(pitchCompFactor) && Math.abs(pitchCompFactor - 1) > 0.001;
-                let processedMono = monoSeg;
-                if (canShift) {
-                  const shifter = new PitchShifter({
-                    fftSize: 2048,
-                    overlap: 0.75,
-                    hopSize: 512,
-                    sampleRate: decodedBuffer.sampleRate || 44100,
-                  });
-                  processedMono = shifter.process(monoSeg, pitchCompFactor);
-                }
-                return buildBufferFromMono(ctx, processedMono, decodedBuffer.sampleRate || 44100, decodedBuffer.numberOfChannels || 1);
-              });
-              PROCESS_CACHE.set(processKey, segmentBufferPromise);
-            }
+            source.loop = true;
+            source.loopStart = startSec;
+            source.loopEnd = endSec;
+            source.playbackRate.value = noteRatio(midi, p.rootMidi, p.pitchMode);
 
-            return segmentBufferPromise.then((segmentBuffer) => {
-              const source = ctx.createBufferSource();
-              source.buffer = segmentBuffer;
-              source.playbackRate.value = stretchRate;
+            const amp = ctx.createGain();
+            const gain = Math.max(0.0001, (+p.gain || 1) * Math.max(0, Math.min(1, vel)));
+            amp.gain.setValueAtTime(gain, t);
 
-              const amp = ctx.createGain();
-              const gain = Math.max(0.0001, (+p.gain || 1) * Math.max(0, Math.min(1, vel)));
-              amp.gain.setValueAtTime(gain, t);
+            source.connect(amp);
+            amp.connect(out);
 
-              source.connect(amp);
-              amp.connect(out);
-
-              source.start(t, 0, Math.max(0.01, segmentBuffer.duration));
-              source.stop(t + targetDurSec + 0.01);
-            });
+            const beatDur = (60 / state.bpm);
+            const fixedDur = Math.max(1, Math.min(32, Math.floor(+p.patternBeats || 4))) * beatDur;
+            source.start(t, startSec);
+            source.stop(t + Math.max(loopLenSec * 0.5, fixedDur));
           })
           .catch((error) => {
-            console.warn("[Sample Paterne] decode/stretch fail", error);
+            console.warn("[Sample Paterne] decode fail", error);
           });
       }
 

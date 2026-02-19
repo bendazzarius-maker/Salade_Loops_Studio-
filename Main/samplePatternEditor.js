@@ -12,7 +12,6 @@
   const mixOutEl = document.getElementById("samplePatternMixOut");
   const nameEl = document.getElementById("samplePatternName");
   const saveBtn = document.getElementById("samplePatternSavePattern");
-  const previewBtn = document.getElementById("samplePatternPreviewHold");
   const statusEl = document.getElementById("samplePatternStatus");
   const canvas = document.getElementById("samplePatternWave");
 
@@ -28,13 +27,6 @@
     isPanning: false,
     panAnchorX: 0,
     panStartView: 0,
-  };
-
-  const previewState = {
-    ctx: null,
-    source: null,
-    gain: null,
-    active: false,
   };
 
   function setStatus(msg) {
@@ -207,7 +199,6 @@
       editor.zoomStart = 0;
       editor.zoomEnd = 1;
       drawWaveform();
-      stopPreview();
       setStatus(`Sample chargé: ${path.split(/[\\/]/).pop()}`);
     });
 
@@ -279,92 +270,6 @@
     canvas.addEventListener("mouseleave", release);
   }
 
-
-  function ensurePreviewCtx() {
-    if (previewState.ctx && previewState.ctx.state !== "closed") return previewState.ctx;
-    const Ctor = global.AudioContext || global.webkitAudioContext;
-    if (!Ctor) return null;
-    previewState.ctx = new Ctor();
-    return previewState.ctx;
-  }
-
-  function stopPreview() {
-    if (!previewState.active) return;
-    previewState.active = false;
-    try { previewState.source?.stop(); } catch (_) {}
-    try { previewState.source?.disconnect(); } catch (_) {}
-    try { previewState.gain?.disconnect(); } catch (_) {}
-    previewState.source = null;
-    previewState.gain = null;
-    previewBtn?.classList.remove("active");
-  }
-
-  function startPreviewHold() {
-    if (!editor.buffer) {
-      setStatus("Pré-écoute impossible: aucun sample chargé.");
-      return;
-    }
-    stopPreview();
-    const ctx = ensurePreviewCtx();
-    if (!ctx) return;
-
-    const startNorm = clamp01(+startEl.value || editor.posStart);
-    const endNorm = clamp01(+endEl.value || editor.posEnd);
-    const orderedEnd = Math.max(startNorm + 0.001, endNorm);
-
-    const startSec = startNorm * editor.buffer.duration;
-    const endSec = orderedEnd * editor.buffer.duration;
-
-    const source = ctx.createBufferSource();
-    source.buffer = editor.buffer;
-    source.loop = true;
-    source.loopStart = startSec;
-    source.loopEnd = endSec;
-
-    const gain = ctx.createGain();
-    gain.gain.value = Math.max(0, Math.min(1.6, +gainEl.value || 1));
-
-    source.connect(gain);
-    gain.connect(ctx.destination);
-
-    source.start();
-    previewState.source = source;
-    previewState.gain = gain;
-    previewState.active = true;
-    previewBtn?.classList.add("active");
-
-    setStatus(`Pré-écoute active (${startNorm.toFixed(3)} → ${orderedEnd.toFixed(3)}).`);
-    source.onended = () => {
-      if (!previewState.active) return;
-      stopPreview();
-    };
-  }
-
-  function installPreviewInteractions() {
-    if (!previewBtn) return;
-    previewBtn.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      startPreviewHold();
-    });
-    const release = () => stopPreview();
-    previewBtn.addEventListener("pointerup", release);
-    previewBtn.addEventListener("pointerleave", release);
-    previewBtn.addEventListener("pointercancel", release);
-
-    previewBtn.addEventListener("keydown", (event) => {
-      if (event.repeat) return;
-      if (event.key !== " " && event.key !== "Enter") return;
-      event.preventDefault();
-      startPreviewHold();
-    });
-    previewBtn.addEventListener("keyup", (event) => {
-      if (event.key !== " " && event.key !== "Enter") return;
-      event.preventDefault();
-      stopPreview();
-    });
-    previewBtn.addEventListener("blur", stopPreview);
-  }
-
   function refreshMixOut() {
     if (!mixOutEl) return;
     mixOutEl.innerHTML = "";
@@ -379,7 +284,6 @@
   }
 
   function createSamplePattern() {
-    stopPreview();
     const name = String(nameEl?.value || "").trim();
     if (!name) {
       setStatus("Nom pattern requis.");
@@ -439,7 +343,6 @@
   }
 
   startEl?.addEventListener("input", () => {
-    stopPreview();
     editor.posStart = clamp01(+startEl.value || 0);
     if (editor.posStart >= editor.posEnd) editor.posEnd = Math.min(1, editor.posStart + 0.001);
     endEl.value = String(editor.posEnd);
@@ -447,7 +350,6 @@
   });
 
   endEl?.addEventListener("input", () => {
-    stopPreview();
     editor.posEnd = clamp01(+endEl.value || 1);
     if (editor.posEnd <= editor.posStart) editor.posStart = Math.max(0, editor.posEnd - 0.001);
     startEl.value = String(editor.posStart);
@@ -458,6 +360,5 @@
 
   refreshMixOut();
   installInteractions();
-  installPreviewInteractions();
   drawWaveform();
 })(window);
