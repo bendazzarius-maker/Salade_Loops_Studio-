@@ -12,6 +12,7 @@
   const mixOutEl = document.getElementById("samplePatternMixOut");
   const nameEl = document.getElementById("samplePatternName");
   const saveBtn = document.getElementById("samplePatternSavePattern");
+  const previewBtn = document.getElementById("samplePatternPreviewBtn");
   const statusEl = document.getElementById("samplePatternStatus");
   const canvas = document.getElementById("samplePatternWave");
 
@@ -27,7 +28,69 @@
     isPanning: false,
     panAnchorX: 0,
     panStartView: 0,
+    previewSession: null,
   };
+
+  function ensurePreviewCtx() {
+    const Ctor = global.AudioContext || global.webkitAudioContext;
+    if (!Ctor) return null;
+    const ae = global.audioEngine;
+    if (ae?.ctx) return ae.ctx;
+    if (!editor.previewCtx) editor.previewCtx = new Ctor({ latencyHint: "interactive" });
+    return editor.previewCtx;
+  }
+
+  async function startPreviewLoop() {
+    if (!editor.buffer) {
+      setStatus("Pré-écoute: chargez un sample avant lecture.");
+      return;
+    }
+    const ctx = ensurePreviewCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      try { await ctx.resume(); } catch (_) {}
+    }
+    stopPreviewLoop();
+
+    const startNorm = clamp01(+startEl.value || editor.posStart);
+    const endNormRaw = clamp01(+endEl.value || editor.posEnd);
+    const endNorm = Math.max(startNorm + 0.001, endNormRaw);
+    const startSec = startNorm * editor.buffer.duration;
+    const endSec = endNorm * editor.buffer.duration;
+    const loopLen = Math.max(0.01, endSec - startSec);
+    const now = ctx.currentTime;
+
+    const source = ctx.createBufferSource();
+    source.buffer = editor.buffer;
+    source.loop = true;
+    source.loopStart = startSec;
+    source.loopEnd = endSec;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.95, now);
+
+    const targetOut = global.audioEngine?.master || ctx.destination;
+    source.connect(gain);
+    gain.connect(targetOut);
+    source.start(now, startSec);
+
+    editor.previewSession = { source, gain, ctx };
+    setStatus("Pré-écoute active: maintenez le bouton (souris/clavier) pour écouter Start→End en boucle.");
+  }
+
+  function stopPreviewLoop() {
+    const session = editor.previewSession;
+    if (!session) return;
+    const now = session.ctx?.currentTime || 0;
+    try {
+      session.gain?.gain.cancelScheduledValues(now);
+      session.gain?.gain.setValueAtTime(session.gain?.gain.value || 0.95, now);
+      session.gain?.gain.linearRampToValueAtTime(0.0001, now + 0.02);
+    } catch (_) {}
+    try { session.source?.stop(now + 0.03); } catch (_) {}
+    editor.previewSession = null;
+    setStatus("Pré-écoute stoppée.");
+  }
 
   function setStatus(msg) {
     if (statusEl) statusEl.textContent = msg;
@@ -357,6 +420,27 @@
   });
 
   saveBtn?.addEventListener("click", createSamplePattern);
+
+  previewBtn?.addEventListener("pointerdown", async (event) => {
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  const stopPreviewFromPointer = () => stopPreviewLoop();
+  previewBtn?.addEventListener("pointerup", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointerleave", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointercancel", stopPreviewFromPointer);
+  previewBtn?.addEventListener("keydown", async (event) => {
+    if (event.repeat) return;
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  previewBtn?.addEventListener("keyup", (event) => {
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    stopPreviewLoop();
+  });
+  global.addEventListener("blur", stopPreviewLoop);
 
   refreshMixOut();
   installInteractions();

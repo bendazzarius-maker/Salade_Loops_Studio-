@@ -481,7 +481,13 @@ function scheduleStep_PATTERN(step, t) {
 
   for (const ch of p.channels) {
     if (ch.muted) continue;
-    const presetName = presetOverride.value || ch.preset;
+    const patType = String(p.type || p.kind || "").toLowerCase();
+    const isSamplePattern = patType === "sample_pattern";
+    const hasSampleParams = !!(ch && ch.params && typeof ch.params === "object" && ch.params.samplePath);
+    const channelPreset = String(ch.preset || "");
+    const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
+      ? "Sample Paterne"
+      : (presetOverride.value || channelPreset);
     const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
     const inst = presets.get(presetName, ch.params, outBus);
 
@@ -530,7 +536,13 @@ function scheduleStep_SONG(step, t) {
 
       for (const ch of pat.channels) {
         if (ch.muted) continue;
-        const presetName = presetOverride.value || ch.preset;
+        const patType = String(pat.type || pat.kind || "").toLowerCase();
+        const isSamplePattern = patType === "sample_pattern";
+        const hasSampleParams = !!(ch && ch.params && typeof ch.params === "object" && ch.params.samplePath);
+        const channelPreset = String(ch.preset || "");
+        const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
+          ? "Sample Paterne"
+          : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
         const inst = presets.get(presetName, ch.params, outBus);
 
