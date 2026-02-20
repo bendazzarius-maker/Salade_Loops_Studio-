@@ -495,6 +495,7 @@ function scheduleStep_PATTERN(step, t) {
     const channelPreset = String(ch.preset || "");
     const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
     const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
+    const effectiveParams = resolveSamplePatternParams(p, ch);
     const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
     for (const n of ch.notes) {
@@ -545,6 +546,7 @@ function scheduleStep_SONG(step, t) {
         const channelPreset = String(ch.preset || "");
         const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
+        const effectiveParams = resolveSamplePatternParams(pat, ch);
         const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
         for (const n of ch.notes) {

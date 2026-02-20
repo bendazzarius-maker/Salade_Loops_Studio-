@@ -96,6 +96,7 @@ $("#testC4").addEventListener("click", async ()=>{
   const channelPreset = String(ch.preset || "");
   const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
   const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
+  const effectiveParams = resolveSamplePatternParamsForTrigger(activePattern(), ch);
   const inst=presets.get(presetName, effectiveParams || ch.params, outBus);
   const m = (inst.type==="drums") ? 48 : 60; // Drum hit / C4
   const vv=(parseInt(vel.value,10)||100)/127;

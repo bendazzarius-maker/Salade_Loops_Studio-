@@ -2,26 +2,29 @@
 (function () {
   window.__INSTRUMENTS__ = window.__INSTRUMENTS__ || {};
 
-  let audioCtx = null;
   const BUFFER_CACHE = new Map();
-  const SHIFT_CACHE = new Map();
+  const RAW_CACHE = new Map();
   const safeRequire = (typeof window !== "undefined" && (window.require || null)) || (typeof require === "function" ? require : null);
-  let PitchShifter = null;
+  let ToneLib = (typeof window !== "undefined" && window.Tone) ? window.Tone : null;
+  let toneMissingWarned = false;
+
+  function audioDebugPush(message) {
+    try {
+      if (!window.__SL_AUDIO_DEBUG__ || typeof window.__SL_AUDIO_DEBUG__.push !== "function") return;
+      window.__SL_AUDIO_DEBUG__.push(String(message || ""));
+    } catch (_) {}
+  }
+
   if (safeRequire) {
     try {
-      PitchShifter = safeRequire("./pitchShifter");
+      ToneLib = ToneLib || safeRequire("tone");
     } catch (_error) {
-      PitchShifter = null;
+      ToneLib = ToneLib || null;
     }
   }
 
-  function ensureCtx() {
-    if (!audioCtx) {
-      const Ctor = window.AudioContext || window.webkitAudioContext;
-      if (!Ctor) return null;
-      audioCtx = new Ctor();
-    }
-    return audioCtx;
+  function clamp01(v, d = 0) {
+    return Math.max(0, Math.min(1, Number.isFinite(+v) ? +v : d));
   }
 
   function sampleUrl(path) {
@@ -29,62 +32,125 @@
     return `file://${encodeURI(String(path).replace(/\\/g, "/"))}`;
   }
 
-  async function decodeSample(path) {
-    const key = String(path || "");
-    if (!key) return null;
-    if (BUFFER_CACHE.has(key)) return BUFFER_CACHE.get(key);
-    const ctx = ensureCtx();
-    if (!ctx) return null;
-    const response = await fetch(sampleUrl(key));
-    const raw = await response.arrayBuffer();
-    const buffer = await ctx.decodeAudioData(raw.slice(0));
-    BUFFER_CACHE.set(key, buffer);
-    return buffer;
+  function fetchRawSample(samplePath) {
+    const key = String(samplePath || "");
+    if (!key) return Promise.resolve(null);
+    if (!RAW_CACHE.has(key)) {
+      RAW_CACHE.set(key, fetch(sampleUrl(key)).then((response) => response.arrayBuffer()));
+    }
+    return RAW_CACHE.get(key);
   }
 
-  function clamp01(v, d = 0) {
-    return Math.max(0, Math.min(1, Number.isFinite(+v) ? +v : d));
+  async function getToneBuffer(samplePath) {
+    const key = `tone::${String(samplePath || "")}`;
+    if (!samplePath || !ToneLib || !ToneLib.ToneAudioBuffer) return null;
+    if (!BUFFER_CACHE.has(key)) {
+      BUFFER_CACHE.set(key, new Promise((resolve, reject) => {
+        try {
+          const b = new ToneLib.ToneAudioBuffer(samplePath, () => resolve(b), reject);
+        } catch (error) {
+          reject(error);
+        }
+      }));
+    }
+    return BUFFER_CACHE.get(key);
   }
 
-  function noteRatio(midi, rootMidi, pitchMode) {
-    if (String(pitchMode) === "fixed") return 1;
-    return Math.pow(2, ((+midi || 60) - (+rootMidi || 60)) / 12);
+  async function getNativeBuffer(samplePath, ctx) {
+    const key = `native::${String(samplePath || "")}`;
+    if (!samplePath || !ctx) return null;
+    if (!BUFFER_CACHE.has(key)) {
+      BUFFER_CACHE.set(key, fetchRawSample(samplePath).then((raw) => {
+        if (!raw) return null;
+        return ctx.decodeAudioData(raw.slice(0));
+      }));
+    }
+    return BUFFER_CACHE.get(key);
   }
 
-  function copyMonoDataFromBuffer(buffer) {
-    const source = buffer.getChannelData(0);
-    const mono = new Float32Array(source.length);
-    mono.set(source);
-    return mono;
-  }
+  function renderSamplePattern(channel, noteEvent, time, outBus) {
+    const params = (channel && channel.params) ? channel.params : {};
+    if (!params.samplePath) return Promise.resolve();
 
-  function buildBufferFromMono(ctx, monoData, sampleRate, channelCount) {
-    const ch = Math.max(1, channelCount || 1);
-    const out = ctx.createBuffer(ch, monoData.length, sampleRate);
-    for (let c = 0; c < ch; c += 1) out.getChannelData(c).set(monoData);
-    return out;
-  }
+    const startNorm = clamp01(params.startNorm, 0);
+    const endNormRaw = clamp01(params.endNorm, 1);
+    const endNorm = Math.max(startNorm + 0.001, endNormRaw);
+    const detune = ((+noteEvent.midi || 60) - (+params.rootMidi || 60)) * 100;
 
-  async function getPitchShiftedBuffer(path, sourceBuffer, pitchFactor) {
-    if (!sourceBuffer || !PitchShifter) return sourceBuffer;
-    if (!isFinite(pitchFactor) || pitchFactor <= 0) return sourceBuffer;
-    if (Math.abs(pitchFactor - 1) < 1e-4) return sourceBuffer;
+    if (ToneLib && ToneLib.GrainPlayer) {
+      return getToneBuffer(params.samplePath)
+        .then((toneBuffer) => {
+          if (!toneBuffer || !toneBuffer.duration) return;
 
-    const cacheKey = `${String(path || "")}::${pitchFactor.toFixed(8)}`;
-    if (SHIFT_CACHE.has(cacheKey)) return SHIFT_CACHE.get(cacheKey);
+          const loopStart = startNorm * toneBuffer.duration;
+          const loopEnd = endNorm * toneBuffer.duration;
+          const loopLen = Math.max(0.01, loopEnd - loopStart);
+          const duration = Math.max(0.01, Number(noteEvent.duration) || loopLen);
+          const offset = loopStart;
 
-    const shifter = new PitchShifter({
-      fftSize: 2048,
-      overlap: 0.75,
-      hopSize: 512,
-      sampleRate: sourceBuffer.sampleRate || 44100,
+          const player = new ToneLib.GrainPlayer({
+            url: toneBuffer,
+            loop: true,
+            loopStart,
+            loopEnd,
+            grainSize: 0.1,
+            overlap: 0.05,
+            detune,
+            playbackRate: 1,
+          });
+
+          const gain = Math.max(0.0001, (+params.gain || 1) * Math.max(0, Math.min(1, +noteEvent.vel || 0.9)));
+          const amp = new ToneLib.Gain(gain);
+          player.connect(amp);
+          if (outBus && typeof outBus.connect === "function") amp.connect(outBus);
+          else amp.toDestination();
+
+          player.start(time, offset, duration);
+          player.stop(time + duration + 0.02);
+          player.onstop = function () {
+            try {
+              player.dispose();
+              amp.dispose();
+            } catch (_) {}
+          };
+        });
+    }
+
+    if (!toneMissingWarned) {
+      toneMissingWarned = true;
+      const msg = "[Sample Paterne] Tone.js indisponible: fallback WebAudio activé.";
+      console.warn(msg);
+      audioDebugPush(msg);
+    }
+
+    const ctx = channel && channel.ae && channel.ae.ctx;
+    if (!ctx) return Promise.resolve();
+
+    return getNativeBuffer(params.samplePath, ctx).then((buffer) => {
+      if (!buffer) return;
+      const loopStart = startNorm * buffer.duration;
+      const loopEnd = endNorm * buffer.duration;
+      const loopLen = Math.max(0.01, loopEnd - loopStart);
+      const duration = Math.max(0.01, Number(noteEvent.duration) || loopLen);
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.loopStart = loopStart;
+      source.loopEnd = loopEnd;
+      source.detune.setValueAtTime(detune, time);
+      source.playbackRate.setValueAtTime(1, time);
+
+      const gainNode = ctx.createGain();
+      const gain = Math.max(0.0001, (+params.gain || 1) * Math.max(0, Math.min(1, +noteEvent.vel || 0.9)));
+      gainNode.gain.setValueAtTime(gain, time);
+
+      source.connect(gainNode);
+      gainNode.connect(outBus || ctx.destination);
+
+      source.start(time, loopStart, duration);
+      source.stop(time + duration + 0.02);
     });
-
-    const mono = copyMonoDataFromBuffer(sourceBuffer);
-    const shiftedMono = shifter.process(mono, pitchFactor);
-    const shifted = buildBufferFromMono(ensureCtx(), shiftedMono, sourceBuffer.sampleRate || 44100, sourceBuffer.numberOfChannels || 1);
-    SHIFT_CACHE.set(cacheKey, shifted);
-    return shifted;
   }
 
   function makeSchema() {
@@ -135,7 +201,6 @@
       return makeSchema();
     },
     create: function (ae, paramsRef, outBus) {
-      const ctx = ae.ctx;
       const common = {
         id: this.id,
         name: this.name,
@@ -145,58 +210,21 @@
         uiSchema: makeSchema(),
       };
 
-      function trigger(t, midi, vel = 0.9) {
+      function trigger(t, midi, vel = 0.9, durSec) {
         const p = Object.assign({}, DEF.defaultParams(), paramsRef || {});
         const out = outBus || ae.master;
-        if (!p.samplePath) return;
+        const duration = Math.max(0.01, durSec || ((60 / state.bpm) * Math.max(1, Math.floor(+p.patternBeats || 4))));
 
-        decodeSample(p.samplePath)
-          .then(async (decodedBuffer) => {
-            const pitchRate = noteRatio(midi, p.rootMidi, p.pitchMode);
-            const useStrictPitchShift = String(p.pitchMode) === "chromatic" && !!PitchShifter;
-            const buffer = useStrictPitchShift
-              ? await getPitchShiftedBuffer(p.samplePath, decodedBuffer, pitchRate)
-              : decodedBuffer;
-            if (!buffer || !ctx) return;
-            const source = ctx.createBufferSource();
-            source.buffer = buffer;
-
-            const startNorm = clamp01(p.startNorm, 0);
-            const endNormRaw = clamp01(p.endNorm, 1);
-            const endNorm = Math.max(startNorm + 0.001, endNormRaw);
-
-            const startSec = startNorm * buffer.duration;
-            const endSec = endNorm * buffer.duration;
-            const loopLenSec = Math.max(0.01, endSec - startSec);
-
-            source.loop = true;
-            source.loopStart = startSec;
-            source.loopEnd = endSec;
-
-            const amp = ctx.createGain();
-            const gain = Math.max(0.0001, (+p.gain || 1) * Math.max(0, Math.min(1, vel)));
-            amp.gain.setValueAtTime(gain, t);
-
-            source.connect(amp);
-            amp.connect(out);
-
-            const beatDur = (60 / state.bpm);
-            const fixedDur = Math.max(1, Math.min(32, Math.floor(+p.patternBeats || 4))) * beatDur;
-
-            // Stretch de la zone Start/End pour qu'un cycle complet corresponde
-            // exactement à la longueur de pattern choisie dans l'éditeur.
-            // NOTE: en mode chromatic, la variation de hauteur impacte aussi la durée.
-            // Le stretch de base est donc calculé sur la longueur de pattern.
-            const stretchRate = loopLenSec / Math.max(0.01, fixedDur);
-            const pitchRate = noteRatio(midi, p.rootMidi, p.pitchMode);
-            source.playbackRate.value = Math.max(0.02, Math.min(16, stretchRate * pitchRate));
-
-            source.start(t, startSec);
-            source.stop(t + Math.max(loopLenSec * 0.5, fixedDur));
-          })
-          .catch((error) => {
-            console.warn("[Sample Paterne] decode fail", error);
-          });
+        renderSamplePattern(
+          { params: p, ae },
+          { midi, vel, duration },
+          t,
+          out
+        ).catch((error) => {
+          const msg = `[Sample Paterne] lecture impossible: ${error && error.message ? error.message : error}`;
+          console.warn(msg);
+          audioDebugPush(msg);
+        });
       }
 
       return Object.assign(common, { trigger });
