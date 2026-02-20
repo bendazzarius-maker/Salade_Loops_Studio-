@@ -4,6 +4,16 @@
 
   let audioCtx = null;
   const BUFFER_CACHE = new Map();
+  const SHIFT_CACHE = new Map();
+  const safeRequire = (typeof window !== "undefined" && (window.require || null)) || (typeof require === "function" ? require : null);
+  let PitchShifter = null;
+  if (safeRequire) {
+    try {
+      PitchShifter = safeRequire("./pitchShifter");
+    } catch (_error) {
+      PitchShifter = null;
+    }
+  }
 
   function ensureCtx() {
     if (!audioCtx) {
@@ -39,6 +49,42 @@
   function noteRatio(midi, rootMidi, pitchMode) {
     if (String(pitchMode) === "fixed") return 1;
     return Math.pow(2, ((+midi || 60) - (+rootMidi || 60)) / 12);
+  }
+
+  function copyMonoDataFromBuffer(buffer) {
+    const source = buffer.getChannelData(0);
+    const mono = new Float32Array(source.length);
+    mono.set(source);
+    return mono;
+  }
+
+  function buildBufferFromMono(ctx, monoData, sampleRate, channelCount) {
+    const ch = Math.max(1, channelCount || 1);
+    const out = ctx.createBuffer(ch, monoData.length, sampleRate);
+    for (let c = 0; c < ch; c += 1) out.getChannelData(c).set(monoData);
+    return out;
+  }
+
+  async function getPitchShiftedBuffer(path, sourceBuffer, pitchFactor) {
+    if (!sourceBuffer || !PitchShifter) return sourceBuffer;
+    if (!isFinite(pitchFactor) || pitchFactor <= 0) return sourceBuffer;
+    if (Math.abs(pitchFactor - 1) < 1e-4) return sourceBuffer;
+
+    const cacheKey = `${String(path || "")}::${pitchFactor.toFixed(8)}`;
+    if (SHIFT_CACHE.has(cacheKey)) return SHIFT_CACHE.get(cacheKey);
+
+    const shifter = new PitchShifter({
+      fftSize: 2048,
+      overlap: 0.75,
+      hopSize: 512,
+      sampleRate: sourceBuffer.sampleRate || 44100,
+    });
+
+    const mono = copyMonoDataFromBuffer(sourceBuffer);
+    const shiftedMono = shifter.process(mono, pitchFactor);
+    const shifted = buildBufferFromMono(ensureCtx(), shiftedMono, sourceBuffer.sampleRate || 44100, sourceBuffer.numberOfChannels || 1);
+    SHIFT_CACHE.set(cacheKey, shifted);
+    return shifted;
   }
 
   function makeSchema() {
@@ -105,7 +151,12 @@
         if (!p.samplePath) return;
 
         decodeSample(p.samplePath)
-          .then((buffer) => {
+          .then(async (decodedBuffer) => {
+            const pitchRate = noteRatio(midi, p.rootMidi, p.pitchMode);
+            const useStrictPitchShift = String(p.pitchMode) === "chromatic" && !!PitchShifter;
+            const buffer = useStrictPitchShift
+              ? await getPitchShiftedBuffer(p.samplePath, decodedBuffer, pitchRate)
+              : decodedBuffer;
             if (!buffer || !ctx) return;
             const source = ctx.createBufferSource();
             source.buffer = buffer;
@@ -121,7 +172,6 @@
             source.loop = true;
             source.loopStart = startSec;
             source.loopEnd = endSec;
-            source.playbackRate.value = noteRatio(midi, p.rootMidi, p.pitchMode);
 
             const amp = ctx.createGain();
             const gain = Math.max(0.0001, (+p.gain || 1) * Math.max(0, Math.min(1, vel)));
@@ -132,6 +182,16 @@
 
             const beatDur = (60 / state.bpm);
             const fixedDur = Math.max(1, Math.min(32, Math.floor(+p.patternBeats || 4))) * beatDur;
+
+            // Stretch de la zone Start/End pour qu'un cycle complet corresponde
+            // exactement à la longueur de pattern choisie dans l'éditeur.
+            // Durée strictement fixe : playbackRate ne pilote que le stretch temporel.
+            // En mode chromatic, la hauteur est appliquée via phase-vocoder (si dispo)
+            // pour éviter d'impacter la durée.
+            const stretchRate = loopLenSec / Math.max(0.01, fixedDur);
+            const fallbackPitchRate = String(p.pitchMode) === "chromatic" && !PitchShifter ? pitchRate : 1;
+            source.playbackRate.value = Math.max(0.02, Math.min(16, stretchRate * fallbackPitchRate));
+
             source.start(t, startSec);
             source.stop(t + Math.max(loopLenSec * 0.5, fixedDur));
           })
