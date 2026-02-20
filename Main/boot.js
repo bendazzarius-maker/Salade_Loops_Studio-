@@ -16,6 +16,7 @@ function _installDiag(){
         <button id="diag-init" class="btn" style="padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-weight:900">Init Audio</button>
         <button id="diag-beep" class="btn" style="padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-weight:900">Test Beep</button>
         <button id="diag-c4" class="btn" style="padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-weight:900">Test Piano C4</button>
+        <button id="diag-copy" class="btn" style="padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-weight:900">Copy Log</button>
         <button id="diag-hide" class="btn" style="padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-weight:900">Hide</button>
       </div>
       <div id="diag-log" style="white-space:pre-wrap;max-height:160px;overflow:auto;color:#cbd5ff;"></div>
@@ -28,6 +29,39 @@ function _installDiag(){
       const t = new Date().toLocaleTimeString();
       logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
     }
+
+    window.__SL_AUDIO_DEBUG__ = {
+      push: function(msg){
+        log(String(msg || ""));
+      },
+      getText: function(){
+        return logEl.textContent || "";
+      },
+      copy: async function(){
+        const text = logEl.textContent || "";
+        if (!text) return false;
+        try {
+          if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        } catch (_) {}
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.setAttribute("readonly", "readonly");
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          return !!ok;
+        } catch (_) {
+          return false;
+        }
+      }
+    };
     function refresh(){
       try{
         const s = ae && ae.ctx ? ae.ctx.state : "noctx";
@@ -80,6 +114,15 @@ function _installDiag(){
         inst.trigger(t, 60, 0.9, 0.35);
         log("Triggered Piano C4.");
       }catch(err){ log("Piano test failed: "+(err?.message||String(err))); }
+    });
+
+    wrap.querySelector("#diag-copy").addEventListener("click", async ()=>{
+      try{
+        const ok = await window.__SL_AUDIO_DEBUG__.copy();
+        log(ok ? "Log copié dans le presse-papiers." : "Copie impossible (sélection manuelle du texte diag).");
+      }catch(err){
+        log("Copy failed: "+(err?.message||String(err)));
+      }
     });
 
     wrap.querySelector("#diag-hide").addEventListener("click", ()=>{
