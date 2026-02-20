@@ -185,12 +185,11 @@
 
             // Stretch de la zone Start/End pour qu'un cycle complet corresponde
             // exactement à la longueur de pattern choisie dans l'éditeur.
-            // Durée strictement fixe : playbackRate ne pilote que le stretch temporel.
-            // En mode chromatic, la hauteur est appliquée via phase-vocoder (si dispo)
-            // pour éviter d'impacter la durée.
+            // NOTE: en mode chromatic, la variation de hauteur impacte aussi la durée.
+            // Le stretch de base est donc calculé sur la longueur de pattern.
             const stretchRate = loopLenSec / Math.max(0.01, fixedDur);
-            const fallbackPitchRate = String(p.pitchMode) === "chromatic" && !PitchShifter ? pitchRate : 1;
-            source.playbackRate.value = Math.max(0.02, Math.min(16, stretchRate * fallbackPitchRate));
+            const pitchRate = noteRatio(midi, p.rootMidi, p.pitchMode);
+            source.playbackRate.value = Math.max(0.02, Math.min(16, stretchRate * pitchRate));
 
             source.start(t, startSec);
             source.stop(t + Math.max(loopLenSec * 0.5, fixedDur));
