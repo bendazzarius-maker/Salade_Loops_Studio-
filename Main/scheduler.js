@@ -463,6 +463,17 @@ function _recalcEndStepForMode(){
 
 function secPerStep() { return (60 / state.bpm) / 4; }
 
+function resolveSamplePatternParams(pattern, channel){
+  const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
+  if (chParams && chParams.samplePath) return chParams;
+  const patCfg = (pattern && typeof pattern.samplePatternConfig === "object" && pattern.samplePatternConfig) ? pattern.samplePatternConfig : null;
+  if (patCfg && patCfg.samplePath) {
+    channel.params = Object.assign({}, patCfg, chParams || {});
+    return channel.params;
+  }
+  return chParams;
+}
+
 function playlistEndBar() {
   let end = 1;
   for (const tr of project.playlist.tracks) {
@@ -484,7 +495,7 @@ function scheduleStep_PATTERN(step, t) {
     const channelPreset = String(ch.preset || "");
     const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
     const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
-    const inst = presets.get(presetName, ch.params, outBus);
+    const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
     for (const n of ch.notes) {
       if (n.step === local) {
@@ -534,7 +545,7 @@ function scheduleStep_SONG(step, t) {
         const channelPreset = String(ch.preset || "");
         const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
-        const inst = presets.get(presetName, ch.params, outBus);
+        const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
         for (const n of ch.notes) {
           if (n.step === local) {

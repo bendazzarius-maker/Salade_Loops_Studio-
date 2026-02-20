@@ -27,6 +27,17 @@ window.addEventListener("timeRulerSelectionChanged", updateLoopButtonLabel);
 window.addEventListener("daw:refresh", updateLoopButtonLabel);
 updateLoopButtonLabel();
 
+function resolveSamplePatternParamsForTrigger(pattern, channel){
+  const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
+  if (chParams && chParams.samplePath) return chParams;
+  const patCfg = (pattern && typeof pattern.samplePatternConfig === "object" && pattern.samplePatternConfig) ? pattern.samplePatternConfig : null;
+  if (patCfg && patCfg.samplePath) {
+    channel.params = Object.assign({}, patCfg, chParams || {});
+    return channel.params;
+  }
+  return chParams;
+}
+
 vel.addEventListener("input",()=> velVal.textContent=vel.value);
 
 previewBtn.addEventListener("click",()=>{
@@ -85,7 +96,7 @@ $("#testC4").addEventListener("click", async ()=>{
   const channelPreset = String(ch.preset || "");
   const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
   const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-  const inst=presets.get(presetName, ch.params, outBus);
+  const inst=presets.get(presetName, effectiveParams || ch.params, outBus);
   const m = (inst.type==="drums") ? 48 : 60; // Drum hit / C4
   const vv=(parseInt(vel.value,10)||100)/127;
   inst.trigger(ae.ctx.currentTime,m,vv,0.35);

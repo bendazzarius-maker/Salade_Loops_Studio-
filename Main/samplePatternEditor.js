@@ -380,6 +380,7 @@
       lenBars: bars,
       kind: "sample_pattern",
       type: "sample_pattern",
+      samplePatternConfig: Object.assign({}, params),
       channels: [
         {
           id: gid("ch"),

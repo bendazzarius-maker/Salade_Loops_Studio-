@@ -1,4 +1,15 @@
 /* ================= Electro DAW | pianoRoll.js ================= */
+function resolveSamplePatternParamsForPreview(pattern, channel){
+  const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
+  if (chParams && chParams.samplePath) return chParams;
+  const patCfg = (pattern && typeof pattern.samplePatternConfig === "object" && pattern.samplePatternConfig) ? pattern.samplePatternConfig : null;
+  if (patCfg && patCfg.samplePath) {
+    channel.params = Object.assign({}, patCfg, chParams || {});
+    return channel.params;
+  }
+  return chParams;
+}
+
 /* ---------------- piano keys ---------------- */
 function buildPianoColumn(){
   pianoKeys.innerHTML="";
@@ -18,7 +29,7 @@ function buildPianoColumn(){
       const channelPreset = String(ch.preset || "");
       const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-      const inst = presets.get(presetName, ch.params, outBus);
+      const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const velv=(parseInt(vel.value,10)||100)/127;
       inst.trigger(ae.ctx.currentTime, m, velv, 0.25);
     });
@@ -89,7 +100,7 @@ function renderNotes(){
         const channelPreset = String(ch.preset || "");
         const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-      const inst = presets.get(presetName, ch.params, outBus);
+      const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
         const vv=(n.vel||100)/127;
         inst.trigger(ae.ctx.currentTime, n.midi, vv, 0.25);
       }
@@ -201,7 +212,7 @@ async function applyPaintAt(cell){
       const channelPreset = String(ch.preset || "");
       const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-      const inst = presets.get(presetName, ch.params, outBus);
+      const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const vv=(parseInt(vel.value,10)||100)/127;
       inst.trigger(ae.ctx.currentTime, cell.midi, vv, 0.25);
     }
