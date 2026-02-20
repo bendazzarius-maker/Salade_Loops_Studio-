@@ -82,7 +82,8 @@ $("#clearPlaylist").addEventListener("click",clearPlaylist);
 $("#testC4").addEventListener("click", async ()=>{
   await ae.ensure();
   const ch=activeChannel(); if(!ch) return;
-  const presetName = presetOverride.value || ch.preset;
+  const channelPreset = String(ch.preset || "");
+  const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
   const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
   const inst=presets.get(presetName, ch.params, outBus);
   const m = (inst.type==="drums") ? 48 : 60; // Drum hit / C4

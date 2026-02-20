@@ -481,7 +481,8 @@ function scheduleStep_PATTERN(step, t) {
 
   for (const ch of p.channels) {
     if (ch.muted) continue;
-    const presetName = presetOverride.value || ch.preset;
+    const channelPreset = String(ch.preset || "");
+    const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
     const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
     const inst = presets.get(presetName, ch.params, outBus);
 
@@ -530,7 +531,8 @@ function scheduleStep_SONG(step, t) {
 
       for (const ch of pat.channels) {
         if (ch.muted) continue;
-        const presetName = presetOverride.value || ch.preset;
+        const channelPreset = String(ch.preset || "");
+        const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
         const inst = presets.get(presetName, ch.params, outBus);
 

@@ -15,7 +15,8 @@ function buildPianoColumn(){
       if(!state.preview) return;
       await ae.ensure();
       const ch=activeChannel(); if(!ch) return;
-      const presetName = presetOverride.value || ch.preset;
+      const channelPreset = String(ch.preset || "");
+      const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
       const inst = presets.get(presetName, ch.params, outBus);
       const velv=(parseInt(vel.value,10)||100)/127;
@@ -85,7 +86,8 @@ function renderNotes(){
 
       if(state.preview){
         await ae.ensure();
-        const presetName = presetOverride.value || ch.preset;
+        const channelPreset = String(ch.preset || "");
+        const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
       const inst = presets.get(presetName, ch.params, outBus);
         const vv=(n.vel||100)/127;
@@ -196,7 +198,8 @@ async function applyPaintAt(cell){
 
     if(state.preview){
       await ae.ensure();
-      const presetName = presetOverride.value || ch.preset;
+      const channelPreset = String(ch.preset || "");
+      const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
       const inst = presets.get(presetName, ch.params, outBus);
       const vv=(parseInt(vel.value,10)||100)/127;
