@@ -3,21 +3,9 @@
   window.__INSTRUMENTS__ = window.__INSTRUMENTS__ || {};
 
   const BUFFER_CACHE = new Map();
-  const RAW_CACHE = new Map();
   const safeRequire = (typeof window !== "undefined" && (window.require || null)) || (typeof require === "function" ? require : null);
   let ToneLib = (typeof window !== "undefined" && window.Tone) ? window.Tone : null;
   let toneMissingWarned = false;
-  const PREFER_NATIVE_ENGINE = true;
-  const fsPromises = safeRequire ? (() => { try { return safeRequire("fs").promises; } catch (_) { return null; } })() : null;
-  const pathToFileURL = safeRequire ? (() => { try { return safeRequire("url").pathToFileURL; } catch (_) { return null; } })() : null;
-
-  function audioDebugPush(message) {
-    try {
-      if (!window.__SL_AUDIO_DEBUG__ || typeof window.__SL_AUDIO_DEBUG__.push !== "function") return;
-      window.__SL_AUDIO_DEBUG__.push(String(message || ""));
-    } catch (_) {}
-  }
-
   if (safeRequire) {
     try {
       ToneLib = ToneLib || safeRequire("tone");
@@ -30,49 +18,13 @@
     return Math.max(0, Math.min(1, Number.isFinite(+v) ? +v : d));
   }
 
-  function sampleUrl(path) {
-    const key = String(path || "");
-    if (!key) return "";
-    if (pathToFileURL) {
-      try { return pathToFileURL(key).href; } catch (_) {}
-    }
-    const normalized = key.replace(/\\/g, "/");
-    const prefix = normalized.startsWith("/") ? "file://" : "file:///";
-    return `${prefix}${encodeURI(normalized)}`;
-  }
-
-  async function readSampleAsArrayBuffer(samplePath) {
-    const key = String(samplePath || "");
-    if (!key) return null;
-
-    if (fsPromises && typeof fsPromises.readFile === "function") {
-      const fileBuffer = await fsPromises.readFile(key);
-      return fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength);
-    }
-
-    const response = await fetch(sampleUrl(key));
-    if (!response || !response.ok) {
-      throw new Error(`[Sample Paterne] sample fetch failed (${response ? response.status : "no-response"})`);
-    }
-    return response.arrayBuffer();
-  }
-
-  function fetchRawSample(samplePath) {
-    const key = String(samplePath || "");
-    if (!key) return Promise.resolve(null);
-    if (!RAW_CACHE.has(key)) {
-      RAW_CACHE.set(key, readSampleAsArrayBuffer(key));
-    }
-    return RAW_CACHE.get(key);
-  }
-
   async function getToneBuffer(samplePath) {
-    const key = `tone::${String(samplePath || "")}`;
-    if (!samplePath || !ToneLib || !ToneLib.ToneAudioBuffer) return null;
+    const key = String(samplePath || "");
+    if (!key || !ToneLib || !ToneLib.ToneAudioBuffer) return null;
     if (!BUFFER_CACHE.has(key)) {
       BUFFER_CACHE.set(key, new Promise((resolve, reject) => {
         try {
-          const b = new ToneLib.ToneAudioBuffer(samplePath, () => resolve(b), reject);
+          const b = new ToneLib.ToneAudioBuffer(key, () => resolve(b), reject);
         } catch (error) {
           reject(error);
         }
@@ -81,105 +33,59 @@
     return BUFFER_CACHE.get(key);
   }
 
-  async function getNativeBuffer(samplePath, ctx) {
-    const key = `native::${String(samplePath || "")}`;
-    if (!samplePath || !ctx) return null;
-    if (!BUFFER_CACHE.has(key)) {
-      BUFFER_CACHE.set(key, fetchRawSample(samplePath).then((raw) => {
-        if (!raw) return null;
-        return ctx.decodeAudioData(raw.slice(0));
-      }));
-    }
-    return BUFFER_CACHE.get(key);
-  }
-
   function renderSamplePattern(channel, noteEvent, time, outBus) {
+    if (!ToneLib || !ToneLib.GrainPlayer) {
+      if (!toneMissingWarned) {
+        toneMissingWarned = true;
+        console.warn("[Sample Paterne] Tone.js indisponible: moteur sample_pattern inactif.");
+      }
+      return Promise.resolve();
+    }
     const params = (channel && channel.params) ? channel.params : {};
     if (!params.samplePath) return Promise.resolve();
 
-    const startNorm = clamp01(params.startNorm, 0);
-    const endNormRaw = clamp01(params.endNorm, 1);
-    const endNorm = Math.max(startNorm + 0.001, endNormRaw);
-    const detune = ((+noteEvent.midi || 60) - (+params.rootMidi || 60)) * 100;
+    return getToneBuffer(params.samplePath)
+      .then((toneBuffer) => {
+        if (!toneBuffer || !toneBuffer.duration) return;
 
-    if (!PREFER_NATIVE_ENGINE && ToneLib && ToneLib.GrainPlayer) {
-      return getToneBuffer(params.samplePath)
-        .then((toneBuffer) => {
-          if (!toneBuffer || !toneBuffer.duration) return;
+        const startNorm = clamp01(params.startNorm, 0);
+        const endNormRaw = clamp01(params.endNorm, 1);
+        const endNorm = Math.max(startNorm + 0.001, endNormRaw);
 
-          const loopStart = startNorm * toneBuffer.duration;
-          const loopEnd = endNorm * toneBuffer.duration;
-          const loopLen = Math.max(0.01, loopEnd - loopStart);
-          const duration = Math.max(0.01, Number(noteEvent.duration) || loopLen);
-          const offset = loopStart;
+        const loopStart = startNorm * toneBuffer.duration;
+        const loopEnd = endNorm * toneBuffer.duration;
+        const loopLen = Math.max(0.01, loopEnd - loopStart);
 
-          const player = new ToneLib.GrainPlayer({
-            url: toneBuffer,
-            loop: true,
-            loopStart,
-            loopEnd,
-            grainSize: 0.1,
-            overlap: 0.05,
-            detune,
-            playbackRate: 1,
-          });
+        const detune = ((+noteEvent.midi || 60) - (+params.rootMidi || 60)) * 100;
+        const duration = Math.max(0.01, Number(noteEvent.duration) || loopLen);
+        const offset = loopStart;
 
-          const gain = Math.max(0.0001, (+params.gain || 1) * Math.max(0, Math.min(1, +noteEvent.vel || 0.9)));
-          const amp = new ToneLib.Gain(gain);
-          player.connect(amp);
-          if (outBus && typeof outBus.connect === "function") amp.connect(outBus);
-          else amp.toDestination();
-
-          player.start(time, offset, duration);
-          player.stop(time + duration + 0.02);
-          player.onstop = function () {
-            try {
-              player.dispose();
-              amp.dispose();
-            } catch (_) {}
-          };
+        const player = new ToneLib.GrainPlayer({
+          url: toneBuffer,
+          loop: true,
+          loopStart,
+          loopEnd,
+          grainSize: 0.1,
+          overlap: 0.05,
+          detune,
+          playbackRate: 1,
         });
-    }
 
-    if (!toneMissingWarned) {
-      toneMissingWarned = true;
-      const msg = "[Sample Paterne] lecture via moteur WebAudio natif (fallback sécurisé).";
-      console.warn(msg);
-      audioDebugPush(msg);
-    }
+        const gain = Math.max(0.0001, (+params.gain || 1) * Math.max(0, Math.min(1, +noteEvent.vel || 0.9)));
+        const amp = new ToneLib.Gain(gain);
+        player.connect(amp);
+        if (outBus && typeof outBus.connect === "function") amp.connect(outBus);
+        else amp.toDestination();
 
-    const ctx = channel && channel.ae && channel.ae.ctx;
-    if (!ctx) return Promise.resolve();
-
-    return getNativeBuffer(params.samplePath, ctx).then((buffer) => {
-      if (!buffer) return;
-      const loopStart = startNorm * buffer.duration;
-      const loopEnd = endNorm * buffer.duration;
-      const loopLen = Math.max(0.01, loopEnd - loopStart);
-      const duration = Math.max(0.01, Number(noteEvent.duration) || loopLen);
-
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.loop = true;
-      source.loopStart = loopStart;
-      source.loopEnd = loopEnd;
-      source.detune.setValueAtTime(detune, time);
-      source.playbackRate.setValueAtTime(1, time);
-
-      const gainNode = ctx.createGain();
-      const gain = Math.max(0.0001, (+params.gain || 1) * Math.max(0, Math.min(1, +noteEvent.vel || 0.9)));
-      gainNode.gain.setValueAtTime(gain, time);
-
-      source.connect(gainNode);
-      gainNode.connect(outBus || ctx.destination);
-
-      source.onended = function () {
-        try { source.disconnect(); gainNode.disconnect(); } catch (_) {}
-      };
-
-      source.start(time, loopStart, duration);
-      source.stop(time + duration + 0.02);
-    });
+        player.start(time, offset, duration);
+        player.stop(time + duration + 0.02);
+        player.onstop = function () {
+          try {
+            player.dispose();
+            amp.dispose();
+          } catch (_) {}
+        };
+      });
   }
 
   function makeSchema() {
@@ -243,17 +149,15 @@
         const p = Object.assign({}, DEF.defaultParams(), paramsRef || {});
         const out = outBus || ae.master;
         const duration = Math.max(0.01, durSec || ((60 / state.bpm) * Math.max(1, Math.floor(+p.patternBeats || 4))));
-
         renderSamplePattern(
-          { params: p, ae },
+          { params: p },
           { midi, vel, duration },
           t,
           out
-        ).catch((error) => {
-          const msg = `[Sample Paterne] lecture impossible: ${error && error.message ? error.message : error}`;
-          console.warn(msg);
-          audioDebugPush(msg);
-        });
+        )
+          .catch((error) => {
+            console.warn("[Sample Paterne] decode fail", error);
+          });
       }
 
       return Object.assign(common, { trigger });
