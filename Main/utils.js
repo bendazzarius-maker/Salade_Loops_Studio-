@@ -21,7 +21,10 @@ const state = {
   bars: parseInt(getComputedStyle(document.documentElement).getPropertyValue("--bars")) || 64,
   stepsPerBar: parseInt(getComputedStyle(document.documentElement).getPropertyValue("--steps-per-bar")) || 16,
   mode: "pattern", // "pattern" | "song"
-  maximized: false
+  maximized: false,
+  audioBackend: "juce",
+  audioBufferSize: 512,
+  audioSampleRate: 48000
 };
 function applyOctaves(){
   state.baseMidi = 12 * (state.octaveMin + 1);     // C0=12

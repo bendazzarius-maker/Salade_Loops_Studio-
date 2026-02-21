@@ -461,6 +461,66 @@ function _recalcEndStepForMode(){
 }
 
 
+
+function buildProjectSnapshotForEngine(){
+  const ppqResolution = 960;
+  const tracks = (project.playlist?.tracks || []).map((tr) => ({
+    trackId: String(tr.id || gid("t")),
+    name: String(tr.name || "Track"),
+    instrument: { type: "internal", preset: "default" }
+  }));
+  tracks.push({ trackId: "master", name: "Master" });
+
+  const patterns = [];
+  for (const pat of (project.patterns || [])) {
+    if (!Array.isArray(pat.channels)) continue;
+    for (const ch of pat.channels) {
+      const notes = (ch.notes || []).map((n) => ({
+        startPpq: Number(n.step || 0) * (ppqResolution / 4),
+        lenPpq: Math.max(1, Number(n.len || 1)) * (ppqResolution / 4),
+        note: Number(n.midi || 60),
+        vel: Number((n.vel || 100) / 127),
+        ch: 0
+      }));
+      patterns.push({ patternId: `${pat.id}:${ch.id}`, trackId: String(ch.id), notes });
+    }
+  }
+
+  const arrangement = [];
+  for (const tr of (project.playlist?.tracks || [])) {
+    for (const clip of (tr.clips || [])) {
+      const pat = project.patterns.find((p) => p.id === clip.patternId);
+      if (!pat || !Array.isArray(pat.channels)) continue;
+      for (const ch of pat.channels) {
+        arrangement.push({
+          clipId: `${clip.id || gid("c")}:${ch.id}`,
+          patternId: `${pat.id}:${ch.id}`,
+          startPpq: Number(clip.startBar || 0) * 4 * ppqResolution,
+          lenPpq: Math.max(1, Number(clip.lenBars || 1)) * 4 * ppqResolution,
+          loop: false
+        });
+      }
+    }
+  }
+
+  return {
+    projectId: "main-project",
+    tempo: { bpm: state.bpm },
+    ppqResolution,
+    tracks,
+    patterns,
+    arrangement
+  };
+}
+
+function audioTriggerNote(payload){
+  if (window.audioBackend) {
+    window.audioBackend.triggerNote(payload);
+    return;
+  }
+  if (typeof payload.trigger === "function") payload.trigger();
+}
+
 function secPerStep() { return (60 / state.bpm) / 4; }
 
 function resolveSamplePatternParams(pattern, channel){
@@ -511,13 +571,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  inst.trigger(t, n.midi, vv, dur);
+  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  inst.trigger(t, n.midi, vv, dur);
+  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
 }}
     }
   }
@@ -562,13 +622,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  inst.trigger(t, n.midi, vv, dur);
+  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  inst.trigger(t, n.midi, vv, dur);
+  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
 }// Glow (safe)
             try {
               if (project.activePatternId === pat.id) {
@@ -726,6 +786,9 @@ function _uiLoop() {
 
 async function start() {
   await ae.ensure();
+  if (window.audioBackend) {
+    await window.audioBackend.setBpm(state.bpm);
+  }
 
   // CRITICAL: avoid double scheduler
   if (pb.timer) { clearInterval(pb.timer); pb.timer = null; }
@@ -763,18 +826,23 @@ async function start() {
 
   pb.timer = setInterval(tick, pb.intervalMs);
 
+  if (window.audioBackend) {
+    await window.audioBackend.play(buildProjectSnapshotForEngine);
+  }
+
   if (!_uiRAF) _uiRAF = requestAnimationFrame(_uiLoop);
 }
 
-function pause() {
+async function pause() {
   state.playing = false;
   playBtn.textContent = "▶ Play";
   clearInterval(pb.timer); pb.timer = null;
+  if (window.audioBackend) await window.audioBackend.stop();
   try{ __lfoVisualRT.fxByKey.clear(); __lfoVisualPublish(); }catch(_){ }
 }
 
-function stop() {
-  pause();
+async function stop() {
+  await pause();
   try { playhead.style.left = "0px"; } catch (_) {}
   try { if (plistPlayhead) plistPlayhead.style.left = "0px"; } catch (_) {}
 }

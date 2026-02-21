@@ -135,8 +135,20 @@ function _installDiag(){
   }
 }
 
-window.addEventListener("load",()=>{
+window.addEventListener("load", async ()=>{
   _installDiag();
+  if (!window.audioBackend) {
+    window.audioBackend = new AudioBackendController();
+    await window.audioBackend.init();
+    if (state.audioBackend === "juce") {
+      await window.audioBackend.backends.juce.setConfig({
+        sampleRate: state.audioSampleRate,
+        bufferSize: state.audioBufferSize,
+        numOut: 2,
+        numIn: 0
+      });
+    }
+  }
   document.body.addEventListener("click", async ()=>{ await ae.ensure(); }, {once:true});
   seedDemo();
   refreshUI();
