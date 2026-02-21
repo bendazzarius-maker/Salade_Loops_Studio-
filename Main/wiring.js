@@ -15,13 +15,14 @@ toolPaint.addEventListener("click",()=>setTool("paint"));
 toolHandle.addEventListener("click",()=>setTool("handler"));
 snapBtn.addEventListener("click",cycleSnap);
 
-bpm.addEventListener("change",()=>{
+bpm.addEventListener("change", async ()=>{
   state.bpm=clamp(parseInt(bpm.value,10)||120,40,240);
   bpm.value=state.bpm;
+  if (window.audioBackend) await window.audioBackend.setBpm(state.bpm);
 });
 
-playBtn.addEventListener("click", async ()=>{ if(!state.playing) await start(); else pause(); });
-stopBtn.addEventListener("click", stop);
+playBtn.addEventListener("click", async ()=>{ if(!state.playing) await start(); else await pause(); });
+stopBtn.addEventListener("click", async ()=>{ await stop(); });
 loopBtn.addEventListener("click",()=>{ state.loop=!state.loop; updateLoopButtonLabel(); });
 window.addEventListener("timeRulerSelectionChanged", updateLoopButtonLabel);
 window.addEventListener("daw:refresh", updateLoopButtonLabel);
