@@ -20,7 +20,20 @@ class PresetBank{
   }
 
   def(name){
-    return this._defs.get(name) || this._defs.get("Piano") || null;
+    if(this._defs.has(name)) return this._defs.get(name);
+
+    const raw = (name == null) ? "" : String(name);
+    const trimmed = raw.trim();
+    if(trimmed && this._defs.has(trimmed)) return this._defs.get(trimmed);
+
+    if(trimmed){
+      const lower = trimmed.toLowerCase();
+      for(const [k, def] of this._defs.entries()){
+        if(String(k).toLowerCase() === lower) return def;
+      }
+    }
+
+    return this._defs.get("Piano") || null;
   }
 
   defaults(name){
@@ -32,9 +45,19 @@ class PresetBank{
   get(name, paramsRef, outBus){
     const d = this.def(name);
     if(!d) return null;
-    // ensure audio context exists
+
+    // Hybrid-safe: Sample Paterne can run with its own AudioContext fallback
+    // (useful when native backend is active and ae.ctx is not initialized).
+    const resolvedName = String(d.name || "").toLowerCase();
+    const reqName = String(name || "").toLowerCase();
+    const isSamplePaterne = resolvedName === "sample paterne"
+      || reqName === "sample paterne"
+      || reqName === "sample pattern"
+      || reqName === "samplepaterne";
+
+    // ensure audio context exists for WebAudio-only instruments
     const ctx = this.ae.ctx;
-    if(!ctx) return { name:"Piano", type:"synth", color:"#27e0a3", trigger:()=>{} };
+    if(!ctx && !isSamplePaterne) return { name:"Piano", type:"synth", color:"#27e0a3", trigger:()=>{} };
     return d.create(this.ae, paramsRef, outBus);
   }
 }

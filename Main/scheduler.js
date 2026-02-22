@@ -463,6 +463,42 @@ function _recalcEndStepForMode(){
 
 function secPerStep() { return (60 / state.bpm) / 4; }
 
+function isSamplePatternPlayback(pattern, channel, effectiveParams){
+  const patType = String(pattern?.type || pattern?.kind || "").toLowerCase();
+  const channelPreset = String(channel?.preset || "");
+  const hasSamplePath = !!(effectiveParams && effectiveParams.samplePath);
+  return patType === "sample_pattern" || hasSamplePath || channelPreset === "Sample Paterne";
+}
+
+function triggerSamplePatternNative(pattern, channel, note, velocity){
+  const params = resolveSamplePatternParams(pattern, channel) || {};
+  if(!window.audioBackend || !window.audioBackend.isActive || !window.audioBackend.isActive()) return false;
+  if(!params.samplePath) return false;
+  window.audioBackend.triggerSample({
+    samplePath: params.samplePath,
+    startNorm: params.startNorm,
+    endNorm: params.endNorm,
+    gain: params.gain,
+    pan: params.pan,
+    rootMidi: params.rootMidi,
+    note,
+    velocity,
+    trackId: channel?.id || pattern?.id || "track-1",
+  }).catch((err)=>console.warn("[SamplePattern][native] trigger failed", err?.message || err));
+  return true;
+}
+
+function resolveSamplePatternParams(pattern, channel){
+  const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
+  if (chParams && chParams.samplePath) return chParams;
+  const patCfg = (pattern && typeof pattern.samplePatternConfig === "object" && pattern.samplePatternConfig) ? pattern.samplePatternConfig : null;
+  if (patCfg && patCfg.samplePath) {
+    channel.params = Object.assign({}, patCfg, chParams || {});
+    return channel.params;
+  }
+  return chParams;
+}
+
 function playlistEndBar() {
   let end = 1;
   for (const tr of project.playlist.tracks) {
@@ -481,9 +517,16 @@ function scheduleStep_PATTERN(step, t) {
 
   for (const ch of p.channels) {
     if (ch.muted) continue;
-    const presetName = presetOverride.value || ch.preset;
+    const patType = String(p.type || p.kind || "").toLowerCase();
+    const isSamplePattern = patType === "sample_pattern";
+    const effectiveParams = isSamplePattern ? resolveSamplePatternParams(p, ch) : ch.params;
+    const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
+    const channelPreset = String(ch.preset || "");
+    const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
+      ? "Sample Paterne"
+      : (presetOverride.value || channelPreset);
     const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
-    const inst = presets.get(presetName, ch.params, outBus);
+    const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
     for (const n of ch.notes) {
       if (n.step === local) {
@@ -498,13 +541,17 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  inst.trigger(t, n.midi, vv, dur);
+  if (!isSamplePatternPlayback(p, ch, effectiveParams) || !triggerSamplePatternNative(p, ch, n.midi, vv)) {
+    inst.trigger(t, n.midi, vv, dur);
+  }
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  inst.trigger(t, n.midi, vv, dur);
+  if (!isSamplePatternPlayback(p, ch, effectiveParams) || !triggerSamplePatternNative(p, ch, n.midi, vv)) {
+    inst.trigger(t, n.midi, vv, dur);
+  }
 }}
     }
   }
@@ -522,7 +569,9 @@ function scheduleStep_SONG(step, t) {
       const clipEndStep = (clip.startBar + clip.lenBars) * state.stepsPerBar;
       if (stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
-      const local = stepInSong - clipStartStep; // play once
+      const patBars = patternLengthBars(pat);
+      const patSteps = Math.max(1, patBars * state.stepsPerBar);
+      const local = (stepInSong - clipStartStep) % patSteps;
 
 
       // Skip non-notes patterns (e.g., LFO patterns have no channels)
@@ -530,9 +579,16 @@ function scheduleStep_SONG(step, t) {
 
       for (const ch of pat.channels) {
         if (ch.muted) continue;
-        const presetName = presetOverride.value || ch.preset;
+        const patType = String(pat.type || pat.kind || "").toLowerCase();
+        const isSamplePattern = patType === "sample_pattern";
+        const effectiveParams = isSamplePattern ? resolveSamplePatternParams(pat, ch) : ch.params;
+        const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
+        const channelPreset = String(ch.preset || "");
+        const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
+          ? "Sample Paterne"
+          : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
-        const inst = presets.get(presetName, ch.params, outBus);
+        const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
         for (const n of ch.notes) {
           if (n.step === local) {
@@ -547,13 +603,17 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  inst.trigger(t, n.midi, vv, dur);
+  if (!isSamplePatternPlayback(pat, ch, effectiveParams) || !triggerSamplePatternNative(pat, ch, n.midi, vv)) {
+    inst.trigger(t, n.midi, vv, dur);
+  }
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  inst.trigger(t, n.midi, vv, dur);
+  if (!isSamplePatternPlayback(pat, ch, effectiveParams) || !triggerSamplePatternNative(pat, ch, n.midi, vv)) {
+    inst.trigger(t, n.midi, vv, dur);
+  }
 }// Glow (safe)
             try {
               if (project.activePatternId === pat.id) {

@@ -714,8 +714,24 @@
             <input id="samplePatternName" type="text" placeholder="SP Kick Loop 01">
           </label>
         </div>
+        <div class="samplePatternRow">
+          <label>Mode sample
+            <select id="samplePatternImportMode">
+              <option value="reference">Référence (chemin original)</option>
+              <option value="import">Importer dans Documents/SL-Studio</option>
+            </select>
+          </label>
+          <label>Programmes enregistrés
+            <select id="samplePatternProgramList"></select>
+          </label>
+          <div style="display:flex;align-items:end;gap:8px">
+            <button class="btn2" id="samplePatternLoadProgram">↩ Charger programme</button>
+          </div>
+          <div></div>
+        </div>
         <div class="samplePatternRow samplePatternActions">
           <div class="samplePatternHint">Drop sample sur le waveform. Molette: zoom X, Shift+molette: zoom Y, clic milieu: pan, drag lignes Start/End pour édition précise.</div>
+          <button class="btn2" id="samplePatternPreviewBtn" title="Maintenir pour écouter la boucle Start/End">▶️ Pré-écoute (hold)</button>
           <button class="btn2" id="samplePatternSavePattern">✅ Valider et enregistrer pattern</button>
         </div>
         <div class="small" id="samplePatternStatus">Sample Paterne prêt (drag & drop requis).</div>
@@ -775,6 +791,7 @@
 
 <script defer src="./utils.js"></script>
 <script defer src="./audioEngine.js"></script>
+<script defer src="./audioBackendJUCE.js"></script>
   <script defer src="./fx_compressor.js"></script>
   <script defer src="./fx_chorus.js"></script>
   <script defer src="./fx_reverb.js"></script>

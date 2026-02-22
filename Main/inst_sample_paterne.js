@@ -41,6 +41,7 @@
     return Math.pow(2, ((+midi || 60) - (+rootMidi || 60)) / 12);
   }
 
+
   function makeSchema() {
     return {
       title: "Sample Paterne",
@@ -89,7 +90,7 @@
       return makeSchema();
     },
     create: function (ae, paramsRef, outBus) {
-      const ctx = ae.ctx;
+      const resolveCtx = () => ae?.ctx || ensureCtx();
       const common = {
         id: this.id,
         name: this.name,
@@ -106,6 +107,7 @@
 
         decodeSample(p.samplePath)
           .then((buffer) => {
+            const ctx = resolveCtx();
             if (!buffer || !ctx) return;
             const source = ctx.createBufferSource();
             source.buffer = buffer;
@@ -121,7 +123,6 @@
             source.loop = true;
             source.loopStart = startSec;
             source.loopEnd = endSec;
-            source.playbackRate.value = noteRatio(midi, p.rootMidi, p.pitchMode);
 
             const amp = ctx.createGain();
             const gain = Math.max(0.0001, (+p.gain || 1) * Math.max(0, Math.min(1, vel)));
@@ -132,6 +133,15 @@
 
             const beatDur = (60 / state.bpm);
             const fixedDur = Math.max(1, Math.min(32, Math.floor(+p.patternBeats || 4))) * beatDur;
+
+            // Stretch de la zone Start/End pour qu'un cycle complet corresponde
+            // exactement à la longueur de pattern choisie dans l'éditeur.
+            // Lecture fiable: conserve le comportement chromatic par playbackRate.
+            // Le sample reste bien audible dans Sample Paterne.
+            const stretchRate = loopLenSec / Math.max(0.01, fixedDur);
+            const pitchRate = noteRatio(midi, p.rootMidi, p.pitchMode);
+            source.playbackRate.value = Math.max(0.02, Math.min(16, stretchRate * pitchRate));
+
             source.start(t, startSec);
             source.stop(t + Math.max(loopLenSec * 0.5, fixedDur));
           })
@@ -145,4 +155,7 @@
   };
 
   window.__INSTRUMENTS__[DEF.name] = DEF;
+  window.__INSTRUMENTS__[DEF.id] = DEF;
+  window.__INSTRUMENTS__["Sample Pattern"] = DEF;
+  window.__INSTRUMENTS__["SamplePaterne"] = DEF;
 })();
