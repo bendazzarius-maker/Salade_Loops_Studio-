@@ -135,8 +135,16 @@
       const playPromise = previewEl.play();
       if (playPromise && typeof playPromise.then === "function") await playPromise;
     } catch (error) {
-      console.warn("[Sampler] auto-preview impossible", error);
+      console.warn("[Sampler] preview impossible", error);
     }
+  }
+
+  if (previewEl) {
+    previewEl.loop = false;
+    previewEl.addEventListener("ended", () => {
+      previewEl.pause();
+      previewEl.currentTime = 0;
+    });
   }
 
   function clamp01(value) {
