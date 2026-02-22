@@ -461,32 +461,67 @@ function _recalcEndStepForMode(){
 }
 
 
+
+function buildProjectSnapshotForEngine(){
+  const ppqResolution = 960;
+  const tracks = (project.playlist?.tracks || []).map((tr) => ({
+    trackId: String(tr.id || gid("t")),
+    name: String(tr.name || "Track"),
+    instrument: { type: "internal", preset: "default" }
+  }));
+  tracks.push({ trackId: "master", name: "Master" });
+
+  const patterns = [];
+  for (const pat of (project.patterns || [])) {
+    if (!Array.isArray(pat.channels)) continue;
+    for (const ch of pat.channels) {
+      const notes = (ch.notes || []).map((n) => ({
+        startPpq: Number(n.step || 0) * (ppqResolution / 4),
+        lenPpq: Math.max(1, Number(n.len || 1)) * (ppqResolution / 4),
+        note: Number(n.midi || 60),
+        vel: Number((n.vel || 100) / 127),
+        ch: 0
+      }));
+      patterns.push({ patternId: `${pat.id}:${ch.id}`, trackId: String(ch.id), notes });
+    }
+  }
+
+  const arrangement = [];
+  for (const tr of (project.playlist?.tracks || [])) {
+    for (const clip of (tr.clips || [])) {
+      const pat = project.patterns.find((p) => p.id === clip.patternId);
+      if (!pat || !Array.isArray(pat.channels)) continue;
+      for (const ch of pat.channels) {
+        arrangement.push({
+          clipId: `${clip.id || gid("c")}:${ch.id}`,
+          patternId: `${pat.id}:${ch.id}`,
+          startPpq: Number(clip.startBar || 0) * 4 * ppqResolution,
+          lenPpq: Math.max(1, Number(clip.lenBars || 1)) * 4 * ppqResolution,
+          loop: false
+        });
+      }
+    }
+  }
+
+  return {
+    projectId: "main-project",
+    tempo: { bpm: state.bpm },
+    ppqResolution,
+    tracks,
+    patterns,
+    arrangement
+  };
+}
+
+function audioTriggerNote(payload){
+  if (window.audioBackend) {
+    window.audioBackend.triggerNote(payload);
+    return;
+  }
+  if (typeof payload.trigger === "function") payload.trigger();
+}
+
 function secPerStep() { return (60 / state.bpm) / 4; }
-
-function isSamplePatternPlayback(pattern, channel, effectiveParams){
-  const patType = String(pattern?.type || pattern?.kind || "").toLowerCase();
-  const channelPreset = String(channel?.preset || "");
-  const hasSamplePath = !!(effectiveParams && effectiveParams.samplePath);
-  return patType === "sample_pattern" || hasSamplePath || channelPreset === "Sample Paterne";
-}
-
-function triggerSamplePatternNative(pattern, channel, note, velocity){
-  const params = resolveSamplePatternParams(pattern, channel) || {};
-  if(!window.audioBackend || !window.audioBackend.isActive || !window.audioBackend.isActive()) return false;
-  if(!params.samplePath) return false;
-  window.audioBackend.triggerSample({
-    samplePath: params.samplePath,
-    startNorm: params.startNorm,
-    endNorm: params.endNorm,
-    gain: params.gain,
-    pan: params.pan,
-    rootMidi: params.rootMidi,
-    note,
-    velocity,
-    trackId: channel?.id || pattern?.id || "track-1",
-  }).catch((err)=>console.warn("[SamplePattern][native] trigger failed", err?.message || err));
-  return true;
-}
 
 function resolveSamplePatternParams(pattern, channel){
   const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
@@ -517,15 +552,10 @@ function scheduleStep_PATTERN(step, t) {
 
   for (const ch of p.channels) {
     if (ch.muted) continue;
-    const patType = String(p.type || p.kind || "").toLowerCase();
-    const isSamplePattern = patType === "sample_pattern";
-    const effectiveParams = isSamplePattern ? resolveSamplePatternParams(p, ch) : ch.params;
-    const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
     const channelPreset = String(ch.preset || "");
-    const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
-      ? "Sample Paterne"
-      : (presetOverride.value || channelPreset);
+    const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
     const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
+    const effectiveParams = resolveSamplePatternParams(p, ch);
     const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
     for (const n of ch.notes) {
@@ -541,17 +571,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  if (!isSamplePatternPlayback(p, ch, effectiveParams) || !triggerSamplePatternNative(p, ch, n.midi, vv)) {
-    inst.trigger(t, n.midi, vv, dur);
-  }
+  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  if (!isSamplePatternPlayback(p, ch, effectiveParams) || !triggerSamplePatternNative(p, ch, n.midi, vv)) {
-    inst.trigger(t, n.midi, vv, dur);
-  }
+  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
 }}
     }
   }
@@ -579,15 +605,10 @@ function scheduleStep_SONG(step, t) {
 
       for (const ch of pat.channels) {
         if (ch.muted) continue;
-        const patType = String(pat.type || pat.kind || "").toLowerCase();
-        const isSamplePattern = patType === "sample_pattern";
-        const effectiveParams = isSamplePattern ? resolveSamplePatternParams(pat, ch) : ch.params;
-        const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
         const channelPreset = String(ch.preset || "");
-        const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
-          ? "Sample Paterne"
-          : (presetOverride.value || channelPreset);
+        const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
+        const effectiveParams = resolveSamplePatternParams(pat, ch);
         const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
         for (const n of ch.notes) {
@@ -603,17 +624,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  if (!isSamplePatternPlayback(pat, ch, effectiveParams) || !triggerSamplePatternNative(pat, ch, n.midi, vv)) {
-    inst.trigger(t, n.midi, vv, dur);
-  }
+  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  if (!isSamplePatternPlayback(pat, ch, effectiveParams) || !triggerSamplePatternNative(pat, ch, n.midi, vv)) {
-    inst.trigger(t, n.midi, vv, dur);
-  }
+  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
 }// Glow (safe)
             try {
               if (project.activePatternId === pat.id) {
@@ -771,6 +788,9 @@ function _uiLoop() {
 
 async function start() {
   await ae.ensure();
+  if (window.audioBackend) {
+    await window.audioBackend.setBpm(state.bpm);
+  }
 
   // CRITICAL: avoid double scheduler
   if (pb.timer) { clearInterval(pb.timer); pb.timer = null; }
@@ -808,18 +828,23 @@ async function start() {
 
   pb.timer = setInterval(tick, pb.intervalMs);
 
+  if (window.audioBackend) {
+    await window.audioBackend.play(buildProjectSnapshotForEngine);
+  }
+
   if (!_uiRAF) _uiRAF = requestAnimationFrame(_uiLoop);
 }
 
-function pause() {
+async function pause() {
   state.playing = false;
   playBtn.textContent = "▶ Play";
   clearInterval(pb.timer); pb.timer = null;
+  if (window.audioBackend) await window.audioBackend.stop();
   try{ __lfoVisualRT.fxByKey.clear(); __lfoVisualPublish(); }catch(_){ }
 }
 
-function stop() {
-  pause();
+async function stop() {
+  await pause();
   try { playhead.style.left = "0px"; } catch (_) {}
   try { if (plistPlayhead) plistPlayhead.style.left = "0px"; } catch (_) {}
 }
