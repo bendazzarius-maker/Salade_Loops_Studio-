@@ -3,97 +3,99 @@
   window.__INSTRUMENTS__ = window.__INSTRUMENTS__ || {};
 
   const BUFFER_CACHE = new Map();
-  const safeRequire = (typeof window !== "undefined" && (window.require || null)) || (typeof require === "function" ? require : null);
-  let ToneLib = (typeof window !== "undefined" && window.Tone) ? window.Tone : null;
-  let toneMissingWarned = false;
-  if (safeRequire) {
-    try {
-      ToneLib = ToneLib || safeRequire("tone");
-    } catch (_error) {
-      ToneLib = ToneLib || null;
-    }
-  }
+  let audioCtx = null;
+  let backendWarned = false;
 
   function clamp01(v, d = 0) {
     return Math.max(0, Math.min(1, Number.isFinite(+v) ? +v : d));
   }
 
-  async function getToneBuffer(samplePath) {
-    const key = String(samplePath || "");
-    if (!key || !ToneLib || !ToneLib.ToneAudioBuffer) return null;
+  function ensureCtx() {
+    if (audioCtx) return audioCtx;
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return null;
+    audioCtx = new Ctor();
+    return audioCtx;
+  }
+
+  function sampleUrl(samplePath) {
+    return `file://${encodeURI(String(samplePath || "").replace(/\\/g, "/"))}`;
+  }
+
+  async function getDecodedBuffer(samplePath) {
+    const key = String(samplePath || "").trim();
+    if (!key) return null;
     if (!BUFFER_CACHE.has(key)) {
-      BUFFER_CACHE.set(key, new Promise((resolve, reject) => {
-        try {
-          const b = new ToneLib.ToneAudioBuffer(key, () => resolve(b), reject);
-        } catch (error) {
-          reject(error);
-        }
-      }));
+      BUFFER_CACHE.set(key, (async () => {
+        const ctx = ensureCtx();
+        if (!ctx) return null;
+        const response = await fetch(sampleUrl(key));
+        const raw = await response.arrayBuffer();
+        return ctx.decodeAudioData(raw.slice(0));
+      })());
     }
     return BUFFER_CACHE.get(key);
   }
 
-  function renderSamplePattern(channel, noteEvent, time, outBus) {
-    if (!ToneLib || !ToneLib.GrainPlayer) {
-      if (!toneMissingWarned) {
-        toneMissingWarned = true;
-        console.warn("[Sample Paterne] Tone.js indisponible: moteur sample_pattern inactif.");
-      }
-      return Promise.resolve();
-    }
+  async function renderSamplePatternWebAudio(channel, noteEvent, time, outBus) {
     const params = (channel && channel.params) ? channel.params : {};
-    if (!params.samplePath) return Promise.resolve();
+    if (!params.samplePath) return;
+    const buffer = await getDecodedBuffer(params.samplePath);
+    const ctx = ensureCtx();
+    if (!buffer || !ctx) return;
 
-    return getToneBuffer(params.samplePath)
-      .then((toneBuffer) => {
-        if (!toneBuffer || !toneBuffer.duration) return;
+    const startNorm = clamp01(params.startNorm, 0);
+    const endNormRaw = clamp01(params.endNorm, 1);
+    const endNorm = Math.max(startNorm + 0.001, endNormRaw);
 
-        const startNorm = clamp01(params.startNorm, 0);
-        const endNormRaw = clamp01(params.endNorm, 1);
-        const endNorm = Math.max(startNorm + 0.001, endNormRaw);
+    const loopStart = startNorm * buffer.duration;
+    const loopEnd = endNorm * buffer.duration;
+    const loopLen = Math.max(0.01, loopEnd - loopStart);
 
-        const loopStart = startNorm * toneBuffer.duration;
-        const loopEnd = endNorm * toneBuffer.duration;
-        const loopLen = Math.max(0.01, loopEnd - loopStart);
+    const detune = ((+noteEvent.midi || 60) - (+params.rootMidi || 60)) * 100;
+    const duration = Math.max(0.01, Number(noteEvent.duration) || loopLen);
 
-        const detune = ((+noteEvent.midi || 60) - (+params.rootMidi || 60)) * 100;
-        const duration = Math.max(0.01, Number(noteEvent.duration) || loopLen);
-        const offset = loopStart;
+    const player = ctx.createBufferSource();
+    player.buffer = buffer;
+    player.loop = true;
+    player.loopStart = loopStart;
+    player.loopEnd = loopEnd;
+    player.detune.setValueAtTime(detune, time);
 
-        const player = new ToneLib.GrainPlayer({
-          url: toneBuffer,
-          loop: true,
-          loopStart,
-          loopEnd,
-          grainSize: 0.1,
-          overlap: 0.05,
-          detune,
-          playbackRate: 1,
-        });
+    const gain = Math.max(0.0001, (+params.gain || 1) * Math.max(0, Math.min(1, +noteEvent.vel || 0.9)));
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(gain, time);
 
-        const gain = Math.max(0.0001, (+params.gain || 1) * Math.max(0, Math.min(1, +noteEvent.vel || 0.9)));
-        const amp = new ToneLib.Gain(gain);
-        player.connect(amp);
-        if (outBus && typeof outBus.connect === "function") amp.connect(outBus);
-        else amp.toDestination();
+    player.connect(amp);
+    if (outBus && typeof outBus.connect === "function") amp.connect(outBus);
+    else amp.connect(ctx.destination);
 
-        player.start(time, offset, duration);
-        player.stop(time + duration + 0.02);
-        player.onstop = function () {
-          try {
-            player.dispose();
-            amp.dispose();
-          } catch (_) {}
-        };
-      });
+    player.start(time, loopStart);
+    player.stop(time + duration + 0.02);
   }
 
+  async function triggerSamplePattern(channel, noteEvent, time, outBus) {
+    const backend = window.audioBackend;
+    const active = backend && typeof backend.getActiveBackendName === "function"
+      ? backend.getActiveBackendName()
+      : "webaudio";
 
+    if (active === "juce" && backend && typeof backend.triggerNote === "function") {
+      await backend.triggerNote({
+        note: +noteEvent.midi || 60,
+        velocity: Math.max(0, Math.min(1, +noteEvent.vel || 0.9)),
+        durationSec: Math.max(0.01, Number(noteEvent.duration) || 0.25),
+        trackId: "sample-pattern-preview",
+      });
+      return;
+    }
 
-
-
-
-
+    if (!backendWarned) {
+      backendWarned = true;
+      console.warn("[Sample Paterne] JUCE indisponible: fallback WebAudio local.");
+    }
+    await renderSamplePatternWebAudio(channel, noteEvent, time, outBus);
+  }
 
   function makeSchema() {
     return {
@@ -156,14 +158,14 @@
         const p = Object.assign({}, DEF.defaultParams(), paramsRef || {});
         const out = outBus || ae.master;
         const duration = Math.max(0.01, durSec || ((60 / state.bpm) * Math.max(1, Math.floor(+p.patternBeats || 4))));
-        renderSamplePattern(
+        triggerSamplePattern(
           { params: p },
           { midi, vel, duration },
           t,
           out
         )
           .catch((error) => {
-            console.warn("[Sample Paterne] decode fail", error);
+            console.warn("[Sample Paterne] trigger fail", error);
           });
       }
 
