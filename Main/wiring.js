@@ -93,7 +93,8 @@ $("#clearPlaylist").addEventListener("click",clearPlaylist);
 
 $("#testC4").addEventListener("click", async ()=>{
   await ae.ensure();
-  const ch=activeChannel(); if(!ch) return;
+  const p=activePattern();
+  const ch=activeChannel(); if(!p || !ch) return;
   const channelPreset = String(ch.preset || "");
   const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
   const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);

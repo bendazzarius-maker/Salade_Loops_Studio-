@@ -25,7 +25,8 @@ function buildPianoColumn(){
       if(e.button!==0) return;
       if(!state.preview) return;
       await ae.ensure();
-      const ch=activeChannel(); if(!ch) return;
+      const p=activePattern();
+      const ch=activeChannel(); if(!p || !ch) return;
       const channelPreset = String(ch.preset || "");
       const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
