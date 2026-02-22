@@ -10,24 +10,6 @@ function resolveSamplePatternParamsForPreview(pattern, channel){
   return chParams;
 }
 
-function triggerSamplePatternPreviewNative(pattern, channel, midi, velocity){
-  const params = resolveSamplePatternParamsForPreview(pattern, channel) || {};
-  if(!window.audioBackend || !window.audioBackend.isActive || !window.audioBackend.isActive()) return false;
-  if(!params.samplePath) return false;
-  window.audioBackend.triggerSample({
-    samplePath: params.samplePath,
-    startNorm: params.startNorm,
-    endNorm: params.endNorm,
-    gain: params.gain,
-    pan: params.pan,
-    rootMidi: params.rootMidi,
-    note: midi,
-    velocity,
-    trackId: channel?.id || pattern?.id || "track-1",
-  }).catch((err)=>console.warn("[SamplePattern][preview] native trigger failed", err?.message || err));
-  return true;
-}
-
 /* ---------------- piano keys ---------------- */
 function buildPianoColumn(){
   pianoKeys.innerHTML="";
@@ -44,16 +26,10 @@ function buildPianoColumn(){
       if(!state.preview) return;
       await ae.ensure();
       const ch=activeChannel(); if(!ch) return;
-      const p = activePattern();
-      const patType = String(p?.type || p?.kind || "").toLowerCase();
-      const isSamplePattern = patType === "sample_pattern";
-      const effectiveParams = isSamplePattern ? resolveSamplePatternParamsForPreview(p, ch) : ch.params;
-      const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
       const channelPreset = String(ch.preset || "");
-      const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
-        ? "Sample Paterne"
-        : (presetOverride.value || channelPreset);
+      const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const velv=(parseInt(vel.value,10)||100)/127;
       if (!triggerSamplePatternPreviewNative(p, ch, m, velv)) {
@@ -124,15 +100,10 @@ function renderNotes(){
 
       if(state.preview){
         await ae.ensure();
-        const pType = String(p?.type || p?.kind || "").toLowerCase();
-        const isSamplePattern = pType === "sample_pattern";
-        const effectiveParams = isSamplePattern ? resolveSamplePatternParamsForPreview(p, ch) : ch.params;
-        const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
         const channelPreset = String(ch.preset || "");
-        const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
-          ? "Sample Paterne"
-          : (presetOverride.value || channelPreset);
+        const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
         const vv=(n.vel||100)/127;
         if (!triggerSamplePatternPreviewNative(p, ch, n.midi, vv)) {
@@ -244,16 +215,10 @@ async function applyPaintAt(cell){
 
     if(state.preview){
       await ae.ensure();
-      const p = activePattern();
-      const patType = String(p?.type || p?.kind || "").toLowerCase();
-      const isSamplePattern = patType === "sample_pattern";
-      const effectiveParams = isSamplePattern ? resolveSamplePatternParamsForPreview(p, ch) : ch.params;
-      const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
       const channelPreset = String(ch.preset || "");
-      const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
-        ? "Sample Paterne"
-        : (presetOverride.value || channelPreset);
+      const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const vv=(parseInt(vel.value,10)||100)/127;
       if (!triggerSamplePatternPreviewNative(p, ch, cell.midi, vv)) {

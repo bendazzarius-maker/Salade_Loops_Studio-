@@ -1,8 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("audioNative", {
-  send: (op, data) => ipcRenderer.invoke("audio:native:send", { op, data }),
-  sendEnvelope: (envelope) => ipcRenderer.invoke("audio:native:send", { envelope }),
+  request: (message) => ipcRenderer.invoke("audio:native:req", message),
+  isAvailable: () => ipcRenderer.invoke("audio:native:isAvailable"),
   onEvent: (cb) => {
     const handler = (_e, msg) => cb(msg);
     ipcRenderer.on("audio:native:event", handler);
