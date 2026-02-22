@@ -19,3 +19,9 @@ contextBridge.exposeInMainWorld("samplerFS", {
   createCategory: (relativeDir) => ipcRenderer.invoke("sampler:createCategory", { relativeDir }),
   saveProgram: (payload) => ipcRenderer.invoke("sampler:saveProgram", payload),
 });
+
+contextBridge.exposeInMainWorld("samplePattern", {
+  saveProgram: (payload) => ipcRenderer.invoke("samplePattern:saveProgram", payload),
+  listPrograms: () => ipcRenderer.invoke("samplePattern:listPrograms"),
+  loadProgram: (programPath) => ipcRenderer.invoke("samplePattern:loadProgram", { programPath }),
+});

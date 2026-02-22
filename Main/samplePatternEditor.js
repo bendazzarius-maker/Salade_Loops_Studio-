@@ -11,6 +11,9 @@
   const gainEl = document.getElementById("samplePatternGain");
   const mixOutEl = document.getElementById("samplePatternMixOut");
   const nameEl = document.getElementById("samplePatternName");
+  const importModeEl = document.getElementById("samplePatternImportMode");
+  const programListEl = document.getElementById("samplePatternProgramList");
+  const loadProgramBtn = document.getElementById("samplePatternLoadProgram");
   const saveBtn = document.getElementById("samplePatternSavePattern");
   const previewBtn = document.getElementById("samplePatternPreviewBtn");
   const statusEl = document.getElementById("samplePatternStatus");
@@ -346,7 +349,7 @@
     mixOutEl.value = "1";
   }
 
-  function createSamplePattern() {
+  async function createSamplePattern() {
     const name = String(nameEl?.value || "").trim();
     if (!name) {
       setStatus("Nom pattern requis.");
@@ -362,14 +365,35 @@
     const rootMidi = Math.max(24, Math.min(96, Math.floor(+rootMidiEl.value || 60)));
     const mixOut = Math.max(1, Math.floor(+mixOutEl.value || 1));
 
+    let samplePath = editor.samplePath;
+    let programPath = editor.selectedProgramPath || "";
+    if (global.samplePattern?.saveProgram) {
+      const saveRes = await global.samplePattern.saveProgram({
+        name,
+        samplePath,
+        startNorm: clamp01(+startEl.value || editor.posStart),
+        endNorm: clamp01(+endEl.value || editor.posEnd),
+        rootMidi,
+        pitchMode: pitchModeEl.value || "chromatic",
+        gain: Math.max(0, Math.min(1.6, +gainEl.value || 1)),
+        importMode: importModeEl?.value || "reference",
+      });
+      if (saveRes?.ok) {
+        samplePath = saveRes.resolvedSamplePath || samplePath;
+        programPath = saveRes.programPath || programPath;
+        editor.selectedProgramPath = programPath;
+      }
+    }
+
     const params = {
-      samplePath: editor.samplePath,
+      samplePath,
       startNorm: clamp01(+startEl.value || editor.posStart),
       endNorm: clamp01(+endEl.value || editor.posEnd),
       patternBeats: beats,
       rootMidi,
       pitchMode: pitchModeEl.value || "chromatic",
       gain: Math.max(0, Math.min(1.6, +gainEl.value || 1)),
+      programPath,
     };
     if (params.endNorm <= params.startNorm) params.endNorm = Math.min(1, params.startNorm + 0.001);
 
@@ -414,6 +438,8 @@
     project.activePatternId = p.id;
     setStatus(`Pattern "${name}" créée (${beats} temps) et ajoutée à la banque Patterns.`);
 
+    await refreshPrograms();
+
     try { refreshUI(); } catch (_) {}
     try { renderAll(); } catch (_) {}
     try { renderPlaylist(); } catch (_) {}
@@ -433,7 +459,29 @@
     drawWaveform();
   });
 
-  saveBtn?.addEventListener("click", createSamplePattern);
+  saveBtn?.addEventListener("click", () => { createSamplePattern().catch((err) => setStatus(err?.message || "Erreur création pattern")); });
+  loadProgramBtn?.addEventListener("click", () => { loadProgramFromDisk().catch((err) => setStatus(err?.message || "Erreur chargement programme")); });
+
+  previewBtn?.addEventListener("pointerdown", async (event) => {
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  const stopPreviewFromPointer = () => stopPreviewLoop();
+  previewBtn?.addEventListener("pointerup", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointerleave", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointercancel", stopPreviewFromPointer);
+  previewBtn?.addEventListener("keydown", async (event) => {
+    if (event.repeat) return;
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  previewBtn?.addEventListener("keyup", (event) => {
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    stopPreviewLoop();
+  });
+  global.addEventListener("blur", stopPreviewLoop);
 
   previewBtn?.addEventListener("pointerdown", async (event) => {
     event.preventDefault();
@@ -457,6 +505,7 @@
   global.addEventListener("blur", stopPreviewLoop);
 
   refreshMixOut();
+  refreshPrograms();
   installInteractions();
   drawWaveform();
 })(window);

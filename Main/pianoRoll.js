@@ -32,7 +32,9 @@ function buildPianoColumn(){
       const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const velv=(parseInt(vel.value,10)||100)/127;
-      inst.trigger(ae.ctx.currentTime, m, velv, 0.25);
+      if (!triggerSamplePatternPreviewNative(p, ch, m, velv)) {
+        inst.trigger(ae.ctx.currentTime, m, velv, 0.25);
+      }
     });
 
     pianoKeys.appendChild(row);
@@ -104,7 +106,9 @@ function renderNotes(){
       const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
         const vv=(n.vel||100)/127;
-        inst.trigger(ae.ctx.currentTime, n.midi, vv, 0.25);
+        if (!triggerSamplePatternPreviewNative(p, ch, n.midi, vv)) {
+          inst.trigger(ae.ctx.currentTime, n.midi, vv, 0.25);
+        }
       }
 
       if(e.target.classList.contains("handle")){
@@ -217,7 +221,9 @@ async function applyPaintAt(cell){
       const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const vv=(parseInt(vel.value,10)||100)/127;
-      inst.trigger(ae.ctx.currentTime, cell.midi, vv, 0.25);
+      if (!triggerSamplePatternPreviewNative(p, ch, cell.midi, vv)) {
+        inst.trigger(ae.ctx.currentTime, cell.midi, vv, 0.25);
+      }
     }
   }
 }

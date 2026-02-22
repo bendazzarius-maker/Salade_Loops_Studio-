@@ -101,7 +101,9 @@ $("#testC4").addEventListener("click", async ()=>{
   const inst=presets.get(presetName, effectiveParams || ch.params, outBus);
   const m = (inst.type==="drums") ? 48 : 60; // Drum hit / C4
   const vv=(parseInt(vel.value,10)||100)/127;
-  inst.trigger(ae.ctx.currentTime,m,vv,0.35);
+  if (!triggerSamplePatternTestNative(p, ch, m, vv)) {
+    inst.trigger(ae.ctx.currentTime,m,vv,0.35);
+  }
 });
 
 $("#export").addEventListener("click",()=>{ console.log("EXPORT", exportProject()); alert("Export JSON -> console (F12)."); });

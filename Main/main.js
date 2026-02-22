@@ -307,6 +307,7 @@ ipcMain.handle("project:load", async () => {
 // -----------------------------------------------------------------------------
 const SUPPORTED_SAMPLE_EXTENSIONS = new Set([".wav", ".mp3", ".ogg"]);
 const PROGRAM_FILE_EXT = ".slsprog.json";
+const SAMPLE_PATTERN_PROGRAM_EXT = ".spp.json";
 
 const SAMPLER_CONFIG_FILE = path.join(app.getPath("userData"), "sampler-programs-config.json");
 let samplerProgramsRootOverride = null;
@@ -332,6 +333,56 @@ async function writeSamplerConfig() {
 function samplerProgramsRoot() {
   if (samplerProgramsRootOverride) return samplerProgramsRootOverride;
   return path.join(app.getPath("documents"), "SL-Studio", "samplerTouski");
+}
+
+function getSLStudioRoot() {
+  return path.join(app.getPath("documents"), "SL-Studio");
+}
+
+function samplePatternRoot() {
+  return path.join(getSLStudioRoot(), "samplePattern");
+}
+
+function samplePatternProgramsDir() {
+  return path.join(samplePatternRoot(), "programs");
+}
+
+function samplePatternSamplesDir() {
+  return path.join(samplePatternRoot(), "samples");
+}
+
+function samplePatternIndexPath() {
+  return path.join(samplePatternRoot(), "index.json");
+}
+
+async function ensureSamplePatternDirs() {
+  await fs.mkdir(samplePatternProgramsDir(), { recursive: true });
+  await fs.mkdir(samplePatternSamplesDir(), { recursive: true });
+}
+
+function sanitizeProgramName(rawName = "") {
+  return String(rawName || "Sample Pattern Program")
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") || "Sample Pattern Program";
+}
+
+async function readSamplePatternIndex() {
+  try {
+    const raw = await fs.readFile(samplePatternIndexPath(), "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed?.programs) ? parsed.programs : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+async function writeSamplePatternIndex(programs) {
+  const payload = {
+    version: 1,
+    updatedAt: Date.now(),
+    programs: Array.isArray(programs) ? programs : [],
+  };
+  await fs.writeFile(samplePatternIndexPath(), JSON.stringify(payload, null, 2), "utf-8");
 }
 
 async function scanSamplerDirectory(rootDir) {
@@ -531,4 +582,94 @@ ipcMain.handle("sampler:saveProgram", async (_evt, payload = {}) => {
     relativeFilePath,
     program: toWrite,
   };
+});
+
+ipcMain.handle("samplePattern:saveProgram", async (_evt, payload = {}) => {
+  await ensureSamplePatternDirs();
+
+  const now = Date.now();
+  const cleanName = sanitizeProgramName(payload.name || "SamplePattern");
+  const inputSamplePath = String(payload.samplePath || "").trim();
+  if (!inputSamplePath) return { ok: false, error: "samplePath requis" };
+
+  let resolvedSamplePath = path.resolve(inputSamplePath);
+  const importMode = String(payload.importMode || "reference").toLowerCase();
+
+  if (importMode === "import") {
+    const ext = path.extname(resolvedSamplePath) || ".wav";
+    const copiedName = `${cleanName}_${hashString(`${resolvedSamplePath}-${now}`)}${ext}`;
+    const dst = path.join(samplePatternSamplesDir(), copiedName);
+    await fs.copyFile(resolvedSamplePath, dst);
+    resolvedSamplePath = dst;
+  }
+
+  const program = {
+    version: 1,
+    name: cleanName,
+    createdAt: now,
+    updatedAt: now,
+    sample: {
+      mode: importMode === "import" ? "import" : "reference",
+      path: resolvedSamplePath,
+      originalPath: inputSamplePath,
+      sha1: "",
+    },
+    slice: {
+      startNorm: Math.max(0, Math.min(1, Number(payload.startNorm ?? 0))),
+      endNorm: Math.max(0, Math.min(1, Number(payload.endNorm ?? 1))),
+    },
+    playback: {
+      rootMidi: Math.max(0, Math.min(127, Math.floor(Number(payload.rootMidi ?? 60)))),
+      pitchMode: String(payload.pitchMode || "chromatic"),
+      gain: Math.max(0, Math.min(2, Number(payload.gain ?? 1))),
+      pan: Math.max(-1, Math.min(1, Number(payload.pan ?? 0))),
+    },
+  };
+  if (program.slice.endNorm <= program.slice.startNorm) {
+    program.slice.endNorm = Math.min(1, program.slice.startNorm + 0.001);
+  }
+
+  const programFile = path.join(samplePatternProgramsDir(), `${cleanName}${SAMPLE_PATTERN_PROGRAM_EXT}`);
+  await fs.writeFile(programFile, JSON.stringify(program, null, 2), "utf-8");
+
+  const sampleId = `sp_${hashString(resolvedSamplePath.toLowerCase())}`;
+  const entry = {
+    name: cleanName,
+    programPath: programFile,
+    updatedAt: now,
+    samplePath: resolvedSamplePath,
+    sampleId,
+  };
+
+  const existing = await readSamplePatternIndex();
+  const filtered = existing.filter((it) => String(it.programPath) !== programFile);
+  filtered.push(entry);
+  filtered.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  await writeSamplePatternIndex(filtered);
+
+  return {
+    ok: true,
+    programPath: programFile,
+    programName: cleanName,
+    resolvedSamplePath,
+    sampleId,
+  };
+});
+
+ipcMain.handle("samplePattern:listPrograms", async () => {
+  await ensureSamplePatternDirs();
+  const programs = await readSamplePatternIndex();
+  return { ok: true, rootPath: samplePatternProgramsDir(), programs };
+});
+
+ipcMain.handle("samplePattern:loadProgram", async (_evt, payload = {}) => {
+  await ensureSamplePatternDirs();
+  const programPath = String(payload.programPath || "").trim();
+  if (!programPath) return { ok: false, error: "programPath requis" };
+  const resolved = path.resolve(programPath);
+  const root = path.resolve(samplePatternProgramsDir());
+  if (!resolved.startsWith(root)) return { ok: false, error: "Chemin invalide" };
+  const raw = await fs.readFile(resolved, "utf-8");
+  const program = JSON.parse(raw);
+  return { ok: true, programPath: resolved, program };
 });
