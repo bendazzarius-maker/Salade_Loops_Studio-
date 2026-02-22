@@ -393,10 +393,18 @@
       kind: "sample_pattern",
       type: "sample_pattern",
       samplePatternConfig: Object.assign({}, params),
-      // Compat native engine payloads that expect patternId + top-level notes.
-      // Keep as direct alias of channel notes so edits stay in sync.
-      notes: sampleChannel.notes,
-      channels: [sampleChannel],
+      channels: [
+        {
+          id: gid("ch"),
+          name: "Sample Paterne",
+          preset: "Sample Paterne",
+          color: "#b28dff",
+          muted: false,
+          params,
+          mixOut,
+          notes: [{ id: gid("note"), step: 0, len: 1, midi: rootMidi, vel: 110, selected: false }],
+        },
+      ],
       activeChannelId: null,
     };
     p.patternId = p.id;
