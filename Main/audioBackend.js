@@ -6,6 +6,15 @@
 
   function nowMs() { return Date.now(); }
   function rid() { return `req-${nowMs()}-${Math.random().toString(36).slice(2, 8)}`; }
+  function hashSamplePath(path) {
+    const s = String(path || "");
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i += 1) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return `sp_${(h >>> 0).toString(16)}`;
+  }
 
   class AudioBackendWebAudio {
     constructor() {
@@ -37,6 +46,7 @@
       this.capabilities = {};
       this.transportState = { playing: false, bpm: 120, ppq: 0, samplePos: 0 };
       this._unsubscribeEvt = null;
+      this._loadedSampleIds = new Set();
     }
 
     _buildReq(op, data = {}) {
@@ -84,6 +94,33 @@
     async seek(ppq = 0) { return this._request("transport.seek", { mode: "ppq", ppq }); }
     async panic() { return this._request("midi.panic", {}); }
     async sendProjectSync(snapshot) { return this._request("project.sync", snapshot || {}); }
+
+    async ensureSampleLoaded(samplePath) {
+      const path = String(samplePath || "").trim();
+      if (!path) throw new Error("Missing samplePath");
+      const sampleId = hashSamplePath(path);
+      if (this._loadedSampleIds.has(sampleId)) return sampleId;
+      const res = await this._request("sampler.load", { sampleId, path });
+      if (!res?.ok) throw new Error(res?.err?.message || "sampler.load failed");
+      this._loadedSampleIds.add(sampleId);
+      return sampleId;
+    }
+
+    async triggerSample(payload = {}) {
+      const sampleId = await this.ensureSampleLoaded(payload.samplePath);
+      return this._request("sampler.trigger", {
+        trackId: String(payload.trackId || "sample-pattern"),
+        sampleId,
+        gain: Number.isFinite(+payload.gain) ? +payload.gain : 1,
+        pan: Number.isFinite(+payload.pan) ? +payload.pan : 0,
+        startNorm: Number.isFinite(+payload.startNorm) ? +payload.startNorm : 0,
+        endNorm: Number.isFinite(+payload.endNorm) ? +payload.endNorm : 1,
+        rootMidi: Number.isFinite(+payload.rootMidi) ? +payload.rootMidi : 60,
+        note: Number.isFinite(+payload.note) ? +payload.note : 60,
+        velocity: Number.isFinite(+payload.velocity) ? +payload.velocity : 0.85,
+        when: "now",
+      });
+    }
 
     triggerNote({ note, velocity = 0.85, trackId = "preview", durationSec = 0.25 }) {
       const channel = 0;
@@ -179,6 +216,18 @@
       if (!res?.ok) {
         await this.trySwitch("webaudio");
         this.backends.webaudio.triggerNote(payload);
+      }
+    }
+
+    async triggerSample(payload) {
+      if (this.active !== "juce") {
+        if (typeof payload?.trigger === "function") payload.trigger();
+        return;
+      }
+      const res = await this.backends.juce.triggerSample(payload);
+      if (!res?.ok) {
+        await this.trySwitch("webaudio");
+        if (typeof payload?.trigger === "function") payload.trigger();
       }
     }
   }

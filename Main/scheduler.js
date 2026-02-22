@@ -464,11 +464,28 @@ function _recalcEndStepForMode(){
 
 function buildProjectSnapshotForEngine(){
   const ppqResolution = 960;
-  const tracks = (project.playlist?.tracks || []).map((tr) => ({
-    trackId: String(tr.id || gid("t")),
+  const trackMap = new Map();
+  for (const pat of (project.patterns || [])) {
+    if (!Array.isArray(pat.channels)) continue;
+    for (const ch of pat.channels) {
+      const trackId = String(ch.id || gid("t"));
+      if (!trackMap.has(trackId)) {
+        trackMap.set(trackId, {
+          trackId,
+          name: String(ch.name || `Channel ${trackId}`),
+          instrument: { type: "internal", preset: String(ch.preset || "default") }
+        });
+      }
+    }
+  }
+  const tracks = Array.from(trackMap.values());
+  (project.playlist?.tracks || []).forEach((tr) => {
+    tracks.push({
+    trackId: `playlist:${String(tr.id || gid("t"))}`,
     name: String(tr.name || "Track"),
     instrument: { type: "internal", preset: "default" }
-  }));
+  });
+  });
   tracks.push({ trackId: "master", name: "Master" });
 
   const patterns = [];
@@ -521,6 +538,35 @@ function audioTriggerNote(payload){
   if (typeof payload.trigger === "function") payload.trigger();
 }
 
+function audioTriggerSample(payload){
+  if (window.audioBackend && typeof window.audioBackend.triggerSample === "function") {
+    window.audioBackend.triggerSample(payload);
+    return;
+  }
+  if (typeof payload.trigger === "function") payload.trigger();
+}
+
+function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams }) {
+  if (presetName === "Sample Paterne") {
+    const p = effectiveParams || ch.params || {};
+    audioTriggerSample({
+      trigger: () => inst.trigger(t, n.midi, vv, dur),
+      trackId: String(ch.id || "sample-pattern"),
+      samplePath: p.samplePath,
+      startNorm: p.startNorm,
+      endNorm: p.endNorm,
+      rootMidi: p.rootMidi,
+      pitchMode: p.pitchMode,
+      gain: p.gain,
+      note: n.midi,
+      velocity: vv,
+      durationSec: dur,
+    });
+    return;
+  }
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+}
+
 function secPerStep() { return (60 / state.bpm) / 4; }
 
 function resolveSamplePatternParams(pattern, channel){
@@ -571,13 +617,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
 }}
     }
   }
@@ -624,13 +670,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  audioTriggerNote({ trigger: () => inst.trigger(t, n.midi, vv, dur), note: n.midi, velocity: vv, durationSec: dur, trackId: ch.id });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
 }// Glow (safe)
             try {
               if (project.activePatternId === pat.id) {
