@@ -20,7 +20,20 @@ class PresetBank{
   }
 
   def(name){
-    return this._defs.get(name) || this._defs.get("Piano") || null;
+    if(this._defs.has(name)) return this._defs.get(name);
+
+    const raw = (name == null) ? "" : String(name);
+    const trimmed = raw.trim();
+    if(trimmed && this._defs.has(trimmed)) return this._defs.get(trimmed);
+
+    if(trimmed){
+      const lower = trimmed.toLowerCase();
+      for(const [k, def] of this._defs.entries()){
+        if(String(k).toLowerCase() === lower) return def;
+      }
+    }
+
+    return this._defs.get("Piano") || null;
   }
 
   defaults(name){

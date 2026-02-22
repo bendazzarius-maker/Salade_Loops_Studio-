@@ -90,6 +90,7 @@
 
 
 
+
   function makeSchema() {
     return {
       title: "Sample Paterne",
@@ -167,4 +168,7 @@
   };
 
   window.__INSTRUMENTS__[DEF.name] = DEF;
+  window.__INSTRUMENTS__[DEF.id] = DEF;
+  window.__INSTRUMENTS__["Sample Pattern"] = DEF;
+  window.__INSTRUMENTS__["SamplePaterne"] = DEF;
 })();
