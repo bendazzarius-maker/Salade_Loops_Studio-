@@ -373,8 +373,20 @@
     };
     if (params.endNorm <= params.startNorm) params.endNorm = Math.min(1, params.startNorm + 0.001);
 
+    const sampleChannel = {
+      id: gid("ch"),
+      name: "Sample Paterne",
+      preset: "Sample Paterne",
+      color: "#b28dff",
+      muted: false,
+      params,
+      mixOut,
+      notes: [{ id: gid("note"), step: 0, len: 1, midi: rootMidi, vel: 110, selected: false }],
+    };
+
     const p = {
       id: gid("pat"),
+      patternId: null,
       name,
       color: "#b28dff",
       lenBars: bars,
@@ -395,6 +407,7 @@
       ],
       activeChannelId: null,
     };
+    p.patternId = p.id;
     p.activeChannelId = p.channels[0].id;
 
     project.patterns.push(p);
