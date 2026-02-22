@@ -1,0 +1,11 @@
+{
+  "files.watcherExclude": {
+    "**/Juce-Cpp/Juce/**": true,
+    "**/.git/**": true
+  },
+  "search.exclude": {
+    "**/Juce-Cpp/Juce/**": true
+  },
+  "typescript.disableAutomaticTypeAcquisition": true,
+  "javascript.suggest.enabled": false
+}
