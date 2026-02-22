@@ -370,6 +370,76 @@
     mixOutEl.value = "1";
   }
 
+  async function refreshPrograms() {
+    if (!programListEl) return;
+    programListEl.innerHTML = "";
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "(Aucun programme)";
+    programListEl.appendChild(placeholder);
+
+    if (!global.samplePattern?.listPrograms) return;
+
+    try {
+      const res = await global.samplePattern.listPrograms();
+      if (!res?.ok || !Array.isArray(res.programs)) return;
+      res.programs.forEach((entry) => {
+        const programPath = String(entry?.programPath || "").trim();
+        if (!programPath) return;
+        const opt = document.createElement("option");
+        opt.value = programPath;
+        opt.textContent = String(entry?.name || programPath.split(/[\\/]/).pop() || programPath);
+        programListEl.appendChild(opt);
+      });
+      if (editor.selectedProgramPath) {
+        programListEl.value = editor.selectedProgramPath;
+      }
+    } catch (_) {
+      setStatus("Impossible de lister les programmes Sample Pattern.");
+    }
+  }
+
+  async function loadProgramFromDisk() {
+    const programPath = String(programListEl?.value || "").trim();
+    if (!programPath) {
+      setStatus("Sélectionnez un programme à charger.");
+      return;
+    }
+    if (!global.samplePattern?.loadProgram) {
+      setStatus("Chargement de programme indisponible.");
+      return;
+    }
+
+    const res = await global.samplePattern.loadProgram(programPath);
+    if (!res?.ok || !res?.program) throw new Error(res?.error || "Programme invalide.");
+
+    const program = res.program;
+    const samplePath = String(program?.sample?.path || "").trim();
+    if (!samplePath) throw new Error("Sample manquant dans le programme.");
+
+    editor.selectedProgramPath = res.programPath || programPath;
+    editor.samplePath = samplePath;
+    editor.buffer = await decodePath(samplePath);
+    if (!editor.buffer) throw new Error("Impossible de décoder le sample du programme.");
+
+    editor.posStart = clamp01(program?.slice?.startNorm ?? 0);
+    editor.posEnd = clamp01(program?.slice?.endNorm ?? 1);
+    if (editor.posEnd <= editor.posStart) editor.posEnd = Math.min(1, editor.posStart + 0.001);
+
+    startEl.value = String(editor.posStart);
+    endEl.value = String(editor.posEnd);
+    rootMidiEl.value = String(Math.floor(Number(program?.playback?.rootMidi ?? 60)));
+    pitchModeEl.value = String(program?.playback?.pitchMode || "chromatic");
+    gainEl.value = String(Number(program?.playback?.gain ?? 1));
+    if (program?.name) nameEl.value = String(program.name);
+
+    editor.zoomStart = 0;
+    editor.zoomEnd = 1;
+    drawWaveform();
+    setStatus(`Programme chargé: ${program?.name || "Sample Pattern"}`);
+  }
+
   async function createSamplePattern() {
     const name = String(nameEl?.value || "").trim();
     if (!name) {
