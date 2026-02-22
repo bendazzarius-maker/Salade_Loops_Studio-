@@ -11,7 +11,11 @@
   const gainEl = document.getElementById("samplePatternGain");
   const mixOutEl = document.getElementById("samplePatternMixOut");
   const nameEl = document.getElementById("samplePatternName");
+  const importModeEl = document.getElementById("samplePatternImportMode");
+  const programListEl = document.getElementById("samplePatternProgramList");
+  const loadProgramBtn = document.getElementById("samplePatternLoadProgram");
   const saveBtn = document.getElementById("samplePatternSavePattern");
+  const previewBtn = document.getElementById("samplePatternPreviewBtn");
   const statusEl = document.getElementById("samplePatternStatus");
   const canvas = document.getElementById("samplePatternWave");
 
@@ -27,7 +31,122 @@
     isPanning: false,
     panAnchorX: 0,
     panStartView: 0,
+    previewSession: null,
+    selectedProgramPath: "",
   };
+
+  async function refreshPrograms() {
+    if (!global.samplePattern?.listPrograms || !programListEl) return;
+    try {
+      const res = await global.samplePattern.listPrograms();
+      const programs = Array.isArray(res?.programs) ? res.programs : [];
+      programListEl.innerHTML = "";
+      if (!programs.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "(aucun programme)";
+        programListEl.appendChild(opt);
+      }
+      programs.forEach((prg) => {
+        const opt = document.createElement("option");
+        opt.value = String(prg.programPath || "");
+        opt.textContent = String(prg.name || prg.programPath || "Programme");
+        programListEl.appendChild(opt);
+      });
+      if (editor.selectedProgramPath) programListEl.value = editor.selectedProgramPath;
+    } catch (err) {
+      console.warn("[SamplePattern] listPrograms failed", err);
+    }
+  }
+
+  async function loadProgramFromDisk() {
+    const programPath = String(programListEl?.value || "");
+    if (!programPath || !global.samplePattern?.loadProgram) return;
+    const res = await global.samplePattern.loadProgram(programPath);
+    if (!res?.ok || !res.program) {
+      setStatus("Impossible de charger le programme sélectionné.");
+      return;
+    }
+    const prg = res.program;
+    editor.selectedProgramPath = res.programPath;
+    editor.samplePath = String(prg.sample?.path || "");
+    startEl.value = String(prg.slice?.startNorm ?? 0);
+    endEl.value = String(prg.slice?.endNorm ?? 1);
+    beatsEl.value = String(Math.max(1, Math.min(32, Math.floor(+beatsEl.value || 4))));
+    rootMidiEl.value = String(prg.playback?.rootMidi ?? 60);
+    pitchModeEl.value = String(prg.playback?.pitchMode || "chromatic");
+    gainEl.value = String(prg.playback?.gain ?? 1);
+    nameEl.value = String(prg.name || "");
+    const decoded = await decodePath(editor.samplePath);
+    if (decoded) {
+      editor.buffer = decoded;
+      editor.posStart = clamp01(+startEl.value || 0);
+      editor.posEnd = clamp01(+endEl.value || 1);
+      drawWaveform();
+    }
+    setStatus(`Programme chargé: ${prg.name || "(sans nom)"}`);
+  }
+
+  function ensurePreviewCtx() {
+    const Ctor = global.AudioContext || global.webkitAudioContext;
+    if (!Ctor) return null;
+    const ae = global.audioEngine;
+    if (ae?.ctx) return ae.ctx;
+    if (!editor.previewCtx) editor.previewCtx = new Ctor({ latencyHint: "interactive" });
+    return editor.previewCtx;
+  }
+
+  async function startPreviewLoop() {
+    if (!editor.buffer) {
+      setStatus("Pré-écoute: chargez un sample avant lecture.");
+      return;
+    }
+    const ctx = ensurePreviewCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      try { await ctx.resume(); } catch (_) {}
+    }
+    stopPreviewLoop();
+
+    const startNorm = clamp01(+startEl.value || editor.posStart);
+    const endNormRaw = clamp01(+endEl.value || editor.posEnd);
+    const endNorm = Math.max(startNorm + 0.001, endNormRaw);
+    const startSec = startNorm * editor.buffer.duration;
+    const endSec = endNorm * editor.buffer.duration;
+    const loopLen = Math.max(0.01, endSec - startSec);
+    const now = ctx.currentTime;
+
+    const source = ctx.createBufferSource();
+    source.buffer = editor.buffer;
+    source.loop = true;
+    source.loopStart = startSec;
+    source.loopEnd = endSec;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.95, now);
+
+    const targetOut = global.audioEngine?.master || ctx.destination;
+    source.connect(gain);
+    gain.connect(targetOut);
+    source.start(now, startSec);
+
+    editor.previewSession = { source, gain, ctx };
+    setStatus("Pré-écoute active: maintenez le bouton (souris/clavier) pour écouter Start→End en boucle.");
+  }
+
+  function stopPreviewLoop() {
+    const session = editor.previewSession;
+    if (!session) return;
+    const now = session.ctx?.currentTime || 0;
+    try {
+      session.gain?.gain.cancelScheduledValues(now);
+      session.gain?.gain.setValueAtTime(session.gain?.gain.value || 0.95, now);
+      session.gain?.gain.linearRampToValueAtTime(0.0001, now + 0.02);
+    } catch (_) {}
+    try { session.source?.stop(now + 0.03); } catch (_) {}
+    editor.previewSession = null;
+    setStatus("Pré-écoute stoppée.");
+  }
 
   function setStatus(msg) {
     if (statusEl) statusEl.textContent = msg;
@@ -283,7 +402,7 @@
     mixOutEl.value = "1";
   }
 
-  function createSamplePattern() {
+  async function createSamplePattern() {
     const name = String(nameEl?.value || "").trim();
     if (!name) {
       setStatus("Nom pattern requis.");
@@ -299,43 +418,72 @@
     const rootMidi = Math.max(24, Math.min(96, Math.floor(+rootMidiEl.value || 60)));
     const mixOut = Math.max(1, Math.floor(+mixOutEl.value || 1));
 
+    let samplePath = editor.samplePath;
+    let programPath = editor.selectedProgramPath || "";
+    if (global.samplePattern?.saveProgram) {
+      const saveRes = await global.samplePattern.saveProgram({
+        name,
+        samplePath,
+        startNorm: clamp01(+startEl.value || editor.posStart),
+        endNorm: clamp01(+endEl.value || editor.posEnd),
+        rootMidi,
+        pitchMode: pitchModeEl.value || "chromatic",
+        gain: Math.max(0, Math.min(1.6, +gainEl.value || 1)),
+        importMode: importModeEl?.value || "reference",
+      });
+      if (saveRes?.ok) {
+        samplePath = saveRes.resolvedSamplePath || samplePath;
+        programPath = saveRes.programPath || programPath;
+        editor.selectedProgramPath = programPath;
+      }
+    }
+
     const params = {
-      samplePath: editor.samplePath,
+      samplePath,
       startNorm: clamp01(+startEl.value || editor.posStart),
       endNorm: clamp01(+endEl.value || editor.posEnd),
       patternBeats: beats,
       rootMidi,
       pitchMode: pitchModeEl.value || "chromatic",
       gain: Math.max(0, Math.min(1.6, +gainEl.value || 1)),
+      programPath,
     };
     if (params.endNorm <= params.startNorm) params.endNorm = Math.min(1, params.startNorm + 0.001);
 
+    const sampleChannel = {
+      id: gid("ch"),
+      name: "Sample Paterne",
+      preset: "Sample Paterne",
+      color: "#b28dff",
+      muted: false,
+      params,
+      mixOut,
+      notes: [{ id: gid("note"), step: 0, len: 1, midi: rootMidi, vel: 110, selected: false }],
+    };
+
     const p = {
       id: gid("pat"),
+      patternId: null,
       name,
       color: "#b28dff",
       lenBars: bars,
       kind: "sample_pattern",
       type: "sample_pattern",
-      channels: [
-        {
-          id: gid("ch"),
-          name: "Sample Paterne",
-          preset: "Sample Paterne",
-          color: "#b28dff",
-          muted: false,
-          params,
-          mixOut,
-          notes: [{ id: gid("note"), step: 0, len: 1, midi: rootMidi, vel: 110, selected: false }],
-        },
-      ],
+      samplePatternConfig: Object.assign({}, params),
+      // Compat native engine payloads that expect patternId + top-level notes.
+      // Keep as direct alias of channel notes so edits stay in sync.
+      notes: sampleChannel.notes,
+      channels: [sampleChannel],
       activeChannelId: null,
     };
+    p.patternId = p.id;
     p.activeChannelId = p.channels[0].id;
 
     project.patterns.push(p);
     project.activePatternId = p.id;
     setStatus(`Pattern "${name}" créée (${beats} temps) et ajoutée à la banque Patterns.`);
+
+    await refreshPrograms();
 
     try { refreshUI(); } catch (_) {}
     try { renderAll(); } catch (_) {}
@@ -356,9 +504,32 @@
     drawWaveform();
   });
 
-  saveBtn?.addEventListener("click", createSamplePattern);
+  saveBtn?.addEventListener("click", () => { createSamplePattern().catch((err) => setStatus(err?.message || "Erreur création pattern")); });
+  loadProgramBtn?.addEventListener("click", () => { loadProgramFromDisk().catch((err) => setStatus(err?.message || "Erreur chargement programme")); });
+
+  previewBtn?.addEventListener("pointerdown", async (event) => {
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  const stopPreviewFromPointer = () => stopPreviewLoop();
+  previewBtn?.addEventListener("pointerup", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointerleave", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointercancel", stopPreviewFromPointer);
+  previewBtn?.addEventListener("keydown", async (event) => {
+    if (event.repeat) return;
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  previewBtn?.addEventListener("keyup", (event) => {
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    stopPreviewLoop();
+  });
+  global.addEventListener("blur", stopPreviewLoop);
 
   refreshMixOut();
+  refreshPrograms();
   installInteractions();
   drawWaveform();
 })(window);
