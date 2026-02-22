@@ -60,7 +60,7 @@ async function toggleMode(){
     const wasPlaying = !!state.playing;
     // Strict mode: if playing, restart in the new mode so scheduler boundaries match.
     if(wasPlaying){
-      try{ stop(); }catch(_){}
+      try{ await stop(); }catch(_){}
       setMode(next);
       try{ await start(); }catch(_){}
     }else{

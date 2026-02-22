@@ -26,16 +26,10 @@ function buildPianoColumn(){
       if(!state.preview) return;
       await ae.ensure();
       const ch=activeChannel(); if(!ch) return;
-      const p = activePattern();
-      const patType = String(p?.type || p?.kind || "").toLowerCase();
-      const isSamplePattern = patType === "sample_pattern";
-      const effectiveParams = isSamplePattern ? resolveSamplePatternParamsForPreview(p, ch) : ch.params;
-      const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
       const channelPreset = String(ch.preset || "");
-      const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
-        ? "Sample Paterne"
-        : (presetOverride.value || channelPreset);
+      const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const velv=(parseInt(vel.value,10)||100)/127;
       inst.trigger(ae.ctx.currentTime, m, velv, 0.25);
@@ -104,15 +98,10 @@ function renderNotes(){
 
       if(state.preview){
         await ae.ensure();
-        const pType = String(p?.type || p?.kind || "").toLowerCase();
-        const isSamplePattern = pType === "sample_pattern";
-        const effectiveParams = isSamplePattern ? resolveSamplePatternParamsForPreview(p, ch) : ch.params;
-        const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
         const channelPreset = String(ch.preset || "");
-        const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
-          ? "Sample Paterne"
-          : (presetOverride.value || channelPreset);
+        const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
         const vv=(n.vel||100)/127;
         inst.trigger(ae.ctx.currentTime, n.midi, vv, 0.25);
@@ -222,16 +211,10 @@ async function applyPaintAt(cell){
 
     if(state.preview){
       await ae.ensure();
-      const p = activePattern();
-      const patType = String(p?.type || p?.kind || "").toLowerCase();
-      const isSamplePattern = patType === "sample_pattern";
-      const effectiveParams = isSamplePattern ? resolveSamplePatternParamsForPreview(p, ch) : ch.params;
-      const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
       const channelPreset = String(ch.preset || "");
-      const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
-        ? "Sample Paterne"
-        : (presetOverride.value || channelPreset);
+      const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
       const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const vv=(parseInt(vel.value,10)||100)/127;
       inst.trigger(ae.ctx.currentTime, cell.midi, vv, 0.25);
