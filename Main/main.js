@@ -26,6 +26,23 @@ if (!gotLock) {
 // JUCE AUDIO ENGINE HOST (spawn in MAIN process)
 // -----------------------------------------------------------------------------
 let audioProc = null;
+const audioPending = new Map();
+let audioEventSeq = 0;
+
+function nowMs() {
+  return Date.now();
+}
+
+function buildEngineRequest(op, data = {}, id = `main-${nowMs()}-${Math.random().toString(36).slice(2, 8)}`) {
+  return {
+    v: 1,
+    type: "req",
+    op,
+    id,
+    ts: nowMs(),
+    data: data || {},
+  };
+}
 
 function resolveAudioEnginePath() {
   // DEV: binaire copié dans ./native
@@ -46,13 +63,77 @@ function resolveAudioEnginePath() {
   return pkgBin;
 }
 
-function sendToAudio(op, data = {}) {
-  if (!audioProc?.stdin) return;
+function sendRawToAudio(message) {
+  if (!audioProc?.stdin) return false;
   try {
-    audioProc.stdin.write(JSON.stringify({ op, data }) + "\n");
+    audioProc.stdin.write(JSON.stringify(message) + "\n");
+    return true;
   } catch (e) {
     console.warn("[JUCE] send failed:", e);
+    return false;
   }
+}
+
+function failAllPending(code, message) {
+  for (const [id, pending] of audioPending.entries()) {
+    clearTimeout(pending.timer);
+    pending.resolve({
+      v: 1,
+      type: "res",
+      op: pending.op,
+      id,
+      ts: nowMs(),
+      ok: false,
+      err: { code, message, details: {} },
+    });
+  }
+  audioPending.clear();
+}
+
+async function requestAudio(message, timeoutMs = 1200) {
+  if (!audioProc) {
+    return {
+      v: 1,
+      type: "res",
+      op: message?.op || "unknown",
+      id: message?.id || "0",
+      ts: nowMs(),
+      ok: false,
+      err: { code: "E_NOT_READY", message: "Audio engine not running.", details: {} },
+    };
+  }
+
+  return new Promise((resolve) => {
+    const id = String(message.id || `main-${nowMs()}`);
+    const timer = setTimeout(() => {
+      audioPending.delete(id);
+      resolve({
+        v: 1,
+        type: "res",
+        op: message.op,
+        id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_TIMEOUT", message: "Audio engine request timed out.", details: {} },
+      });
+    }, timeoutMs);
+
+    audioPending.set(id, { resolve, timer, op: message.op });
+    const sent = sendRawToAudio({ ...message, id });
+    if (!sent) {
+      clearTimeout(timer);
+      audioPending.delete(id);
+      resolve({
+        v: 1,
+        type: "res",
+        op: message.op,
+        id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_NOT_READY", message: "Audio engine stdin unavailable.", details: {} },
+      });
+    }
+  });
 }
 
 function startAudioEngine() {
@@ -80,7 +161,14 @@ function startAudioEngine() {
 
       try {
         const msg = JSON.parse(line);
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        if (msg?.type === "res" && msg.id && audioPending.has(String(msg.id))) {
+          const pending = audioPending.get(String(msg.id));
+          clearTimeout(pending.timer);
+          audioPending.delete(String(msg.id));
+          pending.resolve(msg);
+          continue;
+        }
+        if (mainWindow && !mainWindow.isDestroyed() && msg?.type === "evt") {
           mainWindow.webContents.send("audio:native:event", msg);
         }
       } catch {
@@ -95,17 +183,15 @@ function startAudioEngine() {
 
   audioProc.on("exit", (code) => {
     console.warn("[JUCE] engine exited with code:", code);
+    failAllPending("E_NOT_READY", "Audio engine exited.");
     audioProc = null;
   });
-
-  // sanity-check
-  sendToAudio("ping", {});
 }
 
 function stopAudioEngine() {
   if (!audioProc) return;
   try {
-    sendToAudio("quit", {});
+    sendRawToAudio(buildEngineRequest("engine.shutdown", {}, "main-shutdown"));
   } catch (_) {}
   try {
     audioProc.kill();
@@ -114,10 +200,23 @@ function stopAudioEngine() {
 }
 
 // Renderer -> Engine
-ipcMain.handle("audio:native:send", async (_evt, payload) => {
-  if (!payload || typeof payload.op !== "string") return { ok: false };
-  sendToAudio(payload.op, payload.data || {});
-  return { ok: true };
+ipcMain.handle("audio:native:req", async (_evt, message) => {
+  if (!message || message.v !== 1 || message.type !== "req" || typeof message.op !== "string") {
+    return {
+      v: 1,
+      type: "res",
+      op: message?.op || "unknown",
+      id: message?.id || "0",
+      ts: nowMs(),
+      ok: false,
+      err: { code: "E_BAD_ENVELOPE", message: "Invalid SLS-IPC request envelope.", details: {} },
+    };
+  }
+  return requestAudio(message, 2000);
+});
+
+ipcMain.handle("audio:native:isAvailable", async () => {
+  return { ok: !!audioProc };
 });
 
 // -----------------------------------------------------------------------------
