@@ -34,7 +34,8 @@
         return ctx.decodeAudioData(raw.slice(0));
       })());
     }
-    return BUFFER_CACHE.get(key);
+
+    return cache.get(key);
   }
 
   async function renderSamplePatternWebAudio(channel, noteEvent, time, outBus) {
