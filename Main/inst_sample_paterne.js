@@ -2,31 +2,33 @@
 (function () {
   window.__INSTRUMENTS__ = window.__INSTRUMENTS__ || {};
 
-  const BUFFER_CACHE_BY_CTX = new WeakMap();
+  const BUFFER_CACHE = new Map();
+  let audioCtx = null;
   let backendWarned = false;
-  let busContextWarned = false;
 
   function clamp01(v, d = 0) {
     return Math.max(0, Math.min(1, Number.isFinite(+v) ? +v : d));
+  }
+
+  function ensureCtx() {
+    if (audioCtx) return audioCtx;
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return null;
+    audioCtx = new Ctor();
+    return audioCtx;
   }
 
   function sampleUrl(samplePath) {
     return `file://${encodeURI(String(samplePath || "").replace(/\\/g, "/"))}`;
   }
 
-  function getCtxCache(ctx) {
-    if (!ctx) return null;
-    if (!BUFFER_CACHE_BY_CTX.has(ctx)) BUFFER_CACHE_BY_CTX.set(ctx, new Map());
-    return BUFFER_CACHE_BY_CTX.get(ctx);
-  }
-
-  async function getDecodedBuffer(ctx, samplePath) {
+  async function getDecodedBuffer(samplePath) {
     const key = String(samplePath || "").trim();
-    if (!ctx || !key) return null;
-
-    const cache = getCtxCache(ctx);
-    if (!cache.has(key)) {
-      cache.set(key, (async () => {
+    if (!key) return null;
+    if (!BUFFER_CACHE.has(key)) {
+      BUFFER_CACHE.set(key, (async () => {
+        const ctx = ensureCtx();
+        if (!ctx) return null;
         const response = await fetch(sampleUrl(key));
         const raw = await response.arrayBuffer();
         return ctx.decodeAudioData(raw.slice(0));
@@ -36,21 +38,12 @@
     return cache.get(key);
   }
 
-  function resolveOutputNode(ctx, outBus) {
-    if (outBus && typeof outBus.connect === "function" && outBus.context === ctx) return outBus;
-    if (outBus && !busContextWarned) {
-      busContextWarned = true;
-      console.warn("[Sample Paterne] outBus context mismatch: fallback ctx.destination.");
-    }
-    return ctx.destination;
-  }
-
-  async function renderSamplePatternWebAudio(ctx, channel, noteEvent, time, outBus) {
+  async function renderSamplePatternWebAudio(channel, noteEvent, time, outBus) {
     const params = (channel && channel.params) ? channel.params : {};
-    if (!ctx || !params.samplePath) return;
-
-    const buffer = await getDecodedBuffer(ctx, params.samplePath);
-    if (!buffer) return;
+    if (!params.samplePath) return;
+    const buffer = await getDecodedBuffer(params.samplePath);
+    const ctx = ensureCtx();
+    if (!buffer || !ctx) return;
 
     const startNorm = clamp01(params.startNorm, 0);
     const endNormRaw = clamp01(params.endNorm, 1);
@@ -75,26 +68,21 @@
     amp.gain.setValueAtTime(gain, time);
 
     player.connect(amp);
-    amp.connect(resolveOutputNode(ctx, outBus));
+    if (outBus && typeof outBus.connect === "function") amp.connect(outBus);
+    else amp.connect(ctx.destination);
 
     player.start(time, loopStart);
     player.stop(time + duration + 0.02);
   }
 
-  async function triggerSamplePattern(ctx, channel, noteEvent, time, outBus) {
+  async function triggerSamplePattern(channel, noteEvent, time, outBus) {
     const backend = window.audioBackend;
-    const params = (channel && channel.params) ? channel.params : {};
     const active = backend && typeof backend.getActiveBackendName === "function"
       ? backend.getActiveBackendName()
       : "webaudio";
 
-    if (active === "juce" && backend && typeof backend.triggerSample === "function") {
-      await backend.triggerSample({
-        samplePath: params.samplePath,
-        startNorm: params.startNorm,
-        endNorm: params.endNorm,
-        rootMidi: params.rootMidi,
-        gain: params.gain,
+    if (active === "juce" && backend && typeof backend.triggerNote === "function") {
+      await backend.triggerNote({
         note: +noteEvent.midi || 60,
         velocity: Math.max(0, Math.min(1, +noteEvent.vel || 0.9)),
         durationSec: Math.max(0.01, Number(noteEvent.duration) || 0.25),
@@ -107,7 +95,7 @@
       backendWarned = true;
       console.warn("[Sample Paterne] JUCE indisponible: fallback WebAudio local.");
     }
-    await renderSamplePatternWebAudio(ctx, channel, noteEvent, time, outBus);
+    await renderSamplePatternWebAudio(channel, noteEvent, time, outBus);
   }
 
   function makeSchema() {
@@ -172,7 +160,6 @@
         const out = outBus || ae.master;
         const duration = Math.max(0.01, durSec || ((60 / state.bpm) * Math.max(1, Math.floor(+p.patternBeats || 4))));
         triggerSamplePattern(
-          ae.ctx,
           { params: p },
           { midi, vel, duration },
           t,
