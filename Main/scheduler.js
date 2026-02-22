@@ -595,7 +595,9 @@ function scheduleStep_SONG(step, t) {
       const clipEndStep = (clip.startBar + clip.lenBars) * state.stepsPerBar;
       if (stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
-      const local = stepInSong - clipStartStep; // play once
+      const patBars = patternLengthBars(pat);
+      const patSteps = Math.max(1, patBars * state.stepsPerBar);
+      const local = (stepInSong - clipStartStep) % patSteps;
 
 
       // Skip non-notes patterns (e.g., LFO patterns have no channels)
