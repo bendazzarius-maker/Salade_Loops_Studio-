@@ -45,9 +45,19 @@ class PresetBank{
   get(name, paramsRef, outBus){
     const d = this.def(name);
     if(!d) return null;
-    // ensure audio context exists
+
+    // Hybrid-safe: Sample Paterne can run with its own AudioContext fallback
+    // (useful when native backend is active and ae.ctx is not initialized).
+    const resolvedName = String(d.name || "").toLowerCase();
+    const reqName = String(name || "").toLowerCase();
+    const isSamplePaterne = resolvedName === "sample paterne"
+      || reqName === "sample paterne"
+      || reqName === "sample pattern"
+      || reqName === "samplepaterne";
+
+    // ensure audio context exists for WebAudio-only instruments
     const ctx = this.ae.ctx;
-    if(!ctx) return { name:"Piano", type:"synth", color:"#27e0a3", trigger:()=>{} };
+    if(!ctx && !isSamplePaterne) return { name:"Piano", type:"synth", color:"#27e0a3", trigger:()=>{} };
     return d.create(this.ae, paramsRef, outBus);
   }
 }
