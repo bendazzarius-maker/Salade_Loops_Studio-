@@ -32,60 +32,7 @@
     panAnchorX: 0,
     panStartView: 0,
     previewSession: null,
-    selectedProgramPath: "",
   };
-
-  async function refreshPrograms() {
-    if (!global.samplePattern?.listPrograms || !programListEl) return;
-    try {
-      const res = await global.samplePattern.listPrograms();
-      const programs = Array.isArray(res?.programs) ? res.programs : [];
-      programListEl.innerHTML = "";
-      if (!programs.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "(aucun programme)";
-        programListEl.appendChild(opt);
-      }
-      programs.forEach((prg) => {
-        const opt = document.createElement("option");
-        opt.value = String(prg.programPath || "");
-        opt.textContent = String(prg.name || prg.programPath || "Programme");
-        programListEl.appendChild(opt);
-      });
-      if (editor.selectedProgramPath) programListEl.value = editor.selectedProgramPath;
-    } catch (err) {
-      console.warn("[SamplePattern] listPrograms failed", err);
-    }
-  }
-
-  async function loadProgramFromDisk() {
-    const programPath = String(programListEl?.value || "");
-    if (!programPath || !global.samplePattern?.loadProgram) return;
-    const res = await global.samplePattern.loadProgram(programPath);
-    if (!res?.ok || !res.program) {
-      setStatus("Impossible de charger le programme sélectionné.");
-      return;
-    }
-    const prg = res.program;
-    editor.selectedProgramPath = res.programPath;
-    editor.samplePath = String(prg.sample?.path || "");
-    startEl.value = String(prg.slice?.startNorm ?? 0);
-    endEl.value = String(prg.slice?.endNorm ?? 1);
-    beatsEl.value = String(Math.max(1, Math.min(32, Math.floor(+beatsEl.value || 4))));
-    rootMidiEl.value = String(prg.playback?.rootMidi ?? 60);
-    pitchModeEl.value = String(prg.playback?.pitchMode || "chromatic");
-    gainEl.value = String(prg.playback?.gain ?? 1);
-    nameEl.value = String(prg.name || "");
-    const decoded = await decodePath(editor.samplePath);
-    if (decoded) {
-      editor.buffer = decoded;
-      editor.posStart = clamp01(+startEl.value || 0);
-      editor.posEnd = clamp01(+endEl.value || 1);
-      drawWaveform();
-    }
-    setStatus(`Programme chargé: ${prg.name || "(sans nom)"}`);
-  }
 
   function ensurePreviewCtx() {
     const Ctor = global.AudioContext || global.webkitAudioContext;
@@ -491,10 +438,18 @@
       kind: "sample_pattern",
       type: "sample_pattern",
       samplePatternConfig: Object.assign({}, params),
-      // Compat native engine payloads that expect patternId + top-level notes.
-      // Keep as direct alias of channel notes so edits stay in sync.
-      notes: sampleChannel.notes,
-      channels: [sampleChannel],
+      channels: [
+        {
+          id: gid("ch"),
+          name: "Sample Paterne",
+          preset: "Sample Paterne",
+          color: "#b28dff",
+          muted: false,
+          params,
+          mixOut,
+          notes: [{ id: gid("note"), step: 0, len: 1, midi: rootMidi, vel: 110, selected: false }],
+        },
+      ],
       activeChannelId: null,
     };
     p.patternId = p.id;
@@ -527,6 +482,27 @@
 
   saveBtn?.addEventListener("click", () => { createSamplePattern().catch((err) => setStatus(err?.message || "Erreur création pattern")); });
   loadProgramBtn?.addEventListener("click", () => { loadProgramFromDisk().catch((err) => setStatus(err?.message || "Erreur chargement programme")); });
+
+  previewBtn?.addEventListener("pointerdown", async (event) => {
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  const stopPreviewFromPointer = () => stopPreviewLoop();
+  previewBtn?.addEventListener("pointerup", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointerleave", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointercancel", stopPreviewFromPointer);
+  previewBtn?.addEventListener("keydown", async (event) => {
+    if (event.repeat) return;
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  previewBtn?.addEventListener("keyup", (event) => {
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    stopPreviewLoop();
+  });
+  global.addEventListener("blur", stopPreviewLoop);
 
   previewBtn?.addEventListener("pointerdown", async (event) => {
     event.preventDefault();
