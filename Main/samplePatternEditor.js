@@ -251,11 +251,32 @@
     canvas.addEventListener("drop", async (event) => {
       event.preventDefault();
       canvas.style.outline = "none";
+
+      const pickDropPath = () => {
+        const dt = event.dataTransfer;
+        if (!dt) return "";
+
+        // Electron drag&drop from OS/file manager exposes File objects with absolute `path`.
+        const file = dt.files && dt.files[0];
+        if (file && typeof file.path === "string" && file.path.trim()) return file.path.trim();
+
+        // Custom app drags may expose plain text (absolute path).
+        const dropped = dt.getData("text/plain") || "";
+        if (dropped && dropped.trim()) return dropped.trim();
+
+        // URI list fallback (e.g. file:///...)
+        const uriList = dt.getData("text/uri-list") || "";
+        if (uriList.trim()) {
+          const first = uriList.split(/\r?\n/).find((line) => line && !line.startsWith("#")) || "";
+          if (first.startsWith("file://")) {
+            try { return decodeURIComponent(first.replace(/^file:\/\//, "")); } catch (_) {}
+          }
+        }
+        return "";
+      };
+
       let path = global.sampleDirectory?.state?.dragSample?.path || "";
-      if (!path) {
-        const dropped = event.dataTransfer?.getData("text/plain") || "";
-        path = dropped;
-      }
+      if (!path) path = pickDropPath();
       if (!path) {
         setStatus("Aucun sample détecté au drop.");
         return;
