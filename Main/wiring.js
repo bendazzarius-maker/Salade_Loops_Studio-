@@ -27,6 +27,17 @@ window.addEventListener("timeRulerSelectionChanged", updateLoopButtonLabel);
 window.addEventListener("daw:refresh", updateLoopButtonLabel);
 updateLoopButtonLabel();
 
+function resolveSamplePatternParamsForTrigger(pattern, channel){
+  const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
+  if (chParams && chParams.samplePath) return chParams;
+  const patCfg = (pattern && typeof pattern.samplePatternConfig === "object" && pattern.samplePatternConfig) ? pattern.samplePatternConfig : null;
+  if (patCfg && patCfg.samplePath) {
+    channel.params = Object.assign({}, patCfg, chParams || {});
+    return channel.params;
+  }
+  return chParams;
+}
+
 vel.addEventListener("input",()=> velVal.textContent=vel.value);
 
 previewBtn.addEventListener("click",()=>{
@@ -82,9 +93,17 @@ $("#clearPlaylist").addEventListener("click",clearPlaylist);
 $("#testC4").addEventListener("click", async ()=>{
   await ae.ensure();
   const ch=activeChannel(); if(!ch) return;
-  const presetName = presetOverride.value || ch.preset;
+  const p = activePattern();
+  const patType = String(p?.type || p?.kind || "").toLowerCase();
+  const isSamplePattern = patType === "sample_pattern";
+  const effectiveParams = isSamplePattern ? resolveSamplePatternParamsForTrigger(p, ch) : ch.params;
+  const hasSampleParams = !!(effectiveParams && effectiveParams.samplePath);
+  const channelPreset = String(ch.preset || "");
+  const presetName = (isSamplePattern || hasSampleParams || channelPreset === "Sample Paterne")
+    ? "Sample Paterne"
+    : (presetOverride.value || channelPreset);
   const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-  const inst=presets.get(presetName, ch.params, outBus);
+  const inst=presets.get(presetName, effectiveParams || ch.params, outBus);
   const m = (inst.type==="drums") ? 48 : 60; // Drum hit / C4
   const vv=(parseInt(vel.value,10)||100)/127;
   inst.trigger(ae.ctx.currentTime,m,vv,0.35);
