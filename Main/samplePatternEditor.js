@@ -504,27 +504,6 @@
   });
   global.addEventListener("blur", stopPreviewLoop);
 
-  previewBtn?.addEventListener("pointerdown", async (event) => {
-    event.preventDefault();
-    await startPreviewLoop();
-  });
-  const stopPreviewFromPointer = () => stopPreviewLoop();
-  previewBtn?.addEventListener("pointerup", stopPreviewFromPointer);
-  previewBtn?.addEventListener("pointerleave", stopPreviewFromPointer);
-  previewBtn?.addEventListener("pointercancel", stopPreviewFromPointer);
-  previewBtn?.addEventListener("keydown", async (event) => {
-    if (event.repeat) return;
-    if (event.code !== "Space" && event.code !== "Enter") return;
-    event.preventDefault();
-    await startPreviewLoop();
-  });
-  previewBtn?.addEventListener("keyup", (event) => {
-    if (event.code !== "Space" && event.code !== "Enter") return;
-    event.preventDefault();
-    stopPreviewLoop();
-  });
-  global.addEventListener("blur", stopPreviewLoop);
-
   refreshMixOut();
   refreshPrograms();
   installInteractions();
