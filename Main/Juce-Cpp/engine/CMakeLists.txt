@@ -49,3 +49,11 @@ add_custom_command(TARGET sls-audio-engine POST_BUILD
     COMMENT "Copying sls-audio-engine to Main/native"
     VERBATIM
 )
+
+if(UNIX AND NOT APPLE)
+    add_custom_command(TARGET sls-audio-engine POST_BUILD
+        COMMAND /bin/chmod +x "${SLS_NATIVE_DIR}/sls-audio-engine"
+        COMMENT "Marking Main/native/sls-audio-engine as executable"
+        VERBATIM
+    )
+endif()
