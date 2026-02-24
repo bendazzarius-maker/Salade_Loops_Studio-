@@ -1,11 +1,25 @@
 /* ================= Electro DAW | bank.js (JUCE IPC Instrument Drivers) ================= */
 class JuceInstrumentRuntime {
+  static _instByParams = new WeakMap();
+  static _knownInst = new Set();
+
   constructor(name, paramsRef){
     this.name = name;
     this.paramsRef = paramsRef || {};
-    this.instId = `inst-${String(name||"inst").toLowerCase()}-${Math.random().toString(36).slice(2,8)}`;
     this.type = this._mapType(name);
-    this._created = false;
+    this.instId = this._resolveStableInstId();
+  }
+
+  _resolveStableInstId(){
+    const p = this.paramsRef;
+    if (p && typeof p === "object") {
+      const cached = JuceInstrumentRuntime._instByParams.get(p);
+      if (cached) return cached;
+      const id = `inst-${String(this.name||"inst").toLowerCase().replace(/\s+/g,"-")}-${Math.random().toString(36).slice(2,8)}`;
+      JuceInstrumentRuntime._instByParams.set(p, id);
+      return id;
+    }
+    return `inst-${String(this.name||"inst").toLowerCase().replace(/\s+/g,"-")}-${Math.random().toString(36).slice(2,8)}`;
   }
 
   _mapType(name){
@@ -28,10 +42,12 @@ class JuceInstrumentRuntime {
   }
 
   async _ensureCreate(){
-    if (this._created || this.type === "sample_pattern") return;
-    await this._req("inst.create", { instId: this.instId, type: this.type, ch: 0 });
+    if (this.type === "sample_pattern") return;
+    if (!JuceInstrumentRuntime._knownInst.has(this.instId)) {
+      await this._req("inst.create", { instId: this.instId, type: this.type, ch: 0 });
+      JuceInstrumentRuntime._knownInst.add(this.instId);
+    }
     await this._req("inst.param.set", { instId: this.instId, params: this.paramsRef || {} });
-    this._created = true;
   }
 
   trigger(_t, midi, vel=0.85, dur=0.25){
