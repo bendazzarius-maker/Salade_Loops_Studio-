@@ -473,7 +473,11 @@ function buildProjectSnapshotForEngine(){
         trackMap.set(trackId, {
           trackId,
           name: String(ch.name || `Channel ${trackId}`),
-          instrument: { type: "internal", preset: String(ch.preset || "default") }
+          instrument: {
+            type: "internal",
+            preset: String(ch.preset || "default"),
+            params: (ch && typeof ch.params === "object" && ch.params) ? JSON.parse(JSON.stringify(ch.params)) : {}
+          }
         });
       }
     }
@@ -576,6 +580,9 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
   audioTriggerNote({
     trigger: () => inst.trigger(t, n.midi, vv, dur),
     trackId: String((ch && ch.id) || "track"),
+    instId: String(inst?.instId || `inst-${String(ch?.id || "track")}`),
+    instType: String(inst?.type || presetName || "piano"),
+    params: (effectiveParams || ch?.params || {}),
     note: n.midi,
     velocity: vv,
     durationSec: dur,
