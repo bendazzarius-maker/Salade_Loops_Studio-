@@ -161,13 +161,33 @@ function startAudioEngine() {
 
   if (!fsSync.existsSync(bin)) {
     console.warn("[JUCE] Engine binary not found:", bin);
-    console.warn(
-      "[JUCE] Put it in ./native (dev) or in resources/native (packaged)."
-    );
+    console.warn("[JUCE] Put it in ./native (dev) or in resources/native (packaged).");
     return;
   }
 
-  audioProc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+  // Linux: ensure executable bit
+  if (process.platform !== "win32") {
+    try {
+      const st = fsSync.statSync(bin);
+      // if no execute bits, add u+x
+      if ((st.mode & 0o111) === 0) {
+        fsSync.chmodSync(bin, st.mode | 0o755);
+        console.log("[JUCE] chmod +x applied:", bin);
+      }
+    } catch (e) {
+      console.warn("[JUCE] chmod/stat failed:", e?.message || e);
+    }
+  }
+
+  try {
+    audioProc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+  } catch (e) {
+    console.warn("[JUCE] spawn failed:", e?.message || e);
+    audioProc = null;
+    return;
+  }
+
+  console.log("[JUCE] spawned:", bin, "pid=", audioProc?.pid);
 
   let buf = "";
 
@@ -197,12 +217,16 @@ function startAudioEngine() {
     }
   });
 
-  audioProc.stderr.on("data", (d) =>
-    console.warn("[JUCE][stderr]", d.toString("utf8"))
-  );
+  audioProc.stderr.on("data", (d) => console.warn("[JUCE][stderr]", d.toString("utf8")));
 
-  audioProc.on("exit", (code) => {
-    console.warn("[JUCE] engine exited with code:", code);
+  audioProc.on("error", (err) => {
+    console.warn("[JUCE] process error:", err?.message || err);
+    failAllPending("E_NOT_READY", "Audio engine process error.");
+    audioProc = null;
+  });
+
+  audioProc.on("exit", (code, signal) => {
+    console.warn("[JUCE] engine exited with:", { code, signal });
     failAllPending("E_NOT_READY", "Audio engine exited.");
     audioProc = null;
   });
@@ -232,7 +256,7 @@ ipcMain.handle("audio:native:req", async (_evt, message) => {
       err: { code: "E_BAD_ENVELOPE", message: "Invalid SLS-IPC request envelope.", details: {} },
     };
   }
-  return requestAudio(message, 2000);
+  return requestAudio(message, 5000);
 });
 
 ipcMain.handle("audio:native:isAvailable", async () => {

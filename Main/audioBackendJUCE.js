@@ -1,5 +1,7 @@
 /* ================= Electro DAW | audioBackendJUCE.js ================= */
 (function initAudioBackendJUCE(global){
+  // DEPRECATED: keep for backward compatibility, do not override main audioBackend.js implementation.
+  if (global.audioBackend) return;
   function hashString(value=""){
     let h = 2166136261;
     const s = String(value||"");

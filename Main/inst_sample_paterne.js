@@ -11,10 +11,25 @@
   }
 
   function ensureCtx() {
+    // Prefer Tone.js context if present to avoid cross-context connect errors
+    try {
+      if (window.Tone && typeof Tone.getContext === "function") {
+        const tctx = Tone.getContext();
+        if (tctx && tctx.rawContext) return tctx.rawContext;
+      }
+      if (window.Tone && Tone.context && Tone.context.rawContext) return Tone.context.rawContext;
+    } catch (_) {}
+
+    // Singleton WebAudio context for this module
     if (audioCtx) return audioCtx;
     const Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) return null;
+    if (window.__SLS_SAMPLEPATTERN_CTX) {
+      audioCtx = window.__SLS_SAMPLEPATTERN_CTX;
+      return audioCtx;
+    }
     audioCtx = new Ctor();
+    window.__SLS_SAMPLEPATTERN_CTX = audioCtx;
     return audioCtx;
   }
 
@@ -35,7 +50,7 @@
       })());
     }
 
-    return cache.get(key);
+    return BUFFER_CACHE.get(key);
   }
 
   async function renderSamplePatternWebAudio(channel, noteEvent, time, outBus) {
@@ -68,7 +83,7 @@
     amp.gain.setValueAtTime(gain, time);
 
     player.connect(amp);
-    if (outBus && typeof outBus.connect === "function") amp.connect(outBus);
+    if (outBus && typeof outBus.connect === "function" && outBus.context === ctx) amp.connect(outBus);
     else amp.connect(ctx.destination);
 
     player.start(time, loopStart);
@@ -81,12 +96,19 @@
       ? backend.getActiveBackendName()
       : "webaudio";
 
-    if (active === "juce" && backend && typeof backend.triggerNote === "function") {
-      await backend.triggerNote({
+    if (active === "juce" && backend && typeof backend.triggerSample === "function") {
+      const params = (channel && channel.params) ? channel.params : {};
+      await backend.triggerSample({
+        trackId: "sample-pattern-preview",
+        samplePath: String(params.samplePath || ""),
+        startNorm: clamp01(params.startNorm, 0),
+        endNorm: clamp01(params.endNorm, 1),
+        gain: Math.max(0, +params.gain || 1),
+        pan: Math.max(-1, Math.min(1, +params.pan || 0)),
+        rootMidi: +params.rootMidi || 60,
         note: +noteEvent.midi || 60,
         velocity: Math.max(0, Math.min(1, +noteEvent.vel || 0.9)),
-        durationSec: Math.max(0.01, Number(noteEvent.duration) || 0.25),
-        trackId: "sample-pattern-preview",
+        when: "now"
       });
       return;
     }

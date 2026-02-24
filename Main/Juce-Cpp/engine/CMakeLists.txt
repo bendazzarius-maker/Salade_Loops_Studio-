@@ -4,6 +4,7 @@ project(sls_audio_engine VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# JUCE expected at ../Juce relative to this engine folder
 add_subdirectory(../Juce JuceBuild)
 
 juce_add_console_app(sls-audio-engine
@@ -14,12 +15,14 @@ target_sources(sls-audio-engine PRIVATE
     src/main.cpp
 )
 
+# Avoid webkit/curl probes & deps
 target_compile_definitions(sls-audio-engine PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
+# main.cpp uses audio_formats for sample decoding
 target_link_libraries(sls-audio-engine PRIVATE
     juce::juce_audio_basics
     juce::juce_audio_devices
@@ -32,8 +35,8 @@ target_link_libraries(sls-audio-engine PRIVATE
     juce::juce_recommended_warning_flags
 )
 
+# Copy built binary to Main/native (Electron expects it here)
 set(SLS_NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../native")
-
 add_custom_command(TARGET sls-audio-engine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${SLS_NATIVE_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -549,10 +549,17 @@ function audioTriggerSample(payload){
 function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams }) {
   if (presetName === "Sample Paterne") {
     const p = effectiveParams || ch.params || {};
+    const samplePath = p.samplePath || p.path || p.file || (p.sample && p.sample.path) || p.url;
+
+    if (!samplePath) {
+      console.warn("[Sample Paterne] Missing samplePath", { channelId: ch && ch.id, presetName, p, effectiveParams });
+      return;
+    }
+
     audioTriggerSample({
       trigger: () => inst.trigger(t, n.midi, vv, dur),
-      trackId: String(ch.id || "sample-pattern"),
-      samplePath: p.samplePath,
+      trackId: String((ch && ch.id) || "sample-pattern"),
+      samplePath,
       startNorm: p.startNorm,
       endNorm: p.endNorm,
       rootMidi: p.rootMidi,
@@ -564,7 +571,15 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
     });
     return;
   }
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+
+  // Default route for non-sample instruments
+  audioTriggerNote({
+    trigger: () => inst.trigger(t, n.midi, vv, dur),
+    trackId: String((ch && ch.id) || "track"),
+    note: n.midi,
+    velocity: vv,
+    durationSec: dur,
+  });
 }
 
 function secPerStep() { return (60 / state.bpm) / 4; }
