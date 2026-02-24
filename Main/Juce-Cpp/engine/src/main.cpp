@@ -57,6 +57,9 @@ public:
     }
     if(op=="engine.shutdown"){ running=false; return resOk(op,id,juce::var()); }
 
+    // Accept project snapshots from UI so transport.play is not blocked by E_UNKNOWN_OP
+    if(op=="project.sync") return resOk(op,id,juce::var());
+
     if(op=="mixer.init"){ channelCount = juce::jlimit(1,64,getIntProp(d,"channels",16)); return resOk(op,id,juce::var()); }
     if(op=="mixer.channel.set"||op=="mixer.master.set"||op=="mixer.route.set"||op=="fx.chain.set"||op=="fx.param.set"||op=="fx.bypass.set") return resOk(op,id,juce::var());
 
@@ -89,7 +92,13 @@ public:
   void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* out, int chs, int n, const juce::AudioIODeviceCallbackContext&) override {
     juce::ScopedLock sl(audioLock);
     for(int ch=0; ch<chs; ++ch) if(out[ch]) juce::FloatVectorOperations::clear(out[ch], n);
-    if(!playing) return;
+
+    bool hasActiveVoices = false;
+    for(const auto& v : voices){ if(v.active){ hasActiveVoices = true; break; } }
+    if(!hasActiveVoices){
+      for(const auto& sv : sampleVoices){ if(sv.active){ hasActiveVoices = true; break; } }
+    }
+    if(!playing && !hasActiveVoices) return;
 
     for(int i=0;i<n;++i){
       float L=0.0f,R=0.0f;
