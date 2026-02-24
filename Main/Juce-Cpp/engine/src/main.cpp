@@ -1,3 +1,4 @@
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <iostream>

@@ -22,8 +22,11 @@ class JuceInstrumentRuntime {
     return `inst-${String(this.name||"inst").toLowerCase().replace(/\s+/g,"-")}-${Math.random().toString(36).slice(2,8)}`;
   }
 
-  _mapType(name){
+  _mapType(name, instrumentDef){
     const n = String(name||"").toLowerCase();
+    const explicitType = String(instrumentDef?.type || "").toLowerCase();
+    if (explicitType === "drums") return "drums";
+    if (explicitType === "sampler") return n.includes("touski") ? "touski" : "sample_pattern";
     if (n.includes("bass") && !n.includes("sub")) return "bass";
     if (n.includes("sub")) return "subbass";
     if (n.includes("lead")) return "lead";
