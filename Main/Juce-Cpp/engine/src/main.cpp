@@ -123,12 +123,21 @@ private:
   void panic(){ for(auto& x:voices) x.active=false; for(auto& x:sampleVoices) x.active=false; }
 
   void handleSamplerLoad(const juce::String& op,const juce::String& id,const juce::DynamicObject* d){
-    if(!d) return resErr(op,id,"E_BAD_ENVELOPE","Missing sampler.load data"); const auto sid=getStringProp(d,"sampleId",""); const auto p=getStringProp(d,"path","");
+    if(!d)
+      return resErr(op,id,"E_BAD_ENVELOPE","Missing sampler.load data");
+
+    const auto sid=getStringProp(d,"sampleId","");
+    const auto p=getStringProp(d,"path","");
     juce::File f(p); if(sid.isEmpty()||!f.existsAsFile()) return resErr(op,id,"E_LOAD_FAIL","Invalid sample"); auto r=std::unique_ptr<juce::AudioFormatReader>(formatManager.createReaderFor(f)); if(!r) return resErr(op,id,"E_LOAD_FAIL","Unsupported format");
     auto sd=std::make_shared<SampleData>(); sd->sampleRate=r->sampleRate; sd->buffer.setSize((int)r->numChannels,(int)r->lengthInSamples); r->read(&sd->buffer,0,(int)r->lengthInSamples,0,true,true); sampleCache[sid]=sd; return resOk(op,id,juce::var());
   }
   void handleSamplerTrigger(const juce::String& op,const juce::String& id,const juce::DynamicObject* d){
-    if(!d) return resErr(op,id,"E_BAD_ENVELOPE","Missing sampler.trigger data"); auto it=sampleCache.find(getStringProp(d,"sampleId","")); if(it==sampleCache.end()) return resErr(op,id,"E_NOT_LOADED","sampleId not loaded");
+    if(!d)
+      return resErr(op,id,"E_BAD_ENVELOPE","Missing sampler.trigger data");
+
+    auto it=sampleCache.find(getStringProp(d,"sampleId",""));
+    if(it==sampleCache.end())
+      return resErr(op,id,"E_NOT_LOADED","sampleId not loaded");
     const auto sd=it->second; const int total=sd->buffer.getNumSamples(); int st=juce::jlimit(0,std::max(0,total-2),(int)std::floor(getDoubleProp(d,"startNorm",0.0)*total)); int en=juce::jlimit(st+1,total,(int)std::ceil(getDoubleProp(d,"endNorm",1.0)*total));
     const int note=getIntProp(d,"note",60), root=getIntProp(d,"rootMidi",60); const double sem=(double)(note-root); double rate=std::pow(2.0,sem/12.0);
     if(getStringProp(d,"mode","")=="fit_duration_vinyl"){ const double durationSec=getDoubleProp(d,"durationSec",0.0); if(durationSec>0){ const double slice=(en-st)/std::max(1.0,sd->sampleRate); rate = slice/durationSec; }}
