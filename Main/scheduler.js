@@ -473,7 +473,11 @@ function buildProjectSnapshotForEngine(){
         trackMap.set(trackId, {
           trackId,
           name: String(ch.name || `Channel ${trackId}`),
-          instrument: { type: "internal", preset: String(ch.preset || "default") }
+          instrument: {
+            type: "internal",
+            preset: String(ch.preset || "default"),
+            params: (ch && typeof ch.params === "object" && ch.params) ? JSON.parse(JSON.stringify(ch.params)) : {}
+          }
         });
       }
     }

@@ -1,11 +1,25 @@
 /* ================= Electro DAW | bank.js (JUCE IPC Instrument Drivers) ================= */
 class JuceInstrumentRuntime {
+  static _instByParams = new WeakMap();
+  static _knownInst = new Set();
+
   constructor(name, paramsRef){
     this.name = name;
     this.paramsRef = paramsRef || {};
-    this.instId = `inst-${String(name||"inst").toLowerCase()}-${Math.random().toString(36).slice(2,8)}`;
     this.type = this._mapType(name);
-    this._created = false;
+    this.instId = this._resolveStableInstId();
+  }
+
+  _resolveStableInstId(){
+    const p = this.paramsRef;
+    if (p && typeof p === "object") {
+      const cached = JuceInstrumentRuntime._instByParams.get(p);
+      if (cached) return cached;
+      const id = `inst-${String(this.name||"inst").toLowerCase().replace(/\s+/g,"-")}-${Math.random().toString(36).slice(2,8)}`;
+      JuceInstrumentRuntime._instByParams.set(p, id);
+      return id;
+    }
+    return `inst-${String(this.name||"inst").toLowerCase().replace(/\s+/g,"-")}-${Math.random().toString(36).slice(2,8)}`;
   }
 
   _mapType(name){
@@ -16,6 +30,7 @@ class JuceInstrumentRuntime {
     if (n.includes("pad")) return "pad";
     if (n.includes("drum")) return "drums";
     if (n.includes("violin")) return "violin";
+    if (n.includes("touski")) return "touski";
     if (n.includes("paterne") || n.includes("sample")) return "sample_pattern";
     return "piano";
   }
@@ -27,10 +42,12 @@ class JuceInstrumentRuntime {
   }
 
   async _ensureCreate(){
-    if (this._created || this.type === "sample_pattern") return;
-    await this._req("inst.create", { instId: this.instId, type: this.type, ch: 0 });
+    if (this.type === "sample_pattern") return;
+    if (!JuceInstrumentRuntime._knownInst.has(this.instId)) {
+      await this._req("inst.create", { instId: this.instId, type: this.type, ch: 0 });
+      JuceInstrumentRuntime._knownInst.add(this.instId);
+    }
     await this._req("inst.param.set", { instId: this.instId, params: this.paramsRef || {} });
-    this._created = true;
   }
 
   trigger(_t, midi, vel=0.85, dur=0.25){
@@ -47,9 +64,34 @@ class JuceInstrumentRuntime {
 class PresetBank{
   constructor(ae){ this.ae = ae; }
   register(){ }
-  list(){ return ["Piano","Bass","Lead","Pad","Drums","SubBass","Violin","Sample Paterne"]; }
-  def(name){ return { name: name || "Piano", defaultParams: () => ({}) }; }
-  defaults(){ return {}; }
+
+  _defs(){ return window.__INSTRUMENTS__ || {}; }
+
+  list(){
+    const defs = this._defs();
+    const names = Object.keys(defs);
+    const fallback = ["Piano","Bass","Lead","Pad","Drums","SubBass","Violin","Sample Paterne","Sample Touski"];
+    const merged = [...new Set([...(names.length ? names : fallback), "Sample Paterne", "Sample Touski"])];
+    return merged.sort((a,b)=>a.localeCompare(b));
+  }
+
+  def(name){
+    const defs = this._defs();
+    const key = String(name || "Piano");
+    const found = defs[key] || defs["Piano"];
+    if (found) return found;
+    return { name: key, defaultParams: () => ({}) };
+  }
+
+  defaults(name){
+    const d = this.def(name);
+    try {
+      return (typeof d.defaultParams === "function") ? d.defaultParams() : { ...(d.defaultParams || {}) };
+    } catch (_) {
+      return {};
+    }
+  }
+
   get(name, paramsRef){ return new JuceInstrumentRuntime(name, paramsRef); }
 }
 
