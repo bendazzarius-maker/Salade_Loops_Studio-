@@ -16,6 +16,7 @@ class JuceInstrumentRuntime {
     if (n.includes("pad")) return "pad";
     if (n.includes("drum")) return "drums";
     if (n.includes("violin")) return "violin";
+    if (n.includes("touski")) return "touski";
     if (n.includes("paterne") || n.includes("sample")) return "sample_pattern";
     return "piano";
   }
@@ -47,7 +48,7 @@ class JuceInstrumentRuntime {
 class PresetBank{
   constructor(ae){ this.ae = ae; }
   register(){ }
-  list(){ return ["Piano","Bass","Lead","Pad","Drums","SubBass","Violin","Sample Paterne"]; }
+  list(){ return ["Piano","Bass","Lead","Pad","Drums","SubBass","Violin","Sample Paterne","Sample Touski"]; }
   def(name){ return { name: name || "Piano", defaultParams: () => ({}) }; }
   defaults(){ return {}; }
   get(name, paramsRef){ return new JuceInstrumentRuntime(name, paramsRef); }
