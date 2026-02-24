@@ -73,7 +73,9 @@ public:
     if(op=="project.sync") return resOk(op,id,juce::var());
 
     if(op=="mixer.init"){ channelCount = juce::jlimit(1,64,getIntProp(d,"channels",16)); return resOk(op,id,juce::var()); }
-    if(op=="mixer.channel.set"||op=="mixer.master.set"||op=="mixer.route.set"||op=="fx.chain.set"||op=="fx.param.set"||op=="fx.bypass.set") return resOk(op,id,juce::var());
+    if(op=="mixer.master.set"||op=="mixer.channel.set") return handleMixerSet(op,id,d);
+    if(op=="fx.chain.set"||op=="fx.param.set"||op=="fx.bypass.set") return handleFxSet(op,id,d);
+    if(op=="mixer.route.set") return resOk(op,id,juce::var());
 
     if(op=="inst.create") return handleInstCreate(op,id,d);
     if(op=="inst.param.set") return handleInstParamSet(op,id,d);

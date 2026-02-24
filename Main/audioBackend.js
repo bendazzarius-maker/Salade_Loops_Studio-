@@ -124,13 +124,19 @@
       });
     }
 
-    triggerNote({ note, velocity = 0.85, trackId = "preview", durationSec = 0.25 }) {
+    async triggerNote({ note, velocity = 0.85, trackId = "preview", durationSec = 0.25, instId = "global", instType = "piano", params = {} }) {
       const channel = 0;
+      const safeInstId = String(instId || "global");
+      const safeType = String(instType || "piano");
+      await this._request("inst.create", { instId: safeInstId, type: safeType, ch: 0 });
+      const safeParams = (params && typeof params === "object") ? params : {};
+      const juceSpec = window.JuceInstructionLibrary?.buildInstrumentSpec?.({ name: safeType, params: safeParams, instId: safeInstId, trackId }) || null;
+      await this._request("inst.param.set", { instId: safeInstId, type: safeType, params: safeParams, juceSpec });
       const startReq = this._request("note.on", {
-        trackId, channel, note, velocity, when: "now"
+        trackId, channel, instId: safeInstId, note, velocity, when: "now"
       });
       setTimeout(() => {
-        this._request("note.off", { trackId, channel, note, when: "now" }).catch(() => {});
+        this._request("note.off", { trackId, channel, instId: safeInstId, note, when: "now" }).catch(() => {});
       }, Math.max(20, Math.floor(durationSec * 1000)));
       return startReq;
     }
