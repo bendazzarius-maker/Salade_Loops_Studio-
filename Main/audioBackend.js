@@ -1,5 +1,5 @@
 /* ================= Electro DAW | audioBackend.js ================= */
-/* ---------------- unified backend switch (WebAudio / JUCE IPC) ---------------- */
+/* ---------------- production backend switch (JUCE IPC default) ---------------- */
 
 (function initAudioBackendGlobal() {
   const PROTOCOL = "SLS-IPC/1.0";
@@ -15,6 +15,8 @@
     }
     return `sp_${(h >>> 0).toString(16)}`;
   }
+
+  const DEV_ENABLE_WEBAUDIO_FALLBACK = false;
 
   class AudioBackendWebAudio {
     constructor() {
@@ -87,12 +89,12 @@
       return { ok: true };
     }
 
-    async setConfig(cfg) { return this._request("engine.setConfig", cfg || {}); }
+    async setConfig(cfg) { return this._request("engine.config.set", cfg || {}); }
     async setBpm(bpm) { return this._request("transport.setTempo", { bpm }); }
     async play() { return this._request("transport.play", {}); }
     async stop() { return this._request("transport.stop", { panic: true }); }
     async seek(ppq = 0) { return this._request("transport.seek", { mode: "ppq", ppq }); }
-    async panic() { return this._request("midi.panic", {}); }
+    async panic() { return this._request("note.allOff", {}); }
     async sendProjectSync(snapshot) { return this._request("project.sync", snapshot || {}); }
 
     async ensureSampleLoaded(samplePath) {
@@ -124,11 +126,11 @@
 
     triggerNote({ note, velocity = 0.85, trackId = "preview", durationSec = 0.25 }) {
       const channel = 0;
-      const startReq = this._request("midi.noteOn", {
+      const startReq = this._request("note.on", {
         trackId, channel, note, velocity, when: "now"
       });
       setTimeout(() => {
-        this._request("midi.noteOff", { trackId, channel, note, when: "now" }).catch(() => {});
+        this._request("note.off", { trackId, channel, note, when: "now" }).catch(() => {});
       }, Math.max(20, Math.floor(durationSec * 1000)));
       return startReq;
     }
@@ -136,20 +138,16 @@
 
   class AudioBackendController {
     constructor() {
-      this.backends = {
-        webaudio: new AudioBackendWebAudio(),
-        juce: new AudioBackendJUCE(),
-      };
-      this.active = "webaudio";
-      this.preferred = state.audioBackend || "webaudio";
+      this.backends = { juce: new AudioBackendJUCE() };
+      if (DEV_ENABLE_WEBAUDIO_FALLBACK) this.backends.webaudio = new AudioBackendWebAudio();
+      this.active = "juce";
+      this.preferred = "juce";
       state.audioBackend = this.preferred;
     }
 
     async init() {
-      if (this.preferred === "juce") {
-        const ok = await this.trySwitch("juce");
-        if (!ok) await this.trySwitch("webaudio");
-      } else {
+      const ok = await this.trySwitch("juce");
+      if (!ok && DEV_ENABLE_WEBAUDIO_FALLBACK) {
         await this.trySwitch("webaudio");
       }
     }
@@ -159,6 +157,7 @@
     async trySwitch(name) {
       const key = (name === "juce") ? "juce" : "webaudio";
       const backend = this.backends[key];
+      if (!backend) return false;
       try {
         await backend.init();
         this.active = key;
@@ -167,7 +166,7 @@
         return true;
       } catch (e) {
         console.warn(`[AudioBackend] Failed to init ${key}:`, e?.message || e);
-        if (key !== "webaudio") {
+        if (key !== "webaudio" && DEV_ENABLE_WEBAUDIO_FALLBACK) {
           this.active = "webaudio";
           state.audioBackend = "webaudio";
         }
@@ -176,7 +175,7 @@
     }
 
     async requestBackend(name) {
-      this.preferred = (name === "juce") ? "juce" : "webaudio";
+      this.preferred = (name === "juce") ? "juce" : (DEV_ENABLE_WEBAUDIO_FALLBACK ? "webaudio" : "juce");
       return this.trySwitch(this.preferred);
     }
 
@@ -208,26 +207,18 @@
     }
 
     async triggerNote(payload) {
-      if (this.active !== "juce") {
-        this.backends.webaudio.triggerNote(payload);
-        return;
-      }
+      if (this.active !== "juce") return;
       const res = await this.backends.juce.triggerNote(payload);
       if (!res?.ok) {
-        await this.trySwitch("webaudio");
-        this.backends.webaudio.triggerNote(payload);
+        if (DEV_ENABLE_WEBAUDIO_FALLBACK) await this.trySwitch("webaudio");
       }
     }
 
     async triggerSample(payload) {
-      if (this.active !== "juce") {
-        if (typeof payload?.trigger === "function") payload.trigger();
-        return;
-      }
+      if (this.active !== "juce") return;
       const res = await this.backends.juce.triggerSample(payload);
       if (!res?.ok) {
-        await this.trySwitch("webaudio");
-        if (typeof payload?.trigger === "function") payload.trigger();
+        if (DEV_ENABLE_WEBAUDIO_FALLBACK) await this.trySwitch("webaudio");
       }
     }
   }
