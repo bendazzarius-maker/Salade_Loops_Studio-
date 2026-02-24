@@ -42,6 +42,17 @@ add_custom_command(TARGET sls-audio-engine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:sls-audio-engine>"
         "${SLS_NATIVE_DIR}/$<TARGET_FILE_NAME:sls-audio-engine>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:sls-audio-engine>"
+        "${SLS_NATIVE_DIR}/sls-audio-engine$<$<PLATFORM_ID:Windows>:.exe>"
     COMMENT "Copying sls-audio-engine to Main/native"
     VERBATIM
 )
+
+if(UNIX AND NOT APPLE)
+    add_custom_command(TARGET sls-audio-engine POST_BUILD
+        COMMAND /bin/chmod +x "${SLS_NATIVE_DIR}/sls-audio-engine"
+        COMMENT "Marking Main/native/sls-audio-engine as executable"
+        VERBATIM
+    )
+endif()
