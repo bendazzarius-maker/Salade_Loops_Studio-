@@ -3,10 +3,10 @@ class JuceInstrumentRuntime {
   static _instByParams = new WeakMap();
   static _knownInst = new Set();
 
-  constructor(name, paramsRef){
+  constructor(name, paramsRef, instrumentDef){
     this.name = name;
     this.paramsRef = paramsRef || {};
-    this.type = this._mapType(name);
+    this.type = this._mapType(name, instrumentDef);
     this.instId = this._resolveStableInstId();
   }
 
@@ -67,10 +67,35 @@ class JuceInstrumentRuntime {
 class PresetBank{
   constructor(ae){ this.ae = ae; }
   register(){ }
-  list(){ return ["Piano","Bass","Lead","Pad","Drums","SubBass","Violin","Sample Paterne","Sample Touski"]; }
-  def(name){ return { name: name || "Piano", defaultParams: () => ({}) }; }
-  defaults(){ return {}; }
-  get(name, paramsRef){ return new JuceInstrumentRuntime(name, paramsRef); }
+
+  _defs(){ return window.__INSTRUMENTS__ || {}; }
+
+  list(){
+    const defs = this._defs();
+    const names = Object.keys(defs);
+    const fallback = ["Piano","Bass","Lead","Pad","Drums","SubBass","Violin","Sample Paterne","Sample Touski"];
+    const merged = [...new Set([...(names.length ? names : fallback), "Sample Paterne", "Sample Touski"])];
+    return merged.sort((a,b)=>a.localeCompare(b));
+  }
+
+  def(name){
+    const defs = this._defs();
+    const key = String(name || "Piano");
+    const found = defs[key] || defs["Piano"];
+    if (found) return found;
+    return { name: key, defaultParams: () => ({}) };
+  }
+
+  defaults(name){
+    const d = this.def(name);
+    try {
+      return (typeof d.defaultParams === "function") ? d.defaultParams() : { ...(d.defaultParams || {}) };
+    } catch (_) {
+      return {};
+    }
+  }
+
+  get(name, paramsRef){ return new JuceInstrumentRuntime(name, paramsRef, this.def(name)); }
 }
 
 const presets = new PresetBank(ae);

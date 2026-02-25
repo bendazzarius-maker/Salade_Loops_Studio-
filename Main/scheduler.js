@@ -583,6 +583,7 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
     instId: String(inst?.instId || `inst-${String(ch?.id || "track")}`),
     instType: String(inst?.type || presetName || "piano"),
     params: (effectiveParams || ch?.params || {}),
+    mixCh: Number(ch?.mixOut || 1),
     note: n.midi,
     velocity: vv,
     durationSec: dur,
