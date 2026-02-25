@@ -135,7 +135,7 @@ private:
   juce::AudioDeviceManager deviceManager; juce::AudioFormatManager formatManager; juce::CriticalSection audioLock;
   std::vector<Voice> voices; std::vector<SampleVoice> sampleVoices; std::unordered_map<juce::String,std::shared_ptr<SampleData>> sampleCache; std::unordered_map<juce::String,InstrumentState> instruments;
   std::atomic<bool> running{true}; std::thread stateThread;
-  bool ready=false, playing=false, loopEnabled=false; double bpm=120.0, sampleRate=48000.0, loopPpqStart=0.0, loopPpqEnd=16.0; int bufferSize=512, numOut=2, numIn=0, channelCount=16;
+  bool ready=false, playing=false, loopEnabled=false; double bpm=120.0, sampleRate=48000.0, loopPpqStart=0.0, loopPpqEnd=16.0; int bufferSize=512, numOut=2, numIn=0, channelCount=16; float masterGain=0.85f; std::vector<MixerChannelState> mixerStates=std::vector<MixerChannelState>(16);
   juce::int64 samplePos=0; bool meterSubscribed=false; int meterFps=30; std::unordered_set<int> meterChannels;
   float meterPeakL=0,meterPeakR=0,meterRmsL=0,meterRmsR=0; double meterRmsAccL=0,meterRmsAccR=0;
 
