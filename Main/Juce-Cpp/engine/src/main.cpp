@@ -134,7 +134,8 @@ public:
       for(auto& v:voices){ if(!v.active) continue; const int atkS=std::max(1,(int)std::llround(v.attack*sampleRate)); const int decS=std::max(1,(int)std::llround(v.decay*sampleRate)); const int relS=std::max(1,(int)std::llround(v.release*sampleRate)); if(!v.releasing){ if(v.ageSamples<atkS) v.env=(float)v.ageSamples/(float)atkS; else if(v.ageSamples<atkS+decS){ const float t=(float)(v.ageSamples-atkS)/(float)decS; v.env=1.0f-(1.0f-v.sustain)*t; } else v.env=v.sustain; } else { const float mul=std::exp(std::log(0.0001f)/(float)relS); v.env*=mul; if(v.env<0.0002f){ v.active=false; continue; } } const float mod=(float)std::sin(v.modPhase)*v.fmAmount; float sig=0.0f; if(v.drum){ const float prog=(float)juce::jlimit(0.0,1.0,v.ageSamples/(sampleRate*0.12)); const float curHz=v.drumStartHz + (v.drumEndHz-v.drumStartHz)*prog; const double inc=kTwoPi*curHz/std::max(1.0,sampleRate); v.phase += inc; if(v.phase>kTwoPi) v.phase-=kTwoPi; const float tonal=std::sin(v.phase); const float noise=((float)rng.nextDouble()*2.0f-1.0f); sig=(tonal*(1.0f-v.drumNoise)+noise*v.drumNoise); } else { sig=waveSample(v.waveform, v.phase+mod); v.phase += v.phaseInc; v.modPhase += v.modPhaseInc; if(v.phase>kTwoPi) v.phase-=kTwoPi; if(v.modPhase>kTwoPi) v.modPhase-=kTwoPi; }
         int idx=juce::jmax(0,v.mixCh-1); if(idx>=(int)mixerStates.size()) idx=0; const auto& mc=mixerStates[(size_t)idx]; if(mc.mute || (anySolo && !mc.solo)){ ++v.ageSamples; continue; }
         const float amp=sig*v.velocity*v.gain*v.env*0.2f*mc.gain*masterGain; const float pan=juce::jlimit(-1.0f,1.0f,mc.pan); L += amp*0.5f*(1.0f-pan); R += amp*0.5f*(1.0f+pan); ++v.ageSamples; }
-      if(chs>0&&out[0]) out[0][i]=L; if(chs>1&&out[1]) out[1][i]=R;
+      if(chs>0&&out[0]) out[0][i]=L;
+      if(chs>1&&out[1]) out[1][i]=R;
       meterPeakL = std::max(meterPeakL, std::abs(L)); meterPeakR = std::max(meterPeakR, std::abs(R)); meterRmsAccL += L*L; meterRmsAccR += R*R;
     }
     samplePos += n;
