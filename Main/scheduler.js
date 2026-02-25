@@ -550,7 +550,7 @@ function audioTriggerSample(payload){
   if (typeof payload.trigger === "function") payload.trigger();
 }
 
-function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams }) {
+function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternBeats }) {
   if (presetName === "Sample Paterne") {
     const p = effectiveParams || ch.params || {};
     const samplePath = p.samplePath || p.path || p.file || (p.sample && p.sample.path) || p.url;
@@ -560,8 +560,11 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
       return;
     }
 
+    const resolvedPatternBeats = Math.max(1, Number(p.patternBeats || patternBeats || 4));
+    const stretchDurationSec = (60 / Math.max(20, Number(state.bpm || 120))) * resolvedPatternBeats;
+
     audioTriggerSample({
-      trigger: () => inst.trigger(t, n.midi, vv, dur),
+      trigger: () => inst.trigger(t, n.midi, vv, stretchDurationSec),
       trackId: String((ch && ch.id) || "sample-pattern"),
       samplePath,
       startNorm: p.startNorm,
@@ -571,7 +574,9 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
       gain: p.gain,
       note: n.midi,
       velocity: vv,
-      durationSec: dur,
+      durationSec: stretchDurationSec,
+      patternBeats: resolvedPatternBeats,
+      bpm: Number(state.bpm || 120),
     });
     return;
   }
@@ -640,13 +645,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternBeats: patBars * 4 });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternBeats: patBars * 4 });
 }}
     }
   }
@@ -693,13 +698,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternBeats: patBars * 4 });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternBeats: patBars * 4 });
 }// Glow (safe)
             try {
               if (project.activePatternId === pat.id) {

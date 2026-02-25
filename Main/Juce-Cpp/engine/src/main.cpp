@@ -26,7 +26,7 @@ constexpr int kMaxSynthVoices = 64;
 constexpr int kMaxSampleVoices = 64;
 juce::int64 nowMs() { return juce::Time::currentTimeMillis(); }
 
-struct Voice { int note = 60; float velocity = 0.8f; double phase = 0.0; double phaseInc = 0.0; double modPhase = 0.0; double modPhaseInc = 0.0; float fmAmount = 0.0f; float gain = 1.0f; float attack = 0.003f; float decay = 0.12f; float sustain = 0.7f; float release = 0.2f; float env = 0.0f; int ageSamples = 0; bool releasing = false; juce::String instId = "global"; int waveform = 0; bool active = false; };
+struct Voice { int note = 60; float velocity = 0.8f; double phase = 0.0; double phaseInc = 0.0; double modPhase = 0.0; double modPhaseInc = 0.0; float fmAmount = 0.0f; float gain = 1.0f; float attack = 0.003f; float decay = 0.12f; float sustain = 0.7f; float release = 0.2f; float env = 0.0f; int ageSamples = 0; bool releasing = false; juce::String instId = "global"; int mixCh = 1; int waveform = 0; bool drum = false; float drumNoise = 0.0f; float drumStartHz = 180.0f; float drumEndHz = 55.0f; bool active = false; };
 struct SampleData { double sampleRate = 48000.0; juce::AudioBuffer<float> buffer; };
 struct SampleVoice {
   std::shared_ptr<const SampleData> sample; int start = 0; int end = 0; double pos = 0.0; double rate = 1.0;
@@ -60,12 +60,9 @@ static juce::String getStringProp(const juce::DynamicObject* o, const char* key,
 
 class Engine : public juce::AudioIODeviceCallback {
 public:
-  Engine(){ formatManager.registerBasicFormats(); setupAudio(); emitEvt("engine.state", engineState()); emitEvt("transport.state", transportState()); stateThread = std::thread([this]{pumpEvents();}); }
+  Engine(){ formatManager.registerBasicFormats(); meterChPeakL.assign((size_t)channelCount,0.0f); meterChPeakR.assign((size_t)channelCount,0.0f); meterChRmsL.assign((size_t)channelCount,0.0f); meterChRmsR.assign((size_t)channelCount,0.0f); meterChRmsAccL.assign((size_t)channelCount,0.0); meterChRmsAccR.assign((size_t)channelCount,0.0); setupAudio(); emitEvt("engine.state", engineState()); emitEvt("transport.state", transportState()); stateThread = std::thread([this]{pumpEvents();}); }
   ~Engine() override { running=false; if(stateThread.joinable()) stateThread.join(); shutdownAudio(); }
   bool isRunning() const { return running.load(); }
-
-  void handleMixerSetOp(const juce::String& op,const juce::String& id,const juce::DynamicObject* d);
-  void handleFxSetOp(const juce::String& op,const juce::String& id,const juce::DynamicObject* d);
 
   void handle(const juce::var& msg){
     auto* obj = msg.getDynamicObject(); if(!obj || obj->getProperty("type").toString() != "req") return;
@@ -85,7 +82,7 @@ public:
     // Accept project snapshots from UI so transport.play is not blocked by E_UNKNOWN_OP
     if(op=="project.sync") return resOk(op,id,juce::var());
 
-    if(op=="mixer.init"){ channelCount = juce::jlimit(1,64,getIntProp(d,"channels",16)); mixerStates.resize((size_t)channelCount); return resOk(op,id,juce::var()); }
+    if(op=="mixer.init"){ channelCount = juce::jlimit(1,64,getIntProp(d,"channels",16)); mixerStates.resize((size_t)channelCount); meterChPeakL.assign((size_t)channelCount,0.0f); meterChPeakR.assign((size_t)channelCount,0.0f); meterChRmsL.assign((size_t)channelCount,0.0f); meterChRmsR.assign((size_t)channelCount,0.0f); meterChRmsAccL.assign((size_t)channelCount,0.0); meterChRmsAccR.assign((size_t)channelCount,0.0); return resOk(op,id,juce::var()); }
     if(op=="mixer.master.set"||op=="mixer.channel.set") return handleMixerSetOp(op,id,d);
     if(op=="fx.chain.set"||op=="fx.param.set"||op=="fx.bypass.set") return handleFxSetOp(op,id,d);
     if(op=="mixer.route.set") return resOk(op,id,juce::var());
@@ -136,13 +133,14 @@ public:
       bool anySolo=false; for(const auto& mc:mixerStates) if(mc.solo){ anySolo=true; break; }
       for(auto& v:voices){ if(!v.active) continue; const int atkS=std::max(1,(int)std::llround(v.attack*sampleRate)); const int decS=std::max(1,(int)std::llround(v.decay*sampleRate)); const int relS=std::max(1,(int)std::llround(v.release*sampleRate)); if(!v.releasing){ if(v.ageSamples<atkS) v.env=(float)v.ageSamples/(float)atkS; else if(v.ageSamples<atkS+decS){ const float t=(float)(v.ageSamples-atkS)/(float)decS; v.env=1.0f-(1.0f-v.sustain)*t; } else v.env=v.sustain; } else { const float mul=std::exp(std::log(0.0001f)/(float)relS); v.env*=mul; if(v.env<0.0002f){ v.active=false; continue; } } const float mod=(float)std::sin(v.modPhase)*v.fmAmount; float sig=0.0f; if(v.drum){ const float prog=(float)juce::jlimit(0.0,1.0,v.ageSamples/(sampleRate*0.12)); const float curHz=v.drumStartHz + (v.drumEndHz-v.drumStartHz)*prog; const double inc=kTwoPi*curHz/std::max(1.0,sampleRate); v.phase += inc; if(v.phase>kTwoPi) v.phase-=kTwoPi; const float tonal=std::sin(v.phase); const float noise=((float)rng.nextDouble()*2.0f-1.0f); sig=(tonal*(1.0f-v.drumNoise)+noise*v.drumNoise); } else { sig=waveSample(v.waveform, v.phase+mod); v.phase += v.phaseInc; v.modPhase += v.modPhaseInc; if(v.phase>kTwoPi) v.phase-=kTwoPi; if(v.modPhase>kTwoPi) v.modPhase-=kTwoPi; }
         int idx=juce::jmax(0,v.mixCh-1); if(idx>=(int)mixerStates.size()) idx=0; const auto& mc=mixerStates[(size_t)idx]; if(mc.mute || (anySolo && !mc.solo)){ ++v.ageSamples; continue; }
-        const float amp=sig*v.velocity*v.gain*v.env*0.2f*mc.gain*masterGain; const float pan=juce::jlimit(-1.0f,1.0f,mc.pan); L += amp*0.5f*(1.0f-pan); R += amp*0.5f*(1.0f+pan); ++v.ageSamples; }
+        const float amp=sig*v.velocity*v.gain*v.env*0.2f*mc.gain*masterGain; const float pan=juce::jlimit(-1.0f,1.0f,mc.pan); const float chL=amp*0.5f*(1.0f-pan); const float chR=amp*0.5f*(1.0f+pan); L += chL; R += chR; if(idx>=0 && idx<(int)meterChRmsAccL.size()){ meterChPeakL[(size_t)idx]=std::max(meterChPeakL[(size_t)idx], std::abs(chL)); meterChPeakR[(size_t)idx]=std::max(meterChPeakR[(size_t)idx], std::abs(chR)); meterChRmsAccL[(size_t)idx] += (double)chL*(double)chL; meterChRmsAccR[(size_t)idx] += (double)chR*(double)chR; } ++v.ageSamples; }
       if(chs>0&&out[0]) out[0][i]=L; if(chs>1&&out[1]) out[1][i]=R;
       meterPeakL = std::max(meterPeakL, std::abs(L)); meterPeakR = std::max(meterPeakR, std::abs(R)); meterRmsAccL += L*L; meterRmsAccR += R*R;
     }
     samplePos += n;
     if(loopEnabled && loopPpqEnd>loopPpqStart){ const auto le=ppqToSamples(loopPpqEnd); if(samplePos>=le) samplePos=ppqToSamples(loopPpqStart); }
     meterRmsL = (float) std::sqrt(meterRmsAccL / std::max(1,n)); meterRmsR = (float) std::sqrt(meterRmsAccR / std::max(1,n)); meterRmsAccL=0; meterRmsAccR=0;
+    for(size_t i=0;i<meterChRmsAccL.size();++i){ meterChRmsL[i]=(float)std::sqrt(meterChRmsAccL[i]/std::max(1,n)); meterChRmsR[i]=(float)std::sqrt(meterChRmsAccR[i]/std::max(1,n)); meterChRmsAccL[i]=0.0; meterChRmsAccR[i]=0.0; }
   }
   void audioDeviceAboutToStart(juce::AudioIODevice* d) override { if(d){ sampleRate=d->getCurrentSampleRate(); bufferSize=d->getCurrentBufferSizeSamples(); ready=true; } }
   void audioDeviceStopped() override {}
@@ -154,6 +152,11 @@ private:
   bool ready=false, playing=false, loopEnabled=false; double bpm=120.0, sampleRate=48000.0, loopPpqStart=0.0, loopPpqEnd=16.0; int bufferSize=512, numOut=2, numIn=0, channelCount=16; float masterGain=0.85f; std::vector<MixerChannelState> mixerStates=std::vector<MixerChannelState>(16);
   juce::int64 samplePos=0; bool meterSubscribed=false; int meterFps=30; std::unordered_set<int> meterChannels;
   float meterPeakL=0,meterPeakR=0,meterRmsL=0,meterRmsR=0; double meterRmsAccL=0,meterRmsAccR=0;
+  std::vector<float> meterChPeakL, meterChPeakR, meterChRmsL, meterChRmsR;
+  std::vector<double> meterChRmsAccL, meterChRmsAccR;
+  juce::Random rng;
+  juce::var lastMixerSpec;
+  std::unordered_map<juce::String, juce::var> fxSpecCache;
 
   void handleMixerSetOp(const juce::String& op,const juce::String& id,const juce::DynamicObject* d){
     if(d && d->hasProperty("juceSpec"))
@@ -190,8 +193,39 @@ private:
   double mtof(int n) const { return 440.0*std::pow(2.0,(n-69)/12.0); }
   juce::int64 ppqToSamples(double ppq) const { return (juce::int64)std::llround(((60.0/std::max(20.0,bpm))*ppq)*sampleRate); }
   double samplesToPpq(juce::int64 s) const { return ((double)s/std::max(1.0,sampleRate))/(60.0/std::max(20.0,bpm)); }
-  InstrumentState defaultsForType(const juce::String& t) const { InstrumentState st; st.type=t; const auto x=t.toLowerCase(); if(x=="bass"||x=="subbass"){ st.waveform=3; st.gain=0.95f; st.attack=0.002f; st.decay=0.09f; st.sustain=0.6f; st.release=0.18f; } else if(x=="lead"){ st.waveform=2; st.gain=0.9f; st.attack=0.004f; st.decay=0.12f; st.sustain=0.55f; st.release=0.2f; st.fm=0.06f; } else if(x=="pad"){ st.waveform=1; st.gain=0.75f; st.attack=0.03f; st.decay=0.25f; st.sustain=0.8f; st.release=0.45f; } else if(x=="drums"||x=="touski"){ st.waveform=2; st.gain=0.95f; st.attack=0.0008f; st.decay=0.08f; st.sustain=0.02f; st.release=0.06f; st.drumMode=true; st.tone=9000.0f; } else if(x=="violin"){ st.waveform=1; st.gain=0.85f; st.attack=0.02f; st.decay=0.15f; st.sustain=0.75f; st.release=0.3f; } else { st.waveform=1; st.gain=0.9f; st.attack=0.003f; st.decay=0.12f; st.sustain=0.65f; st.release=0.22f; st.fm=0.03f; } return st; }
-  float waveSample(int waveform, double phase) const { switch(waveform){ case 1:{ const double x=std::fmod(phase/kTwoPi,1.0); const double tri=4.0*std::abs(x-0.5)-1.0; return (float)(-tri);} case 2:{ const double x=std::fmod(phase/kTwoPi,1.0); return (float)(2.0*x-1.0);} case 3: return std::sin(phase)>=0?1.0f:-1.0f; default: return std::sin(phase);} }
+  InstrumentState defaultsForType(const juce::String& t) const {
+    InstrumentState st;
+    st.type=t;
+    const auto x=t.toLowerCase();
+
+    if(x=="bass"||x=="subbass"){
+      st.waveform=3; st.gain=0.95f; st.attack=0.002f; st.decay=0.09f; st.sustain=0.62f; st.release=0.16f; st.fm=0.01f; st.tone=1200.0f;
+    } else if(x=="lead"){
+      st.waveform=2; st.gain=0.9f; st.attack=0.004f; st.decay=0.12f; st.sustain=0.55f; st.release=0.2f; st.fm=0.08f; st.tone=9000.0f;
+    } else if(x=="pad"){
+      st.waveform=6; st.gain=0.72f; st.attack=0.035f; st.decay=0.3f; st.sustain=0.82f; st.release=0.52f; st.fm=0.015f; st.tone=6500.0f;
+    } else if(x=="drums"||x=="touski"){
+      st.waveform=2; st.gain=0.95f; st.attack=0.0008f; st.decay=0.08f; st.sustain=0.02f; st.release=0.06f; st.drumMode=true; st.tone=9000.0f;
+    } else if(x=="violin"){
+      st.waveform=5; st.gain=0.82f; st.attack=0.02f; st.decay=0.18f; st.sustain=0.78f; st.release=0.34f; st.fm=0.02f; st.tone=7200.0f;
+    } else if(x=="piano"){
+      st.waveform=4; st.gain=0.9f; st.attack=0.003f; st.decay=0.16f; st.sustain=0.55f; st.release=0.24f; st.fm=0.035f; st.tone=5200.0f;
+    } else {
+      st.waveform=1; st.gain=0.85f; st.attack=0.005f; st.decay=0.14f; st.sustain=0.68f; st.release=0.24f; st.fm=0.03f; st.tone=7000.0f;
+    }
+    return st;
+  }
+  float waveSample(int waveform, double phase) const {
+    switch(waveform){
+      case 1:{ const double x=std::fmod(phase/kTwoPi,1.0); const double tri=4.0*std::abs(x-0.5)-1.0; return (float)(-tri); }
+      case 2:{ const double x=std::fmod(phase/kTwoPi,1.0); return (float)(2.0*x-1.0); }
+      case 3: return std::sin(phase)>=0?1.0f:-1.0f;
+      case 4:{ const float s1=(float)std::sin(phase); const float s2=(float)std::sin(phase*2.0); const float s3=(float)std::sin(phase*3.0); return (s1*0.72f + s2*0.2f + s3*0.08f); }
+      case 5:{ const double x=std::fmod(phase/kTwoPi,1.0); const float saw=(float)(2.0*x-1.0); const float tri=(float)(-(4.0*std::abs(x-0.5)-1.0)); return saw*0.65f + tri*0.35f; }
+      case 6:{ const float s=(float)std::sin(phase); const double x=std::fmod(phase/kTwoPi,1.0); const float tri=(float)(-(4.0*std::abs(x-0.5)-1.0)); return s*0.55f + tri*0.45f; }
+      default: return (float)std::sin(phase);
+    }
+  }
   void startVoice(const juce::String& instId, int mixCh, int n, float v){
     const auto iid = instId.isEmpty() ? juce::String("global") : instId;
     auto ii=instruments.find(iid); if(ii==instruments.end()){ instruments[iid]=defaultsForType("piano"); ii=instruments.find(iid);} const auto& st=ii->second;
@@ -252,9 +286,32 @@ private:
     auto it=sampleCache.find(getStringProp(d,"sampleId",""));
     if(it==sampleCache.end())
       return resErr(op,id,"E_NOT_LOADED","sampleId not loaded");
-    const auto sd=it->second; const int total=sd->buffer.getNumSamples(); int st=juce::jlimit(0,std::max(0,total-2),(int)std::floor(getDoubleProp(d,"startNorm",0.0)*total)); int en=juce::jlimit(st+1,total,(int)std::ceil(getDoubleProp(d,"endNorm",1.0)*total));
-    const int note=getIntProp(d,"note",60), root=getIntProp(d,"rootMidi",60); const double sem=(double)(note-root); double rate=std::pow(2.0,sem/12.0);
-    if(getStringProp(d,"mode","")=="fit_duration_vinyl"){ const double durationSec=getDoubleProp(d,"durationSec",0.0); if(durationSec>0){ const double slice=(en-st)/std::max(1.0,sd->sampleRate); rate = slice/durationSec; }}
+    const auto sd=it->second;
+    const int total=sd->buffer.getNumSamples();
+    int st=juce::jlimit(0,std::max(0,total-2),(int)std::floor(getDoubleProp(d,"startNorm",0.0)*total));
+    int en=juce::jlimit(st+1,total,(int)std::ceil(getDoubleProp(d,"endNorm",1.0)*total));
+    if(en<=st) en=juce::jlimit(st+1,total,st+1);
+
+    const auto mode=getStringProp(d,"mode","vinyl");
+    int note=getIntProp(d,"note",60);
+    const int root=getIntProp(d,"rootMidi",60);
+    if(mode=="fixed") note=root;
+
+    const double sem=(double)(note-root);
+    double rate=std::pow(2.0,sem/12.0);
+    if(mode=="fit_duration_vinyl"){
+      double durationSec=getDoubleProp(d,"durationSec",0.0);
+      if(durationSec<=0.0){
+        const double patternBeats=getDoubleProp(d,"patternBeats",0.0);
+        const double reqBpm=std::max(20.0, getDoubleProp(d,"bpm", bpm));
+        if(patternBeats>0.0)
+          durationSec=(60.0*patternBeats)/reqBpm;
+      }
+      if(durationSec>0.0){
+        const double slice=(en-st)/std::max(1.0,sd->sampleRate);
+        rate = slice/durationSec;
+      }
+    }
     const float vel=(float)juce::jlimit(0.0,1.0,getDoubleProp(d,"velocity",0.85)); const float gain=(float)std::max(0.0,getDoubleProp(d,"gain",1.0)); const float pan=(float)juce::jlimit(-1.0,1.0,getDoubleProp(d,"pan",0.0));
     SampleVoice sv; sv.sample=sd; sv.start=st; sv.end=en; sv.pos=(double)st; sv.rate=rate; sv.gainL=gain*vel*0.5f*(1.0f-pan); sv.gainR=gain*vel*0.5f*(1.0f+pan); sv.fadeIn=(int)std::max(1.0,0.003*sampleRate); sv.fadeOut=sv.fadeIn; sv.active=true;
     bool placed=false; for(auto& v:sampleVoices){ if(!v.active){v=sv; placed=true; break; }} if(!placed && (int)sampleVoices.size()<kMaxSampleVoices) sampleVoices.push_back(sv); return resOk(op,id,juce::var());
@@ -264,7 +321,25 @@ private:
   juce::var engineState(){ juce::DynamicObject::Ptr d=new juce::DynamicObject(); d->setProperty("ready",ready); d->setProperty("sampleRate",sampleRate); d->setProperty("bufferSize",bufferSize); d->setProperty("cpuLoad",0.0); d->setProperty("xruns",0); return juce::var(d.get()); }
   juce::var engineConfig(){ juce::DynamicObject::Ptr d=new juce::DynamicObject(); d->setProperty("sampleRate",sampleRate); d->setProperty("bufferSize",bufferSize); d->setProperty("numOut",numOut); d->setProperty("numIn",numIn); return juce::var(d.get()); }
   juce::var transportState(){ juce::DynamicObject::Ptr d=new juce::DynamicObject(); d->setProperty("playing",playing); d->setProperty("bpm",bpm); d->setProperty("ppq",samplesToPpq(samplePos)); d->setProperty("samplePos",(int)samplePos); return juce::var(d.get()); }
-  juce::var meterData(){ juce::Array<juce::var> frames; auto add=[&](int ch,float rL,float rR,float pL,float pR){ juce::DynamicObject::Ptr f=new juce::DynamicObject(); juce::Array<juce::var> rms{rL,rR}; juce::Array<juce::var> peak{pL,pR}; f->setProperty("ch",ch); f->setProperty("rms",juce::var(rms)); f->setProperty("peak",juce::var(peak)); frames.add(juce::var(f.get()));}; if(meterChannels.count(-1)) add(-1,meterRmsL,meterRmsR,meterPeakL,meterPeakR); for(int ch=0; ch<channelCount; ++ch) if(meterChannels.count(ch)) add(ch,0,0,0,0); juce::DynamicObject::Ptr d=new juce::DynamicObject(); d->setProperty("frames",juce::var(frames)); meterPeakL=0; meterPeakR=0; return juce::var(d.get()); }
+  juce::var meterData(){
+    juce::Array<juce::var> frames;
+    auto add=[&](int ch,float rL,float rR,float pL,float pR){ juce::DynamicObject::Ptr f=new juce::DynamicObject(); juce::Array<juce::var> rms{rL,rR}; juce::Array<juce::var> peak{pL,pR}; f->setProperty("ch",ch); f->setProperty("rms",juce::var(rms)); f->setProperty("peak",juce::var(peak)); frames.add(juce::var(f.get()));};
+    if(meterChannels.count(-1)) add(-1,meterRmsL,meterRmsR,meterPeakL,meterPeakR);
+    for(int ch=0; ch<channelCount; ++ch){
+      if(!meterChannels.count(ch)) continue;
+      const size_t i=(size_t)juce::jmax(0,ch);
+      const float rL=i<meterChRmsL.size()?meterChRmsL[i]:0.0f;
+      const float rR=i<meterChRmsR.size()?meterChRmsR[i]:0.0f;
+      const float pL=i<meterChPeakL.size()?meterChPeakL[i]:0.0f;
+      const float pR=i<meterChPeakR.size()?meterChPeakR[i]:0.0f;
+      add(ch,rL,rR,pL,pR);
+      if(i<meterChPeakL.size()){ meterChPeakL[i]=0.0f; meterChPeakR[i]=0.0f; }
+    }
+    juce::DynamicObject::Ptr d=new juce::DynamicObject();
+    d->setProperty("frames",juce::var(frames));
+    meterPeakL=0; meterPeakR=0;
+    return juce::var(d.get());
+  }
 
   void write(const juce::var& v){ std::cout << juce::JSON::toString(v,true).toStdString() << "\n"; std::cout.flush(); }
   void resOk(const juce::String& op,const juce::String& id,const juce::var& data){ juce::DynamicObject::Ptr o=new juce::DynamicObject(); o->setProperty("v",1); o->setProperty("type","res"); o->setProperty("op",op); o->setProperty("id",id); o->setProperty("ts",nowMs()); o->setProperty("ok",true); o->setProperty("data",data); write(juce::var(o.get())); }
