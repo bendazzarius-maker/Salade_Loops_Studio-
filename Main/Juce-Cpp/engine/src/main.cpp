@@ -26,7 +26,7 @@ constexpr int kMaxSynthVoices = 64;
 constexpr int kMaxSampleVoices = 64;
 juce::int64 nowMs() { return juce::Time::currentTimeMillis(); }
 
-struct Voice { int note = 60; float velocity = 0.8f; double phase = 0.0; double phaseInc = 0.0; double modPhase = 0.0; double modPhaseInc = 0.0; float fmAmount = 0.0f; float gain = 1.0f; float attack = 0.003f; float decay = 0.12f; float sustain = 0.7f; float release = 0.2f; float env = 0.0f; int ageSamples = 0; bool releasing = false; juce::String instId = "global"; int waveform = 0; bool active = false; };
+struct Voice { int note = 60; float velocity = 0.8f; double phase = 0.0; double phaseInc = 0.0; double modPhase = 0.0; double modPhaseInc = 0.0; float fmAmount = 0.0f; float gain = 1.0f; float attack = 0.003f; float decay = 0.12f; float sustain = 0.7f; float release = 0.2f; float env = 0.0f; int ageSamples = 0; bool releasing = false; juce::String instId = "global"; int mixCh = 1; int waveform = 0; bool drum = false; float drumNoise = 0.0f; float drumStartHz = 180.0f; float drumEndHz = 55.0f; bool active = false; };
 struct SampleData { double sampleRate = 48000.0; juce::AudioBuffer<float> buffer; };
 struct SampleVoice {
   std::shared_ptr<const SampleData> sample; int start = 0; int end = 0; double pos = 0.0; double rate = 1.0;
@@ -63,9 +63,6 @@ public:
   Engine(){ formatManager.registerBasicFormats(); setupAudio(); emitEvt("engine.state", engineState()); emitEvt("transport.state", transportState()); stateThread = std::thread([this]{pumpEvents();}); }
   ~Engine() override { running=false; if(stateThread.joinable()) stateThread.join(); shutdownAudio(); }
   bool isRunning() const { return running.load(); }
-
-  void handleMixerSetOp(const juce::String& op,const juce::String& id,const juce::DynamicObject* d);
-  void handleFxSetOp(const juce::String& op,const juce::String& id,const juce::DynamicObject* d);
 
   void handle(const juce::var& msg){
     auto* obj = msg.getDynamicObject(); if(!obj || obj->getProperty("type").toString() != "req") return;
@@ -154,6 +151,9 @@ private:
   bool ready=false, playing=false, loopEnabled=false; double bpm=120.0, sampleRate=48000.0, loopPpqStart=0.0, loopPpqEnd=16.0; int bufferSize=512, numOut=2, numIn=0, channelCount=16; float masterGain=0.85f; std::vector<MixerChannelState> mixerStates=std::vector<MixerChannelState>(16);
   juce::int64 samplePos=0; bool meterSubscribed=false; int meterFps=30; std::unordered_set<int> meterChannels;
   float meterPeakL=0,meterPeakR=0,meterRmsL=0,meterRmsR=0; double meterRmsAccL=0,meterRmsAccR=0;
+  juce::Random rng;
+  juce::var lastMixerSpec;
+  std::unordered_map<juce::String, juce::var> fxSpecCache;
 
   void handleMixerSetOp(const juce::String& op,const juce::String& id,const juce::DynamicObject* d){
     if(d && d->hasProperty("juceSpec"))
