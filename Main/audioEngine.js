@@ -36,7 +36,8 @@ class AudioEngine{
     if (!window.audioBackend?.backends?.juce || !model) return;
     const req = (op, data) => window.audioBackend.backends.juce._request(op, data).catch(()=>{});
     const m = model.master || {};
-    req("mixer.master.set", { gain: Number(m.gain ?? 0.85), limiterEnabled: true });
+    const mixerSpec = window.JuceInstructionLibrary?.buildMixerSpec?.(model) || null;
+    req("mixer.master.set", { gain: Number(m.gain ?? 0.85), limiterEnabled: true, juceSpec: mixerSpec });
 
     const channels = Array.isArray(model.channels) ? model.channels : [];
     channels.forEach((ch, i) => {
@@ -46,16 +47,25 @@ class AudioEngine{
         pan: Number(ch.pan ?? 0),
         mute: !!ch.mute,
         solo: !!ch.solo,
+        juceSpec: mixerSpec,
       });
+      const fxChain = Array.isArray(ch.fx) ? ch.fx : [];
       req("fx.chain.set", {
         target: { scope: "channel", ch: i },
-        chain: Array.isArray(ch.fx) ? ch.fx.map((fx, idx) => ({ id: String(fx.id || `${fx.type||'fx'}-${idx}`), type: String(fx.type||"eq3"), enabled: fx.enabled !== false })) : []
+        chain: fxChain.map((fx, idx) => ({ id: String(fx.id || `${fx.type||'fx'}-${idx}`), type: String(fx.type||"eq3"), enabled: fx.enabled !== false }))
+      });
+      fxChain.forEach((fx, idx) => {
+        req("fx.param.set", { target: { scope: "channel", ch: i }, id: String(fx.id || `${fx.type||'fx'}-${idx}`), params: fx.params || {}, juceSpec: window.JuceInstructionLibrary?.buildFxSpec?.({ scope: "channel", ch: i }, fx, idx) || null });
       });
     });
 
+    const masterFx = Array.isArray(m.fx) ? m.fx : [];
     req("fx.chain.set", {
       target: { scope: "master" },
-      chain: Array.isArray(m.fx) ? m.fx.map((fx, idx) => ({ id: String(fx.id || `${fx.type||'fx'}-${idx}`), type: String(fx.type||"eq3"), enabled: fx.enabled !== false })) : []
+      chain: masterFx.map((fx, idx) => ({ id: String(fx.id || `${fx.type||'fx'}-${idx}`), type: String(fx.type||"eq3"), enabled: fx.enabled !== false }))
+    });
+    masterFx.forEach((fx, idx) => {
+      req("fx.param.set", { target: { scope: "master" }, id: String(fx.id || `${fx.type||'fx'}-${idx}`), params: fx.params || {}, juceSpec: window.JuceInstructionLibrary?.buildFxSpec?.({ scope: "master" }, fx, idx) || null });
     });
   }
 
