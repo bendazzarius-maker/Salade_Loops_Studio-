@@ -430,6 +430,8 @@
     startEl.value = String(editor.posStart);
     endEl.value = String(editor.posEnd);
     rootMidiEl.value = String(Math.floor(Number(program?.playback?.rootMidi ?? 60)));
+    const loadedPatternSteps = Math.max(1, Math.floor(Number(program?.playback?.patternSteps ?? (Number(program?.playback?.patternBeats ?? 4) * 4))));
+    beatsEl.value = String(loadedPatternSteps);
     pitchModeEl.value = String(program?.playback?.pitchMode || "chromatic");
     gainEl.value = String(Number(program?.playback?.gain ?? 1));
     if (program?.name) nameEl.value = String(program.name);
@@ -451,8 +453,8 @@
       return;
     }
 
-    const beats = Math.max(1, Math.min(32, Math.floor(+beatsEl.value || 4)));
-    const bars = Math.max(1, Math.ceil(beats / 4));
+    const patternSteps = Math.max(1, Math.min(128, Math.floor(+beatsEl.value || 16)));
+    const bars = Math.max(0.25, patternSteps / Math.max(1, Number(state?.stepsPerBar || 16)));
     const rootMidi = Math.max(24, Math.min(96, Math.floor(+rootMidiEl.value || 60)));
     const mixOut = Math.max(1, Math.floor(+mixOutEl.value || 1));
 
@@ -480,7 +482,8 @@
       samplePath,
       startNorm: clamp01(+startEl.value || editor.posStart),
       endNorm: clamp01(+endEl.value || editor.posEnd),
-      patternBeats: beats,
+      patternSteps,
+      patternBeats: patternSteps / 4,
       rootMidi,
       pitchMode: pitchModeEl.value || "chromatic",
       gain: Math.max(0, Math.min(1.6, +gainEl.value || 1)),
@@ -527,7 +530,7 @@
 
     project.patterns.push(p);
     project.activePatternId = p.id;
-    setStatus(`Pattern "${name}" créée (${beats} temps) et ajoutée à la banque Patterns.`);
+    setStatus(`Pattern "${name}" créée (${patternSteps} quarts de temps) et ajoutée à la banque Patterns.`);
 
     await refreshPrograms();
 
