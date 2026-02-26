@@ -30,7 +30,7 @@ struct Voice { int note = 60; float velocity = 0.8f; double phase = 0.0; double 
 struct SampleData { double sampleRate = 48000.0; juce::AudioBuffer<float> buffer; };
 struct SampleVoice {
   std::shared_ptr<const SampleData> sample; int start = 0; int end = 0; double pos = 0.0; double rate = 1.0;
-  float gainL = 1.0f; float gainR = 1.0f; int fadeIn = 0; int fadeOut = 0; bool active = false;
+  float gainL = 1.0f; float gainR = 1.0f; int mixCh = 1; int fadeIn = 0; int fadeOut = 0; bool active = false;
 };
 
 struct InstrumentState {
@@ -129,8 +129,8 @@ public:
 
     for(int i=0;i<n;++i){
       float L=0.0f,R=0.0f;
-      for(auto& sv: sampleVoices){ if(!sv.active||!sv.sample) continue; const auto& b=sv.sample->buffer; const int ip=(int)sv.pos; if(ip>=sv.end||ip>=b.getNumSamples()-1){sv.active=false; continue;} const float frac=(float)(sv.pos-ip); const float l=b.getSample(0,ip)+(b.getSample(0,ip+1)-b.getSample(0,ip))*frac; float r=l; if(b.getNumChannels()>1) r=b.getSample(1,ip)+(b.getSample(1,ip+1)-b.getSample(1,ip))*frac; L+=l*sv.gainL; R+=r*sv.gainR; sv.pos+=sv.rate; }
       bool anySolo=false; for(const auto& mc:mixerStates) if(mc.solo){ anySolo=true; break; }
+      for(auto& sv: sampleVoices){ if(!sv.active||!sv.sample) continue; const auto& b=sv.sample->buffer; const int ip=(int)sv.pos; if(ip>=sv.end||ip>=b.getNumSamples()-1){sv.active=false; continue;} const float frac=(float)(sv.pos-ip); const float inL=b.getSample(0,ip)+(b.getSample(0,ip+1)-b.getSample(0,ip))*frac; float inR=inL; if(b.getNumChannels()>1) inR=b.getSample(1,ip)+(b.getSample(1,ip+1)-b.getSample(1,ip))*frac; int sidx=juce::jmax(0,sv.mixCh-1); if(sidx>=(int)mixerStates.size()) sidx=0; const auto& mc=mixerStates[(size_t)sidx]; if(mc.mute || (anySolo && !mc.solo)){ sv.pos+=sv.rate; continue; } const float pan=juce::jlimit(-1.0f,1.0f,mc.pan); const float dryL=inL*sv.gainL*mc.gain*masterGain; const float dryR=inR*sv.gainR*mc.gain*masterGain; const float outL=(dryL*(1.0f-pan)); const float outR=(dryR*(1.0f+pan)); L += outL; R += outR; if(sidx>=0 && sidx<(int)meterChRmsAccL.size()){ meterChPeakL[(size_t)sidx]=std::max(meterChPeakL[(size_t)sidx], std::abs(outL)); meterChPeakR[(size_t)sidx]=std::max(meterChPeakR[(size_t)sidx], std::abs(outR)); meterChRmsAccL[(size_t)sidx] += (double)outL*(double)outL; meterChRmsAccR[(size_t)sidx] += (double)outR*(double)outR; } sv.pos+=sv.rate; }
       for(auto& v:voices){ if(!v.active) continue; const int atkS=std::max(1,(int)std::llround(v.attack*sampleRate)); const int decS=std::max(1,(int)std::llround(v.decay*sampleRate)); const int relS=std::max(1,(int)std::llround(v.release*sampleRate)); if(!v.releasing){ if(v.ageSamples<atkS) v.env=(float)v.ageSamples/(float)atkS; else if(v.ageSamples<atkS+decS){ const float t=(float)(v.ageSamples-atkS)/(float)decS; v.env=1.0f-(1.0f-v.sustain)*t; } else v.env=v.sustain; } else { const float mul=std::exp(std::log(0.0001f)/(float)relS); v.env*=mul; if(v.env<0.0002f){ v.active=false; continue; } } const float mod=(float)std::sin(v.modPhase)*v.fmAmount; float sig=0.0f; if(v.drum){ const float prog=(float)juce::jlimit(0.0,1.0,v.ageSamples/(sampleRate*0.12)); const float curHz=v.drumStartHz + (v.drumEndHz-v.drumStartHz)*prog; const double inc=kTwoPi*curHz/std::max(1.0,sampleRate); v.phase += inc; if(v.phase>kTwoPi) v.phase-=kTwoPi; const float tonal=std::sin(v.phase); const float noise=((float)rng.nextDouble()*2.0f-1.0f); sig=(tonal*(1.0f-v.drumNoise)+noise*v.drumNoise); } else { sig=waveSample(v.waveform, v.phase+mod); v.phase += v.phaseInc; v.modPhase += v.modPhaseInc; if(v.phase>kTwoPi) v.phase-=kTwoPi; if(v.modPhase>kTwoPi) v.modPhase-=kTwoPi; }
         int idx=juce::jmax(0,v.mixCh-1); if(idx>=(int)mixerStates.size()) idx=0; const auto& mc=mixerStates[(size_t)idx]; if(mc.mute || (anySolo && !mc.solo)){ ++v.ageSamples; continue; }
         const float amp=sig*v.velocity*v.gain*v.env*0.2f*mc.gain*masterGain; const float pan=juce::jlimit(-1.0f,1.0f,mc.pan); const float chL=amp*0.5f*(1.0f-pan); const float chR=amp*0.5f*(1.0f+pan); L += chL; R += chR; if(idx>=0 && idx<(int)meterChRmsAccL.size()){ meterChPeakL[(size_t)idx]=std::max(meterChPeakL[(size_t)idx], std::abs(chL)); meterChPeakR[(size_t)idx]=std::max(meterChPeakR[(size_t)idx], std::abs(chR)); meterChRmsAccL[(size_t)idx] += (double)chL*(double)chL; meterChRmsAccR[(size_t)idx] += (double)chR*(double)chR; } ++v.ageSamples; }
@@ -302,10 +302,11 @@ private:
     if(mode=="fit_duration_vinyl"){
       double durationSec=getDoubleProp(d,"durationSec",0.0);
       if(durationSec<=0.0){
-        const double patternBeats=getDoubleProp(d,"patternBeats",0.0);
+        const double patternSteps=getDoubleProp(d,"patternSteps",0.0);
+        const double patternBeats=patternSteps>0.0 ? (patternSteps/4.0) : getDoubleProp(d,"patternBeats",0.0);
         const double reqBpm=std::max(20.0, getDoubleProp(d,"bpm", bpm));
         if(patternBeats>0.0)
-          durationSec=(60.0*patternBeats)/reqBpm;
+          durationSec=(60.0/reqBpm)*patternBeats;
       }
       if(durationSec>0.0){
         const double slice=(en-st)/std::max(1.0,sd->sampleRate);
@@ -313,7 +314,7 @@ private:
       }
     }
     const float vel=(float)juce::jlimit(0.0,1.0,getDoubleProp(d,"velocity",0.85)); const float gain=(float)std::max(0.0,getDoubleProp(d,"gain",1.0)); const float pan=(float)juce::jlimit(-1.0,1.0,getDoubleProp(d,"pan",0.0));
-    SampleVoice sv; sv.sample=sd; sv.start=st; sv.end=en; sv.pos=(double)st; sv.rate=rate; sv.gainL=gain*vel*0.5f*(1.0f-pan); sv.gainR=gain*vel*0.5f*(1.0f+pan); sv.fadeIn=(int)std::max(1.0,0.003*sampleRate); sv.fadeOut=sv.fadeIn; sv.active=true;
+    SampleVoice sv; sv.sample=sd; sv.start=st; sv.end=en; sv.pos=(double)st; sv.rate=rate; sv.gainL=gain*vel; sv.gainR=gain*vel; sv.mixCh=juce::jmax(1,getIntProp(d,"mixCh",1)); sv.fadeIn=(int)std::max(1.0,0.003*sampleRate); sv.fadeOut=sv.fadeIn; sv.active=true;
     bool placed=false; for(auto& v:sampleVoices){ if(!v.active){v=sv; placed=true; break; }} if(!placed && (int)sampleVoices.size()<kMaxSampleVoices) sampleVoices.push_back(sv); return resOk(op,id,juce::var());
   }
 

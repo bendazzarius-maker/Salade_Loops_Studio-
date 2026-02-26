@@ -124,8 +124,10 @@
         velocity: Number.isFinite(+payload.velocity) ? +payload.velocity : 0.85,
         mode,
         durationSec: Number.isFinite(+payload.durationSec) ? +payload.durationSec : 0,
+        patternSteps: Number.isFinite(+payload.patternSteps) ? +payload.patternSteps : 0,
         patternBeats: Number.isFinite(+payload.patternBeats) ? +payload.patternBeats : 0,
         bpm: Number.isFinite(+payload.bpm) ? +payload.bpm : undefined,
+        mixCh: Number.isFinite(+payload.mixCh) ? +payload.mixCh : 1,
         when: "now",
       });
     }
