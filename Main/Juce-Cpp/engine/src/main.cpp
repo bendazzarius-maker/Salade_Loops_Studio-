@@ -584,6 +584,12 @@ private:
     if(!d) return resErr(op,id,"E_BAD_ENVELOPE","Missing sampler.trigger data");
     auto it=sampleCache.find(getStringProp(d,"sampleId","")); if(it==sampleCache.end()) return resErr(op,id,"E_NOT_LOADED","sampleId not loaded");
 
+    if(!d)
+      return resErr(op,id,"E_BAD_ENVELOPE","Missing sampler.trigger data");
+
+    auto it=sampleCache.find(getStringProp(d,"sampleId",""));
+    if(it==sampleCache.end())
+      return resErr(op,id,"E_NOT_LOADED","sampleId not loaded");
     const auto sd=it->second;
     const int total=sd->buffer.getNumSamples();
     int st=juce::jlimit(0,std::max(0,total-2),(int)std::floor(getDoubleProp(d,"startNorm",0.0)*total));
@@ -615,6 +621,16 @@ private:
     const float gain=(float)std::max(0.0,getDoubleProp(d,"gain",1.0));
     const int mixCh=juce::jmax(1,getIntProp(d,"mixCh",1));
     SampleVoice sv; sv.sample=sd; sv.start=st; sv.end=en; sv.pos=(double)st; sv.rate=rate; sv.gainL=gain*vel; sv.gainR=gain*vel; sv.mixCh=mixCh; sv.active=true;
+        if(patternBeats>0.0)
+          durationSec=(60.0/reqBpm)*patternBeats;
+      }
+      if(durationSec>0.0){
+        const double slice=(en-st)/std::max(1.0,sd->sampleRate);
+        rate = slice/durationSec;
+      }
+    }
+    const float vel=(float)juce::jlimit(0.0,1.0,getDoubleProp(d,"velocity",0.85)); const float gain=(float)std::max(0.0,getDoubleProp(d,"gain",1.0)); const float pan=(float)juce::jlimit(-1.0,1.0,getDoubleProp(d,"pan",0.0));
+    SampleVoice sv; sv.sample=sd; sv.start=st; sv.end=en; sv.pos=(double)st; sv.rate=rate; sv.gainL=gain*vel; sv.gainR=gain*vel; sv.mixCh=juce::jmax(1,getIntProp(d,"mixCh",1)); sv.fadeIn=(int)std::max(1.0,0.003*sampleRate); sv.fadeOut=sv.fadeIn; sv.active=true;
     bool placed=false; for(auto& v:sampleVoices){ if(!v.active){v=sv; placed=true; break; }} if(!placed && (int)sampleVoices.size()<kMaxSampleVoices) sampleVoices.push_back(sv); return resOk(op,id,juce::var());
   }
 
@@ -691,7 +707,6 @@ private:
   juce::var engineState(){ juce::DynamicObject::Ptr d=new juce::DynamicObject(); d->setProperty("ready",ready); d->setProperty("sampleRate",sampleRate); d->setProperty("bufferSize",bufferSize); d->setProperty("cpuLoad",0.0); d->setProperty("xruns",0); return juce::var(d.get()); }
   juce::var engineConfig(){ juce::DynamicObject::Ptr d=new juce::DynamicObject(); d->setProperty("sampleRate",sampleRate); d->setProperty("bufferSize",bufferSize); d->setProperty("numOut",numOut); d->setProperty("numIn",numIn); return juce::var(d.get()); }
   juce::var transportState(){ juce::DynamicObject::Ptr d=new juce::DynamicObject(); d->setProperty("playing",playing); d->setProperty("bpm",bpm); d->setProperty("ppq",samplesToPpq(samplePos)); d->setProperty("samplePos",(int)samplePos); return juce::var(d.get()); }
-
   juce::var meterData(){
     juce::Array<juce::var> frames;
     auto add=[&](int ch,float rL,float rR,float pL,float pR){ juce::DynamicObject::Ptr f=new juce::DynamicObject(); juce::Array<juce::var> rms{rL,rR}; juce::Array<juce::var> peak{pL,pR}; f->setProperty("ch",ch); f->setProperty("rms",juce::var(rms)); f->setProperty("peak",juce::var(peak)); frames.add(juce::var(f.get()));};
