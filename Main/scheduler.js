@@ -621,7 +621,7 @@ function playlistEndBar() {
 function scheduleStep_PATTERN(step, t) {
   const p = activePattern(); if (!p) return;
   const patBars = patternLengthBars(p);
-  const patSteps = patBars * state.stepsPerBar;
+  const patSteps = Math.max(1, Math.round(patBars * state.stepsPerBar));
   const local = step % patSteps;
 
   for (const ch of p.channels) {
@@ -670,7 +670,7 @@ function scheduleStep_SONG(step, t) {
       if (stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
       const patBars = patternLengthBars(pat);
-      const patSteps = Math.max(1, patBars * state.stepsPerBar);
+      const patSteps = Math.max(1, Math.round(patBars * state.stepsPerBar));
       const local = (stepInSong - clipStartStep) % patSteps;
 
 
