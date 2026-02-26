@@ -47,8 +47,15 @@ class JuceInstrumentRuntime {
   async _ensureCreate(){
     if (this.type === "sample_pattern") return;
     if (!JuceInstrumentRuntime._knownInst.has(this.instId)) {
-      await this._req("inst.create", { instId: this.instId, type: this.type, ch: 0 });
+      const createType = this.type === "touski" ? "drums" : this.type;
+      await this._req("inst.create", { instId: this.instId, type: createType, ch: 0 });
       JuceInstrumentRuntime._knownInst.add(this.instId);
+    }
+    if (this.type === "touski") {
+      const programPath = String(this.paramsRef?.programPath || "").trim();
+      if (programPath) await this._req("touski.program.load", { instId: this.instId, ch: 0, programPath });
+      await this._req("touski.param.set", { instId: this.instId, params: this.paramsRef || {} });
+      return;
     }
     await this._req("inst.param.set", { instId: this.instId, params: this.paramsRef || {} });
   }
@@ -56,9 +63,11 @@ class JuceInstrumentRuntime {
   trigger(_t, midi, vel=0.85, dur=0.25){
     if (this.type === "sample_pattern") return;
     this._ensureCreate().then(() => {
-      this._req("note.on", { instId: this.instId, note: Number(midi), vel: Number(vel), when: "now" });
+      const onOp = this.type === "touski" ? "touski.note.on" : "note.on";
+      const offOp = this.type === "touski" ? "touski.note.off" : "note.off";
+      this._req(onOp, { instId: this.instId, note: Number(midi), vel: Number(vel), when: "now" });
       setTimeout(() => {
-        this._req("note.off", { instId: this.instId, note: Number(midi), when: "now" });
+        this._req(offOp, { instId: this.instId, note: Number(midi), when: "now" });
       }, Math.max(20, Math.floor(Number(dur || 0.25) * 1000)));
     });
   }
@@ -74,14 +83,14 @@ class PresetBank{
     const defs = this._defs();
     const names = Object.keys(defs);
     const fallback = ["Piano","Bass","Lead","Pad","Drums","SubBass","Violin","Sample Paterne","Sample Touski"];
-    const merged = [...new Set([...(names.length ? names : fallback), "Sample Paterne", "Sample Touski"])];
+    const merged = [...new Set([...(names.length ? names : fallback), "Sample Paterne", "Sample Touski", "Touski"])];
     return merged.sort((a,b)=>a.localeCompare(b));
   }
 
   def(name){
     const defs = this._defs();
     const key = String(name || "Piano");
-    const found = defs[key] || defs["Piano"];
+    const found = defs[key] || (key === "Sample Touski" ? defs["Touski"] : null) || defs["Piano"];
     if (found) return found;
     return { name: key, defaultParams: () => ({}) };
   }
