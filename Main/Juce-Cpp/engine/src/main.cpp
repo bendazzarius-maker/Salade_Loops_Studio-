@@ -302,8 +302,7 @@ private:
     if(mode=="fit_duration_vinyl"){
       double durationSec=getDoubleProp(d,"durationSec",0.0);
       if(durationSec<=0.0){
-        const double patternSteps=getDoubleProp(d,"patternSteps",0.0);
-        const double patternBeats=patternSteps>0.0 ? (patternSteps/4.0) : getDoubleProp(d,"patternBeats",0.0);
+        const double patternBeats=getDoubleProp(d,"patternBeats",0.0);
         const double reqBpm=std::max(20.0, getDoubleProp(d,"bpm", bpm));
         if(patternBeats>0.0)
           durationSec=(60.0*patternBeats)/reqBpm;
