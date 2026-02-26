@@ -110,6 +110,8 @@
 
     async triggerSample(payload = {}) {
       const sampleId = await this.ensureSampleLoaded(payload.samplePath);
+      const pitchMode = String(payload.pitchMode || "chromatic").toLowerCase();
+      const mode = (pitchMode === "fixed") ? "fixed" : "fit_duration_vinyl";
       return this._request("sampler.trigger", {
         trackId: String(payload.trackId || "sample-pattern"),
         sampleId,
@@ -120,6 +122,12 @@
         rootMidi: Number.isFinite(+payload.rootMidi) ? +payload.rootMidi : 60,
         note: Number.isFinite(+payload.note) ? +payload.note : 60,
         velocity: Number.isFinite(+payload.velocity) ? +payload.velocity : 0.85,
+        mode,
+        durationSec: Number.isFinite(+payload.durationSec) ? +payload.durationSec : 0,
+        patternSteps: Number.isFinite(+payload.patternSteps) ? +payload.patternSteps : 0,
+        patternBeats: Number.isFinite(+payload.patternBeats) ? +payload.patternBeats : 0,
+        bpm: Number.isFinite(+payload.bpm) ? +payload.bpm : undefined,
+        mixCh: Number.isFinite(+payload.mixCh) ? +payload.mixCh : 1,
         when: "now",
       });
     }

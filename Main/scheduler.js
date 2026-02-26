@@ -550,7 +550,7 @@ function audioTriggerSample(payload){
   if (typeof payload.trigger === "function") payload.trigger();
 }
 
-function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams }) {
+function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps }) {
   if (presetName === "Sample Paterne") {
     const p = effectiveParams || ch.params || {};
     const samplePath = p.samplePath || p.path || p.file || (p.sample && p.sample.path) || p.url;
@@ -560,8 +560,11 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
       return;
     }
 
+    const resolvedPatternSteps = Math.max(1, Number(p.patternSteps || (Number(p.patternBeats || 0) * 4) || patternSteps || 16));
+    const stretchDurationSec = (60 / Math.max(20, Number(state.bpm || 120))) * (resolvedPatternSteps / 4);
+
     audioTriggerSample({
-      trigger: () => inst.trigger(t, n.midi, vv, dur),
+      trigger: () => inst.trigger(t, n.midi, vv, stretchDurationSec),
       trackId: String((ch && ch.id) || "sample-pattern"),
       samplePath,
       startNorm: p.startNorm,
@@ -571,7 +574,11 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
       gain: p.gain,
       note: n.midi,
       velocity: vv,
-      durationSec: dur,
+      durationSec: stretchDurationSec,
+      patternSteps: resolvedPatternSteps,
+      patternBeats: resolvedPatternSteps / 4,
+      bpm: Number(state.bpm || 120),
+      mixCh: Number(ch?.mixOut || 1),
     });
     return;
   }
@@ -616,7 +623,7 @@ function playlistEndBar() {
 function scheduleStep_PATTERN(step, t) {
   const p = activePattern(); if (!p) return;
   const patBars = patternLengthBars(p);
-  const patSteps = patBars * state.stepsPerBar;
+  const patSteps = Math.max(1, Math.round(patBars * state.stepsPerBar));
   const local = step % patSteps;
 
   for (const ch of p.channels) {
@@ -640,13 +647,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps: patSteps });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps: patSteps });
 }}
     }
   }
@@ -665,7 +672,7 @@ function scheduleStep_SONG(step, t) {
       if (stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
       const patBars = patternLengthBars(pat);
-      const patSteps = Math.max(1, patBars * state.stepsPerBar);
+      const patSteps = Math.max(1, Math.round(patBars * state.stepsPerBar));
       const local = (stepInSong - clipStartStep) % patSteps;
 
 
@@ -693,13 +700,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps: patSteps });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams });
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps: patSteps });
 }// Glow (safe)
             try {
               if (project.activePatternId === pat.id) {
