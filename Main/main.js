@@ -146,14 +146,19 @@ function hashString(value = "") {
   return (h >>> 0).toString(16);
 }
 
-function hashString(value = "") {
-  let h = 2166136261;
-  const str = String(value || "");
-  for (let i = 0; i < str.length; i += 1) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
+let _lastAudioEvtSentAt = 0;
+function safeSendAudioEvent(channel, payload) {
+  const now = Date.now();
+  if (now - _lastAudioEvtSentAt < 8) return;
+  _lastAudioEvtSentAt = now;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const wc = mainWindow.webContents;
+  if (!wc || wc.isDestroyed() || wc.isCrashed()) return;
+  try {
+    wc.send(channel, payload);
+  } catch (err) {
+    console.warn("[JUCE] safeSendAudioEvent failed", err?.message || err);
   }
-  return (h >>> 0).toString(16);
 }
 
 function startAudioEngine() {
@@ -209,7 +214,7 @@ function startAudioEngine() {
           continue;
         }
         if (mainWindow && !mainWindow.isDestroyed() && msg?.type === "evt") {
-          mainWindow.webContents.send("audio:native:event", msg);
+          safeSendAudioEvent("audio:native:event", msg);
         }
       } catch {
         console.warn("[JUCE] stdout non-JSON:", line);

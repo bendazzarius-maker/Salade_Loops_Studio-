@@ -57,14 +57,21 @@
 
     async _request(op, data = {}) {
       if (!window.audioNative?.request) throw new Error("audioNative bridge unavailable");
-      return window.audioNative.request(this._buildReq(op, data));
+      const res = await window.audioNative.request(this._buildReq(op, data));
+      if (!res?.ok) {
+        console.error(`[JUCE][REQ ERROR] ${op}`, { data, err: res?.err || null, res });
+      }
+      return res;
     }
 
     _evt(msg) {
       if (!msg || msg.type !== "evt") return;
       if (msg.op === "transport.state") {
         this.transportState = { ...this.transportState, ...(msg.data || {}) };
+        return;
       }
+      if (msg.op === "meter.level") return;
+      console.warn("[JUCE][UNKNOWN EVT OP]", msg.op, msg);
     }
 
     async init() {
