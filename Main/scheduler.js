@@ -781,8 +781,10 @@ function tick() {
   }
 
   // UI readhead
+  const enginePpq = _enginePpq();
+  const absStepFromEngine = Math.floor(Math.max(0, enginePpq) * (state.stepsPerBar/4));
   const elapsed = Math.max(0, now - pb.startT);
-  const absStep = Math.floor(elapsed / sp);
+  const absStep = Number.isFinite(absStepFromEngine) && absStepFromEngine >= 0 ? absStepFromEngine : Math.floor(elapsed / sp);
   const rangeLen = Math.max(1, pb.rangeEndStep - pb.rangeStartStep);
   const relUiStep = (state.loop && pb.endStep > 0) ? (absStep % pb.endStep) : absStep;
   const uiStep = pb.rangeStartStep + relUiStep;
@@ -811,6 +813,27 @@ function tick() {
   pb.uiStep = uiStep;
 }
 
+
+function _playlistTimeOriginX(){
+  try{
+    const el = document.getElementById("playlistTrackColumn") || document.querySelector(".playlist-track-column") || document.querySelector("#playlistLeftCol") || document.querySelector(".playlist-left");
+    if (el) return Math.max(0, Math.round(el.getBoundingClientRect().width || el.clientWidth || 0));
+  }catch(_){ }
+  return Math.max(0, cssNum("--track-col"));
+}
+
+function _pianoTimeOriginX(){
+  try{
+    if (typeof pianoKeys !== "undefined" && pianoKeys) return Math.max(0, Math.round(pianoKeys.getBoundingClientRect().width || pianoKeys.clientWidth || 0));
+  }catch(_){ }
+  return 0;
+}
+
+function _enginePpq(){
+  try{
+    return Number(window.audioBackend?.backends?.juce?.transportState?.ppq || 0);
+  }catch(_){ return 0; }
+}
 function _autoScrollFollow() {
   if (!state.playing || state.autoScroll === false) return;
 
@@ -846,10 +869,11 @@ let _uiRAF = 0;
 function _uiLoop() {
   if (state.playing) {
     try {
-      const xRoll = (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * cssNum("--roll-step-w");
-      playhead.style.left = `${xRoll}px`;
+      const rollOrigin = _pianoTimeOriginX();
+      const xRoll = rollOrigin + (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * cssNum("--roll-step-w");
+      playhead.style.left = `${Math.max(rollOrigin, xRoll)}px`;
 
-      const trackCol = cssNum("--track-col");
+      const trackCol = _playlistTimeOriginX();
       const xPl = trackCol + (pb.uiSongStep != null ? pb.uiSongStep : pb.uiStep) * cssNum("--plist-step-w");
       if (typeof plistPlayhead !== "undefined" && plistPlayhead) {
         plistPlayhead.style.left = `${xPl}px`;
@@ -904,8 +928,15 @@ async function start() {
 
   pb.timer = setInterval(tick, pb.intervalMs);
 
-  if (window.audioBackend) {
-    await window.audioBackend.play(buildProjectSnapshotForEngine);
+  if (window.audioBackend?.backends?.juce) {
+    const juce = window.audioBackend.backends.juce;
+    const snapshot = buildProjectSnapshotForEngine();
+    await juce._request("project.sync", snapshot);
+    await juce._request("schedule.clear", {});
+    const toPpq = Math.max(4, (pb.endStep || 64) / (state.stepsPerBar/4));
+    await juce._request("schedule.setWindow", { fromPpq: 0, toPpq });
+    await juce._request("transport.seek", { ppq: 0 });
+    await window.audioBackend.play(() => snapshot);
   }
 
   if (!_uiRAF) _uiRAF = requestAnimationFrame(_uiLoop);
@@ -921,8 +952,8 @@ async function pause() {
 
 async function stop() {
   await pause();
-  try { playhead.style.left = "0px"; } catch (_) {}
-  try { if (plistPlayhead) plistPlayhead.style.left = "0px"; } catch (_) {}
+  try { const k = _pianoTimeOriginX(); playhead.style.left = `${k}px`; } catch (_) {}
+  try { if (plistPlayhead) { const x = _playlistTimeOriginX(); plistPlayhead.style.left = `${x}px`; } } catch (_) {}
 }
 
 // Make sure wiring.js can call these even if scripts are modules
