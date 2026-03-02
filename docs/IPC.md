@@ -11,7 +11,7 @@ Protocol envelope:
 - `engine.ping`
 - `engine.state.get`
 - `engine.config.get`
-- `engine.config.set` `{ sampleRate?, bufferSize?, numOut?, numIn? }`
+- `engine.config.set` `{ sampleRate?, bufferSize?, numOut?, numIn?, playPrerollMs?, schedulerDebug? }`
 - `transport.play`
 - `transport.stop`
 - `transport.seek` `{ ppq?:number, samplePos?:number }`
@@ -32,7 +32,7 @@ Protocol envelope:
 - `note.allOff`
 
 ## Touski
-- `touski.program.load` `{ instId,samples:[{note,path}] }`
+- `touski.program.load` `{ instId, samples?:[{note,path|samplePath}], programPath? }`
 - `touski.param.set` `{ instId, params }`
 - `touski.note.on` `{ instId,note,mixCh,vel|velocity }`
 - `touski.note.off` `{ instId,note,mixCh }`
@@ -48,7 +48,7 @@ Protocol envelope:
 
 ## Sampler
 - `sampler.load` `{ sampleId,path }`
-- `sampler.trigger` supports:
+- `sampler.trigger` supports (and may auto-load from `samplePath` when `sampleId` is missing):
   - `mode:"vinyl"` => pitch ratio only
   - `mode:"fit_duration"` => fill duration exactly
   - `mode:"fit_duration_vinyl"` => fill duration + pitch
@@ -66,3 +66,10 @@ Protocol envelope:
 - `E_NOT_FOUND`
 
 No silent failures: every request gets an explicit `res` with `ok:true|false`.
+
+
+### Touski programPath schemas
+When `programPath` is provided, engine accepts:
+- `zones[]`, `samples[]`, or `mapping[]` arrays (each item supports `note|rootMidi` + `path|samplePath|relativePath`).
+- single-root schema: `{ rootMidi, sample:{ path|relativePath } }`.
+- `relativePath` is resolved relative to the `.slsprog.json` folder.

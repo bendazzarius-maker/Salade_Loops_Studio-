@@ -462,6 +462,106 @@ function _recalcEndStepForMode(){
 
 
 
+
+function _isJuceTransportScheduling(){
+  return !!(window.audioBackend?.getActiveBackendName?.() === "juce" && window.audioBackend?.backends?.juce);
+}
+
+function _ppqPerStep(){
+  return 4 / Math.max(1, Number(state.stepsPerBar || 16));
+}
+
+function _collectEngineEventsForRange(startStep, endStep){
+  const events = [];
+  const ppqPerStep = _ppqPerStep();
+  const start = Math.max(0, Math.floor(startStep || 0));
+  const end = Math.max(start + 1, Math.floor(endStep || start + 1));
+
+  for (let songStep = start; songStep < end; songStep += 1) {
+    for (const tr of (project.playlist?.tracks || [])) {
+      for (const clip of (tr.clips || [])) {
+        const pat = project.patterns.find((x) => x.id === clip.patternId);
+        if (!pat || !Array.isArray(pat.channels)) continue;
+
+        const clipStartStep = Number(clip.startBar || 0) * state.stepsPerBar;
+        const clipEndStep = (Number(clip.startBar || 0) + Number(clip.lenBars || 1)) * state.stepsPerBar;
+        if (songStep < clipStartStep || songStep >= clipEndStep) continue;
+
+        const patSteps = Math.max(1, Math.round(patternLengthBars(pat) * state.stepsPerBar));
+        const local = (songStep - clipStartStep) % patSteps;
+
+        for (const ch of pat.channels) {
+          if (ch.muted) continue;
+          const channelPreset = String(ch.preset || "");
+          const effectiveParams = resolveSamplePatternParams(pat, ch) || ch.params || {};
+          const mixCh = Number(ch?.mixOut || 1);
+
+          for (const n of (ch.notes || [])) {
+            if (Number(n.step || 0) !== local) continue;
+            const note = Number(n.midi || 60);
+            const vel = Number((n.vel || 100) / 127);
+            const atPpq = songStep * ppqPerStep;
+            const durSteps = Math.max(1, Number(n.len || 1));
+            const durPpq = durSteps * ppqPerStep;
+
+            if (channelPreset === "Sample Paterne") {
+              const samplePath = effectiveParams.samplePath || effectiveParams.path || effectiveParams.file || (effectiveParams.sample && effectiveParams.sample.path) || effectiveParams.url;
+              if (!samplePath) continue;
+              const resolvedPatternSteps = Math.max(1, Number(effectiveParams.patternSteps || (Number(effectiveParams.patternBeats || 0) * 4) || patSteps || 16));
+              events.push({
+                atPpq,
+                type: "sampler.trigger",
+                mixCh,
+                samplePath,
+                startNorm: Number(effectiveParams.startNorm ?? 0),
+                endNorm: Number(effectiveParams.endNorm ?? 1),
+                rootMidi: Number(effectiveParams.rootMidi ?? 60),
+                note,
+                velocity: vel,
+                gain: Number(effectiveParams.gain ?? 1),
+                pan: Number(effectiveParams.pan ?? 0),
+                mode: String((effectiveParams.pitchMode === "fixed") ? "vinyl" : "fit_duration_vinyl"),
+                patternSteps: resolvedPatternSteps,
+                patternBeats: resolvedPatternSteps / 4,
+                bpm: Number(state.bpm || 120),
+              });
+              continue;
+            }
+
+            if (channelPreset.toLowerCase().includes("touski")) {
+              const instId = String(ch.id || `touski-${tr.id || 'track'}`);
+              const programPath = effectiveParams.programPath || effectiveParams.path || "";
+              events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath });
+              events.push({ atPpq: atPpq + durPpq, type: "touski.note.off", instId, mixCh, note, vel: 0 });
+              continue;
+            }
+
+            const instId = String(ch.id || `inst-${tr.id || 'track'}`);
+            events.push({ atPpq, type: "note.on", instId, mixCh, note, vel, durPpq });
+            events.push({ atPpq: atPpq + durPpq, type: "note.off", instId, mixCh, note, vel: 0, durPpq: 0 });
+          }
+        }
+      }
+    }
+  }
+
+  events.sort((a, b) => Number(a.atPpq || 0) - Number(b.atPpq || 0));
+  return events;
+}
+
+async function _pushEngineScheduleRange(juce, startStep, endStep){
+  const events = _collectEngineEventsForRange(startStep, endStep);
+  console.debug("[SLS][schedule.window]", { startStep, endStep, events: events.length });
+  if (!events.length) return;
+
+  const chunks = 128;
+  for (let i = 0; i < events.length; i += chunks) {
+    const batch = events.slice(i, i + chunks);
+    const res = await juce._request("schedule.push", { events: batch });
+    console.debug("[SLS][schedule.push]", { batch: batch.length, ok: !!res?.ok });
+  }
+}
+
 function buildProjectSnapshotForEngine(){
   const ppqResolution = 960;
   const trackMap = new Map();
@@ -772,8 +872,10 @@ function tick() {
       ? (pb.rangeStartStep + (pb.nextStep % rangeLen))
       : (pb.rangeStartStep + pb.nextStep);
 
-    if (state.mode === "pattern") scheduleStep_PATTERN(stepForSeq, t);
-    else scheduleStep_SONG(stepForSeq, t);
+    if (!_isJuceTransportScheduling()) {
+      if (state.mode === "pattern") scheduleStep_PATTERN(stepForSeq, t);
+      else scheduleStep_SONG(stepForSeq, t);
+    }
 
     pb.nextStep++;
 
@@ -876,7 +978,7 @@ function _uiLoop() {
       const trackCol = _playlistTimeOriginX();
       const xPl = trackCol + (pb.uiSongStep != null ? pb.uiSongStep : pb.uiStep) * cssNum("--plist-step-w");
       if (typeof plistPlayhead !== "undefined" && plistPlayhead) {
-        plistPlayhead.style.left = `${xPl}px`;
+        plistPlayhead.style.left = `${Math.max(trackCol, xPl)}px`;
         plistPlayhead.style.height = `${tracks.scrollHeight}px`;
       }
 
@@ -933,9 +1035,18 @@ async function start() {
     const snapshot = buildProjectSnapshotForEngine();
     await juce._request("project.sync", snapshot);
     await juce._request("schedule.clear", {});
-    const toPpq = Math.max(4, (pb.endStep || 64) / (state.stepsPerBar/4));
-    await juce._request("schedule.setWindow", { fromPpq: 0, toPpq });
+
+    const startStep = pb.rangeStartStep || 0;
+    const endStep = pb.rangeEndStep || (pb.endStep || 64);
+    await _pushEngineScheduleRange(juce, startStep, endStep);
+
+    const fromPpq = Math.max(0, startStep * _ppqPerStep());
+    const toPpq = Math.max(fromPpq + 4, endStep * _ppqPerStep());
+    await juce._request("schedule.setWindow", { fromPpq, toPpq });
     await juce._request("transport.seek", { ppq: 0 });
+
+    // prewarm guardrail: avoid first-block compression on first play
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await window.audioBackend.play(() => snapshot);
   }
 
