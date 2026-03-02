@@ -744,7 +744,7 @@ function tick() {
   const now = ctx.currentTime;
   const sp = secPerStep();
 
-  const safetyLead = 0.06;         // 60ms anti-stall UI
+  const safetyLead = 0.0;         // engine-authoritative start, no artificial offset
   const minT = now + safetyLead;
 
   // Jump nextStep to first step scheduled >= minT
@@ -840,7 +840,7 @@ function _autoScrollFollow() {
   // Piano Roll follow
   try {
     const stepW = cssNum("--roll-step-w");
-    const x = (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * stepW;
+    const x = _pianoTimeOriginX() + (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * stepW;
     const vw = gridScroll.clientWidth;
     const marginL = vw * 0.30, marginR = vw * 0.70;
     const left = gridScroll.scrollLeft;
@@ -853,7 +853,7 @@ function _autoScrollFollow() {
   // Playlist follow
   try {
     const stepW2 = cssNum("--plist-step-w");
-    const trackCol2 = cssNum("--track-col");
+    const trackCol2 = _playlistTimeOriginX();
     const x2 = trackCol2 + (pb.uiSongStep != null ? pb.uiSongStep : pb.uiStep) * stepW2;
     const vw2 = tracks.clientWidth;
     const marginL2 = vw2 * 0.30, marginR2 = vw2 * 0.70;
@@ -898,7 +898,7 @@ async function start() {
   state.playing = true;
   playBtn.textContent = "⏸ Pause";
 
-  pb.startT = ae.ctx.currentTime + 0.06;   // match safetyLead
+  pb.startT = ae.ctx.currentTime;   // strict start at pattern/song origin
   pb.nextStep = 0;
 
   const selected = _selectedRangeSteps();

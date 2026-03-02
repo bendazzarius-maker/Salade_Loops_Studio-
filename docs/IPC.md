@@ -11,6 +11,7 @@ Protocol envelope:
 - `engine.ping`
 - `engine.state.get`
 - `engine.config.get`
+- `engine.config.set` `{ sampleRate?, bufferSize?, numOut?, numIn? }`
 - `transport.play`
 - `transport.stop`
 - `transport.seek` `{ ppq?:number, samplePos?:number }`
@@ -32,10 +33,12 @@ Protocol envelope:
 
 ## Touski
 - `touski.program.load` `{ instId,samples:[{note,path}] }`
+- `touski.param.set` `{ instId, params }`
 - `touski.note.on` `{ instId,note,mixCh,vel|velocity }`
 - `touski.note.off` `{ instId,note,mixCh }`
 
 ## Mixer / FX / Meter
+- `mixer.init` `{ channels:number }`
 - `mixer.param.set` `{ scope:"master"|"ch", ch?, param, value }`
 - `fx.chain.set` `{ target:{scope:"master"|"ch",ch?}, chain:[{id,type,enabled}] }`
 - `fx.param.set` `{ target, id, params }`
