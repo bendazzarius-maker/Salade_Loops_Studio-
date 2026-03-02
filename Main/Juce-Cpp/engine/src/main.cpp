@@ -232,6 +232,7 @@ public:
       {
         std::scoped_lock lk(stateMutex);
         const double prerollSec = std::max(0.0, playPrerollMs.load() / 1000.0);
+        playArmCountdownSamples = (juce::int64)std::llround(prerollSec * std::max(1.0, sampleRate));
         playStartSamplePos = samplePos + (juce::int64)std::llround(prerollSec * std::max(1.0, sampleRate));
         playArmed.store(true);
       }
@@ -244,6 +245,7 @@ public:
     if (op == "transport.stop") {
       playing.store(false);
       playArmed.store(false);
+      playArmCountdownSamples = 0;
       panic();
       resOk(op, id, juce::var());
       emitEvt("transport.state", transportState());
@@ -257,6 +259,7 @@ public:
         ? (juce::int64)getDoubleProp(d, "samplePos", 0.0)
         : ppqToSamples(getDoubleProp(d, "ppq", 0.0));
       playArmed.store(false);
+      playArmCountdownSamples = 0;
       playing.store(false);
 
       // Reset scheduler cursor to the first event >= current ppq
@@ -359,6 +362,13 @@ public:
     for (int ch = 0; ch < outChs; ++ch)
       if (out[ch]) juce::FloatVectorOperations::clear(out[ch], n);
 
+    if (playArmed.load()) {
+      playArmCountdownSamples -= n;
+      if (playArmCountdownSamples <= 0) {
+        playArmCountdownSamples = 0;
+        playArmed.store(false);
+        playing.store(true);
+      }
     if (playArmed.load() && samplePos >= playStartSamplePos) {
       playArmed.store(false);
       playing.store(true);
@@ -525,8 +535,8 @@ public:
       meterRmsAccR += R * R;
     }
 
-    // Advance transport
-    samplePos += n;
+    // Advance transport only while actually playing
+    if (playing.load()) samplePos += n;
 
     // Finalize RMS per block
     meterRmsL = (float)std::sqrt(meterRmsAccL / (double)std::max(1, n));
@@ -574,6 +584,7 @@ private:
   float crossfader = 0.0f;
 
   juce::int64 samplePos = 0;
+  juce::int64 playArmCountdownSamples = 0;
   juce::int64 playStartSamplePos = 0;
 
   // ------------------------------ Voices & assets ------------------------------
@@ -1262,6 +1273,7 @@ private:
 
     auto appendSample = [&](int note, const juce::String& rawPath, const juce::File& baseDir) {
       juce::File file(rawPath);
+      if (!file.isAbsolutePath()) file = baseDir.getChildFile(rawPath);
       if (!juce::File::isAbsolutePath(rawPath)) file = baseDir.getChildFile(rawPath);
       auto sd = loadSampleFromPath(file.getFullPathName());
       if (sd) mapping[note] = sd;

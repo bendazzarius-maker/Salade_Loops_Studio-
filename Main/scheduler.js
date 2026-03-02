@@ -520,6 +520,7 @@ function _collectEngineEventsForRange(startStep, endStep){
                 velocity: vel,
                 gain: Number(effectiveParams.gain ?? 1),
                 pan: Number(effectiveParams.pan ?? 0),
+                mode: String((effectiveParams.pitchMode === "stretch") ? "fit_duration" : "fit_duration_vinyl"),
                 mode: String((effectiveParams.pitchMode === "fixed") ? "vinyl" : "fit_duration_vinyl"),
                 patternSteps: resolvedPatternSteps,
                 patternBeats: resolvedPatternSteps / 4,
@@ -554,11 +555,41 @@ async function _pushEngineScheduleRange(juce, startStep, endStep){
   console.debug("[SLS][schedule.window]", { startStep, endStep, events: events.length });
   if (!events.length) return;
 
+  await _preloadEngineAssets(events, juce);
+
   const chunks = 128;
   for (let i = 0; i < events.length; i += chunks) {
     const batch = events.slice(i, i + chunks);
     const res = await juce._request("schedule.push", { events: batch });
     console.debug("[SLS][schedule.push]", { batch: batch.length, ok: !!res?.ok });
+  }
+}
+
+
+async function _preloadEngineAssets(events, juce){
+  const samplePathToId = new Map();
+  const touskiLoads = new Set();
+
+  for (const ev of events) {
+    if (ev.type === "sampler.trigger" && ev.samplePath) {
+      const pth = String(ev.samplePath);
+      if (!samplePathToId.has(pth)) {
+        const sampleId = await juce.ensureSampleLoaded(pth);
+        samplePathToId.set(pth, sampleId);
+      }
+      ev.sampleId = samplePathToId.get(pth);
+      delete ev.samplePath;
+    }
+
+    if (ev.type === "touski.note.on" && ev.programPath) {
+      const key = `${ev.instId}::${ev.programPath}`;
+      if (!touskiLoads.has(key)) {
+        const res = await juce.touskiProgramLoad({ instId: ev.instId, programPath: ev.programPath });
+        if (!res?.ok) console.warn("[SLS][touski.preload.fail]", { instId: ev.instId, programPath: ev.programPath, res });
+        touskiLoads.add(key);
+      }
+      delete ev.programPath;
+    }
   }
 }
 

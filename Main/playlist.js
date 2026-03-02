@@ -36,6 +36,12 @@ function _isLfoPattern(p){
   const tp = (p?.type || p?.kind || p?.patternType || "").toString().toLowerCase();
   return tp === "lfo_curve" || tp === "lfo_preset" || tp === "lfo";
 }
+function _playlistTimeOriginXForRender(){
+  const css = getComputedStyle(document.documentElement).getPropertyValue("--track-col");
+  const v = Number.parseFloat(css || "0");
+  return Number.isFinite(v) ? Math.max(0, v) : 0;
+}
+
 function renderPlaylist(){
   plistInfo.textContent = `Bars: ${project.playlist.bars} • Tracks: ${project.playlist.tracks.length}`;
 
@@ -44,6 +50,7 @@ function renderPlaylist(){
   if(_ph){
     // Make sure the playhead never blocks clicks on clips
     _ph.style.pointerEvents = "none";
+    _ph.style.left = `${_playlistTimeOriginXForRender()}px`;
     tracks.appendChild(_ph);
   }
 
