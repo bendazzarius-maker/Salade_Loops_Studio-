@@ -1262,7 +1262,7 @@ private:
 
     auto appendSample = [&](int note, const juce::String& rawPath, const juce::File& baseDir) {
       juce::File file(rawPath);
-      if (!file.isAbsolute()) file = baseDir.getChildFile(rawPath);
+      if (!juce::File::isAbsolutePath(rawPath)) file = baseDir.getChildFile(rawPath);
       auto sd = loadSampleFromPath(file.getFullPathName());
       if (sd) mapping[note] = sd;
     };
