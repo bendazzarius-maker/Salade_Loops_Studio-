@@ -229,7 +229,13 @@ public:
 
     // Transport
     if (op == "transport.play") {
-      playing.store(true);
+      {
+        std::scoped_lock lk(stateMutex);
+        const double prerollSec = std::max(0.0, playPrerollMs.load() / 1000.0);
+        playStartSamplePos = samplePos + (juce::int64)std::llround(prerollSec * std::max(1.0, sampleRate));
+        playArmed.store(true);
+      }
+      playing.store(false);
       resOk(op, id, juce::var());
       emitEvt("transport.state", transportState());
       return;
@@ -237,6 +243,7 @@ public:
 
     if (op == "transport.stop") {
       playing.store(false);
+      playArmed.store(false);
       panic();
       resOk(op, id, juce::var());
       emitEvt("transport.state", transportState());
@@ -249,6 +256,8 @@ public:
       samplePos = hasSamplePos
         ? (juce::int64)getDoubleProp(d, "samplePos", 0.0)
         : ppqToSamples(getDoubleProp(d, "ppq", 0.0));
+      playArmed.store(false);
+      playing.store(false);
 
       // Reset scheduler cursor to the first event >= current ppq
       schedulerCursor = 0;
@@ -349,6 +358,11 @@ public:
 
     for (int ch = 0; ch < outChs; ++ch)
       if (out[ch]) juce::FloatVectorOperations::clear(out[ch], n);
+
+    if (playArmed.load() && samplePos >= playStartSamplePos) {
+      playArmed.store(false);
+      playing.store(true);
+    }
 
     // Prepare block events (sample accurate offsets)
     if (playing.load())
@@ -542,7 +556,9 @@ private:
 
   std::atomic<bool> running { true };
   std::atomic<bool> playing { false };
+  std::atomic<bool> playArmed { false };
   std::atomic<double> bpm { 120.0 };
+  std::atomic<double> playPrerollMs { 120.0 };
   std::thread stateThread;
 
   // ------------------------------ Engine state ------------------------------
@@ -558,6 +574,7 @@ private:
   float crossfader = 0.0f;
 
   juce::int64 samplePos = 0;
+  juce::int64 playStartSamplePos = 0;
 
   // ------------------------------ Voices & assets ------------------------------
 
@@ -592,6 +609,7 @@ private:
   double scheduleWindowFromPpq = 0.0;
   double scheduleWindowToPpq = 0.0;
   juce::var lastProjectSync;
+  bool schedulerDebug = false;
 
   std::vector<BlockEvent> blockEvents;
 
@@ -883,6 +901,8 @@ private:
     bufferSize = std::max(64, getIntProp(d, "bufferSize", bufferSize));
     numOut     = std::max(1, getIntProp(d, "numOut", numOut));
     numIn      = std::max(0, getIntProp(d, "numIn", numIn));
+    playPrerollMs.store(std::max(0.0, getDoubleProp(d, "playPrerollMs", playPrerollMs.load())));
+    schedulerDebug = getBoolProp(d, "schedulerDebug", schedulerDebug);
 
     shutdownAudio();
     setupAudio();
@@ -919,6 +939,7 @@ private:
     std::scoped_lock lk(stateMutex);
     scheduler.clear();
     schedulerCursor = 0;
+    if (schedulerDebug) juce::Logger::writeToLog("[SLS][engine.schedule.clear]");
     resOk(op, id, juce::var());
   }
 
@@ -926,6 +947,9 @@ private:
     std::scoped_lock lk(stateMutex);
     scheduleWindowFromPpq = getDoubleProp(d, "fromPpq", 0.0);
     scheduleWindowToPpq   = getDoubleProp(d, "toPpq",   0.0);
+    if (schedulerDebug) {
+      juce::Logger::writeToLog("[SLS][engine.schedule.setWindow] from=" + juce::String(scheduleWindowFromPpq) + " to=" + juce::String(scheduleWindowToPpq));
+    }
     resOk(op, id, juce::var());
   }
 
@@ -955,6 +979,9 @@ private:
     std::sort(scheduler.begin(), scheduler.end(),
               [](const auto& a, const auto& b) { return a.atPpq < b.atPpq; });
 
+    if (schedulerDebug) {
+      juce::Logger::writeToLog("[SLS][engine.schedule.push] added=" + juce::String((int)d->getProperty("events").getArray()->size()) + " total=" + juce::String((int)scheduler.size()) + " cursor=" + juce::String((int)schedulerCursor));
+    }
     resOk(op, id, juce::var());
   }
 
@@ -1137,7 +1164,19 @@ private:
     //  - velocity/gain/pan/mixCh
     //  - durationSec or patternSteps/patternBeats + bpm
 
-    auto it = sampleCache.find(getStringProp(d, "sampleId", ""));
+    juce::String sampleId = getStringProp(d, "sampleId", "");
+    auto it = sampleCache.find(sampleId);
+    if (it == sampleCache.end()) {
+      const auto samplePath = getStringProp(d, "samplePath", "");
+      if (samplePath.isNotEmpty()) {
+        auto loaded = loadSampleFromPath(samplePath);
+        if (loaded) {
+          if (sampleId.isEmpty()) sampleId = "adhoc:" + samplePath;
+          sampleCache[sampleId] = loaded;
+          it = sampleCache.find(sampleId);
+        }
+      }
+    }
     if (it == sampleCache.end()) return false;
 
     const auto sd = it->second;
@@ -1221,35 +1260,57 @@ private:
     const auto instId = getStringProp(d, "instId", "touski");
     std::unordered_map<int, std::shared_ptr<SampleData>> mapping;
 
-    // Mode A: samples[] provided directly
+    auto appendSample = [&](int note, const juce::String& rawPath, const juce::File& baseDir) {
+      juce::File file(rawPath);
+      if (!file.isAbsolute()) file = baseDir.getChildFile(rawPath);
+      auto sd = loadSampleFromPath(file.getFullPathName());
+      if (sd) mapping[note] = sd;
+    };
+
     if (d->hasProperty("samples") && d->getProperty("samples").isArray()) {
       for (const auto& item : *d->getProperty("samples").getArray()) {
         auto* o = item.getDynamicObject();
         if (!o) continue;
-        const int note = getIntProp(o, "note", 60);
-        const auto path = getStringProp(o, "path", "");
-        auto sd = loadSampleFromPath(path);
-        if (sd) mapping[note] = sd;
+        const int note = getIntProp(o, "note", getIntProp(o, "rootMidi", 60));
+        const auto path = getStringProp(o, "path", getStringProp(o, "samplePath", ""));
+        if (path.isNotEmpty()) appendSample(note, path, juce::File());
       }
     }
 
-    // Mode B: programPath JSON
     if (mapping.empty() && d->hasProperty("programPath")) {
       const auto programPath = getStringProp(d, "programPath", "");
       juce::File f(programPath);
       if (f.existsAsFile()) {
-        const auto txt = f.loadFileAsString();
-        juce::var v = juce::JSON::parse(txt);
+        const juce::File baseDir = f.getParentDirectory();
+        juce::var v = juce::JSON::parse(f.loadFileAsString());
         if (auto* root = v.getDynamicObject()) {
-          const auto zonesVar = root->getProperty("zones");
-          if (zonesVar.isArray()) {
-            for (const auto& z : *zonesVar.getArray()) {
-              auto* zo = z.getDynamicObject();
-              if (!zo) continue;
-              const int note = getIntProp(zo, "note", getIntProp(zo, "rootMidi", 60));
-              const auto path = getStringProp(zo, "path", getStringProp(zo, "samplePath", ""));
-              auto sd = loadSampleFromPath(path);
-              if (sd) mapping[note] = sd;
+          auto readMappingArray = [&](const juce::String& key) {
+            auto vv = root->getProperty(key);
+            if (!vv.isArray()) return;
+            for (const auto& item : *vv.getArray()) {
+              auto* o = item.getDynamicObject();
+              if (!o) continue;
+              const int note = getIntProp(o, "note", getIntProp(o, "rootMidi", 60));
+              juce::String path = getStringProp(o, "path", "");
+              if (path.isEmpty() && o->hasProperty("sample")) {
+                if (auto* so = o->getProperty("sample").getDynamicObject()) {
+                  path = getStringProp(so, "path", getStringProp(so, "relativePath", ""));
+                }
+              }
+              if (path.isEmpty()) path = getStringProp(o, "relativePath", "");
+              if (path.isNotEmpty()) appendSample(note, path, baseDir);
+            }
+          };
+
+          readMappingArray("zones");
+          readMappingArray("samples");
+          readMappingArray("mapping");
+
+          if (mapping.empty() && root->hasProperty("sample")) {
+            int rootMidi = getIntProp(root, "rootMidi", 60);
+            if (auto* so = root->getProperty("sample").getDynamicObject()) {
+              const auto path = getStringProp(so, "path", getStringProp(so, "relativePath", ""));
+              if (path.isNotEmpty()) appendSample(rootMidi, path, baseDir);
             }
           }
         }
@@ -1528,12 +1589,14 @@ private:
     d->setProperty("numOut", numOut);
     d->setProperty("numIn", numIn);
     d->setProperty("channels", channelCount);
+    d->setProperty("playPrerollMs", playPrerollMs.load());
+    d->setProperty("schedulerDebug", schedulerDebug);
     return juce::var(d.get());
   }
 
   juce::var transportState() {
     juce::DynamicObject::Ptr d = new juce::DynamicObject();
-    d->setProperty("playing", playing.load());
+    d->setProperty("playing", playing.load() || playArmed.load());
     d->setProperty("bpm", bpm.load());
     d->setProperty("ppq", samplesToPpq(samplePos));
     d->setProperty("samplePos", (int)samplePos);

@@ -16,6 +16,17 @@
     return `sp_${(h >>> 0).toString(16)}`;
   }
 
+  function normalizePath(input) {
+    const raw = String(input || "").trim();
+    if (!raw) return "";
+    let cleaned = raw;
+    if (cleaned.startsWith("file://")) {
+      cleaned = cleaned.replace(/^file:\/\//, "");
+    }
+    try { cleaned = decodeURI(cleaned); } catch (_) {}
+    return cleaned;
+  }
+
   const DEV_ENABLE_WEBAUDIO_FALLBACK = false;
 
   class AudioBackendWebAudio {
@@ -49,6 +60,7 @@
       this.transportState = { playing: false, bpm: 120, ppq: 0, samplePos: 0 };
       this._unsubscribeEvt = null;
       this._loadedSampleIds = new Set();
+      this._loadedTouskiPrograms = new Map();
     }
 
     _buildReq(op, data = {}) {
@@ -68,6 +80,7 @@
       if (!msg || msg.type !== "evt") return;
       if (msg.op === "transport.state") {
         this.transportState = { ...this.transportState, ...(msg.data || {}) };
+        console.debug("[SLS][engine.transport.state]", this.transportState);
         return;
       }
       if (msg.op === "meter.level") return;
@@ -105,7 +118,7 @@
     async sendProjectSync(snapshot) { return this._request("project.sync", snapshot || {}); }
 
     async ensureSampleLoaded(samplePath) {
-      const path = String(samplePath || "").trim();
+      const path = normalizePath(samplePath);
       if (!path) throw new Error("Missing samplePath");
       const sampleId = hashSamplePath(path);
       if (this._loadedSampleIds.has(sampleId)) return sampleId;
@@ -113,6 +126,38 @@
       if (!res?.ok) throw new Error(res?.err?.message || "sampler.load failed");
       this._loadedSampleIds.add(sampleId);
       return sampleId;
+    }
+
+    async touskiProgramLoad({ instId = "touski", programPath = "", samples = null } = {}) {
+      const safeInstId = String(instId || "touski");
+      const safeProgramPath = normalizePath(programPath);
+      if (safeProgramPath && this._loadedTouskiPrograms.get(safeInstId) === safeProgramPath) {
+        return { ok: true, data: { cached: true } };
+      }
+      const payload = { instId: safeInstId };
+      if (Array.isArray(samples) && samples.length) payload.samples = samples;
+      if (safeProgramPath) payload.programPath = safeProgramPath;
+      const res = await this._request("touski.program.load", payload);
+      if (res?.ok && safeProgramPath) this._loadedTouskiPrograms.set(safeInstId, safeProgramPath);
+      if (!res?.ok) this._loadedTouskiPrograms.delete(safeInstId);
+      return res;
+    }
+
+    async touskiNoteOn({ instId = "touski", note = 60, velocity = 0.85, mixCh = 1 }) {
+      return this._request("touski.note.on", {
+        instId: String(instId || "touski"),
+        note: Math.floor(Number(note || 60)),
+        vel: Number.isFinite(+velocity) ? +velocity : 0.85,
+        mixCh: Math.floor(Number(mixCh || 1)),
+      });
+    }
+
+    async touskiNoteOff({ instId = "touski", note = 60, mixCh = 1 }) {
+      return this._request("touski.note.off", {
+        instId: String(instId || "touski"),
+        note: Math.floor(Number(note || 60)),
+        mixCh: Math.floor(Number(mixCh || 1)),
+      });
     }
 
     async triggerSample(payload = {}) {
@@ -140,6 +185,20 @@
     }
 
     async triggerNote({ note, velocity = 0.85, trackId = "preview", durationSec = 0.25, instId = "global", instType = "piano", params = {}, mixCh = 1 }) {
+      const lowerType = String(instType || "").toLowerCase();
+      if (lowerType.includes("touski") || lowerType.includes("sample touski")) {
+        const programPath = normalizePath(params?.programPath || params?.path || params?.file || "");
+        if (programPath) {
+          const loadRes = await this.touskiProgramLoad({ instId: String(instId || "touski"), programPath });
+          if (!loadRes?.ok) return loadRes;
+        }
+        const startReq = this.touskiNoteOn({ instId, note, velocity, mixCh });
+        setTimeout(() => {
+          this.touskiNoteOff({ instId, note, mixCh }).catch(() => {});
+        }, Math.max(20, Math.floor(durationSec * 1000)));
+        return startReq;
+      }
+
       const channel = 0;
       const safeInstId = String(instId || "global");
       const safeType = String(instType || "piano");
@@ -202,8 +261,7 @@
 
     async setBpm(bpm) {
       if (this.active === "juce") {
-        const res = await this.backends.juce.setBpm(bpm);
-        if (!res?.ok) await this.trySwitch("webaudio");
+        await this.backends.juce.setBpm(bpm);
       }
     }
 
@@ -212,35 +270,26 @@
       if (typeof projectSnapshotBuilder === "function") {
         const snapshot = projectSnapshotBuilder();
         const syncRes = await this.backends.juce.sendProjectSync(snapshot);
-        if (!syncRes?.ok) {
-          await this.trySwitch("webaudio");
-          return;
-        }
+        if (!syncRes?.ok) return;
       }
-      const res = await this.backends.juce.play();
-      if (!res?.ok) await this.trySwitch("webaudio");
+      await this.backends.juce.play();
     }
 
     async stop() {
       if (this.active !== "juce") return;
-      const res = await this.backends.juce.stop();
-      if (!res?.ok) await this.trySwitch("webaudio");
+      await this.backends.juce.stop();
     }
 
     async triggerNote(payload) {
       if (this.active !== "juce") return;
       const res = await this.backends.juce.triggerNote(payload);
-      if (!res?.ok) {
-        if (DEV_ENABLE_WEBAUDIO_FALLBACK) await this.trySwitch("webaudio");
-      }
+      if (!res?.ok) return;
     }
 
     async triggerSample(payload) {
       if (this.active !== "juce") return;
       const res = await this.backends.juce.triggerSample(payload);
-      if (!res?.ok) {
-        if (DEV_ENABLE_WEBAUDIO_FALLBACK) await this.trySwitch("webaudio");
-      }
+      if (!res?.ok) return;
     }
   }
 
