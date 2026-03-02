@@ -521,6 +521,7 @@ function _collectEngineEventsForRange(startStep, endStep){
                 gain: Number(effectiveParams.gain ?? 1),
                 pan: Number(effectiveParams.pan ?? 0),
                 mode: String((effectiveParams.pitchMode === "stretch") ? "fit_duration" : "fit_duration_vinyl"),
+                mode: String((effectiveParams.pitchMode === "fixed") ? "vinyl" : "fit_duration_vinyl"),
                 patternSteps: resolvedPatternSteps,
                 patternBeats: resolvedPatternSteps / 4,
                 bpm: Number(state.bpm || 120),
