@@ -18,6 +18,7 @@
 
 #include "FxBase.h"
 #include "FxDelay.h"
+#include "FxGrossBeat.h"
 
 #if defined(_WIN32) || defined(_WIN64)
   #include <windows.h>
@@ -907,6 +908,15 @@ void refreshMasterEq() {
       }
       return;
     }
+
+    if (type.contains("gross")) {
+      if (!u.dsp) {
+        auto gb = std::make_unique<FxGrossBeat>();
+        gb->prepare(sampleRate, bufferSize, 2);
+        u.dsp = std::move(gb);
+      }
+      return;
+    }
   }
 
   void applyFxParamsToDsp(FxUnit& u) {
@@ -924,8 +934,24 @@ void refreshMasterEq() {
 
       if (v.isString()) {
         if (name == "division" || name == "rate") {
-          if (auto* dly = dynamic_cast<FxDelay*>(u.dsp.get()))
-            dly->setDivision(v.toString().toStdString());
+          if (auto* dly = dynamic_cast<FxDelay*>(u.dsp.get())) dly->setDivision(v.toString().toStdString());
+          if (auto* gb = dynamic_cast<FxGrossBeat*>(u.dsp.get())) gb->setDivision(v.toString().toStdString());
+        }
+      }
+
+      if (v.isArray()) {
+        if (name == "pattern") {
+          if (auto* gb = dynamic_cast<FxGrossBeat*>(u.dsp.get())) {
+            std::vector<float> pat;
+            if (auto* arr = v.getArray()) {
+              pat.reserve((size_t)arr->size());
+              for (const auto& pv : *arr) {
+                if (pv.isDouble() || pv.isInt() || pv.isBool())
+                  pat.push_back((float)(double)pv);
+              }
+            }
+            gb->setPattern(pat);
+          }
         }
       }
     }
@@ -1031,7 +1057,7 @@ void refreshMasterEq() {
         continue;
       }
 
-      if (type.contains("delay")) {
+      if (type.contains("delay") || type.contains("gross")) {
         ensureFxDsp(u);
         if (!u.dsp) continue;
 
