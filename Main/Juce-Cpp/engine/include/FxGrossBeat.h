@@ -5,6 +5,9 @@
 
 #pragma once
 #include "FxBase.h"
+#include <atomic>
+#include <vector>
+#include <juce_audio_basics/juce_audio_basics.h>
 
 /*
   FxGrossBeat (JUCE)
@@ -34,9 +37,33 @@ public:
   void process(float** chans, int numChannels, int numFrames, double bpm, int64_t samplePos, bool playing) override;
 
 private:
+  static int parseDivision(const std::string& div);
+  static float hpAlpha25Hz(float sampleRate);
+  static float computeGateTarget(float g01, float depth, float curvePow, float epsilon);
+
+public:
+  void setDivision(const std::string& div);
+  void setPattern(const std::vector<float>& values);
+
+private:
   double mSampleRate = 44100.0;
   int mMaxBlock = 512;
   int mNumCh = 2;
 
-  // TODO: store params + dsp objects (DelayLine, LFO phase, filters, etc.)
+  std::atomic<float> pWet { 1.0f };
+  std::atomic<float> pSmoothSec { 0.03f };
+  std::atomic<float> pDepth { 1.0f };
+  std::atomic<float> pCurvePow { 1.7f };
+  std::atomic<float> pEpsilon { 0.01f };
+  std::atomic<int> pDivision { 16 };
+
+  std::vector<float> mPattern;
+
+  juce::SmoothedValue<float> wetSmoothed;
+  float mGateSmoothed = 1.0f;
+
+  float mPrevInL = 0.0f;
+  float mPrevInR = 0.0f;
+  float mPrevOutL = 0.0f;
+  float mPrevOutR = 0.0f;
 };
