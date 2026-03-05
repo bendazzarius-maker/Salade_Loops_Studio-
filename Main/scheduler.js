@@ -18,6 +18,14 @@ const pb = {
   forceSongFromSelection: false
 };
 
+// Sample Pattern convention (audio steps): 16 steps = 1 beat
+const STEPS_PER_BEAT_SP = 16;
+
+function samplePatternStepsToSeconds(steps, bpm) {
+  return (60 / Math.max(20, Number(bpm || 120))) * (Number(steps || 0) / STEPS_PER_BEAT_SP);
+}
+
+
 function _selectedRangeSteps(){
   try{
     const pl = (typeof getTimeRulerSelectionSteps === "function") ? getTimeRulerSelectionSteps("playlist") : null;
@@ -507,7 +515,7 @@ function _collectEngineEventsForRange(startStep, endStep){
             if (channelPreset === "Sample Paterne") {
               const samplePath = effectiveParams.samplePath || effectiveParams.path || effectiveParams.file || (effectiveParams.sample && effectiveParams.sample.path) || effectiveParams.url;
               if (!samplePath) continue;
-              const resolvedPatternSteps = Math.max(1, Number(effectiveParams.patternSteps || (Number(effectiveParams.patternBeats || 0) * 4) || patSteps || 16));
+              const resolvedPatternSteps = Math.max(1, Math.floor(Number(effectiveParams.patternSteps || (Number(effectiveParams.patternBeats || 0) * 16) || patSteps || 16) || 0));
               events.push({
                 atPpq,
                 type: "sampler.trigger",
@@ -520,10 +528,9 @@ function _collectEngineEventsForRange(startStep, endStep){
                 velocity: vel,
                 gain: Number(effectiveParams.gain ?? 1),
                 pan: Number(effectiveParams.pan ?? 0),
-                mode: String((effectiveParams.pitchMode === "stretch") ? "fit_duration" : "fit_duration_vinyl"),
-                mode: String((effectiveParams.pitchMode === "fixed") ? "vinyl" : "fit_duration_vinyl"),
+                mode: String((effectiveParams.pitchMode === "fixed") ? "vinyl" : (effectiveParams.pitchMode === "stretch") ? "fit_duration" : "fit_duration_vinyl"),
                 patternSteps: resolvedPatternSteps,
-                patternBeats: resolvedPatternSteps / 4,
+                patternBeats: resolvedPatternSteps / STEPS_PER_BEAT_SP,
                 bpm: Number(state.bpm || 120),
               });
               continue;
@@ -691,8 +698,8 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
       return;
     }
 
-    const resolvedPatternSteps = Math.max(1, Number(p.patternSteps || (Number(p.patternBeats || 0) * 4) || patternSteps || 16));
-    const stretchDurationSec = (60 / Math.max(20, Number(state.bpm || 120))) * (resolvedPatternSteps / 4);
+    const resolvedPatternSteps = Math.max(1, Math.floor(Number(p.patternSteps || (Number(p.patternBeats || 0) * 16) || patternSteps || 16) || 0));
+    const stretchDurationSec = samplePatternStepsToSeconds(resolvedPatternSteps, state.bpm);
 
     audioTriggerSample({
       trigger: () => inst.trigger(t, n.midi, vv, stretchDurationSec),
@@ -707,7 +714,7 @@ function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effect
       velocity: vv,
       durationSec: stretchDurationSec,
       patternSteps: resolvedPatternSteps,
-      patternBeats: resolvedPatternSteps / 4,
+      patternBeats: resolvedPatternSteps / STEPS_PER_BEAT_SP,
       bpm: Number(state.bpm || 120),
       mixCh: Number(ch?.mixOut || 1),
     });

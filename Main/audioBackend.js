@@ -27,6 +27,33 @@
     return cleaned;
   }
 
+
+  function stableStringify(obj) {
+    const seen = new WeakSet();
+    const sorter = (key, value) => {
+      if (value && typeof value === "object") {
+        if (seen.has(value)) return "[Circular]";
+        seen.add(value);
+        if (Array.isArray(value)) return value;
+        const out = {};
+        Object.keys(value).sort().forEach((k) => { out[k] = value[k]; });
+        return out;
+      }
+      return value;
+    };
+    return JSON.stringify(obj, sorter);
+  }
+
+  function hashObject(obj) {
+    const s = stableStringify(obj);
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i += 1) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return "h_" + (h >>> 0).toString(16);
+  }
+
   const DEV_ENABLE_WEBAUDIO_FALLBACK = false;
 
   class AudioBackendWebAudio {
@@ -61,6 +88,8 @@
       this._unsubscribeEvt = null;
       this._loadedSampleIds = new Set();
       this._loadedTouskiPrograms = new Map();
+      this._instCreated = new Set();
+      this._instParamHash = new Map();
     }
 
     _buildReq(op, data = {}) {
@@ -202,10 +231,23 @@
       const channel = 0;
       const safeInstId = String(instId || "global");
       const safeType = String(instType || "piano");
-      await this._request("inst.create", { instId: safeInstId, type: safeType, ch: 0 });
+
+      // IPC spam reduction:
+      // - inst.create only once per instId
+      // - inst.param.set only when params/spec changed
+      if (!this._instCreated.has(safeInstId)) {
+        await this._request("inst.create", { instId: safeInstId, type: safeType, ch: 0 });
+        this._instCreated.add(safeInstId);
+      }
+
       const safeParams = (params && typeof params === "object") ? params : {};
       const juceSpec = window.JuceInstructionLibrary?.buildInstrumentSpec?.({ name: safeType, params: safeParams, instId: safeInstId, trackId }) || null;
-      await this._request("inst.param.set", { instId: safeInstId, type: safeType, params: safeParams, juceSpec });
+
+      const paramKey = hashObject({ type: safeType, params: safeParams, juceSpec });
+      if (this._instParamHash.get(safeInstId) !== paramKey) {
+        await this._request("inst.param.set", { instId: safeInstId, type: safeType, params: safeParams, juceSpec });
+        this._instParamHash.set(safeInstId, paramKey);
+      }
       const startReq = this._request("note.on", {
         trackId, channel, instId: safeInstId, mixCh: Number(mixCh || 1), note, velocity, when: "now"
       });

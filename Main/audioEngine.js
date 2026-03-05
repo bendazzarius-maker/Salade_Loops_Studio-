@@ -37,7 +37,7 @@ class AudioEngine{
     const req = (op, data) => window.audioBackend.backends.juce._request(op, data).catch(()=>{});
     const m = model.master || {};
     const mixerSpec = window.JuceInstructionLibrary?.buildMixerSpec?.(model) || null;
-    req("mixer.master.set", { gain: Number(m.gain ?? 0.85), limiterEnabled: true, juceSpec: mixerSpec });
+    req("mixer.master.set", { gain: Number(m.gain ?? 0.85), pan: Number(m.pan ?? 0), cross: Number(m.cross ?? 0.5), eqLow: Number(m.eqLow ?? 0), eqMid: Number(m.eqMid ?? 0), eqHigh: Number(m.eqHigh ?? 0), limiterEnabled: true, juceSpec: mixerSpec });
 
     const channels = Array.isArray(model.channels) ? model.channels : [];
     channels.forEach((ch, i) => {
@@ -47,6 +47,10 @@ class AudioEngine{
         pan: Number(ch.pan ?? 0),
         mute: !!ch.mute,
         solo: !!ch.solo,
+        eqLow: Number(ch.eqLow ?? 0),
+        eqMid: Number(ch.eqMid ?? 0),
+        eqHigh: Number(ch.eqHigh ?? 0),
+        xAssign: ch.xAssign ?? "OFF",
         juceSpec: mixerSpec,
       });
       const fxChain = Array.isArray(ch.fx) ? ch.fx : [];
@@ -71,7 +75,11 @@ class AudioEngine{
 
   getMixerInput(){ return null; }
   addMixerChannel(){ return 16; }
-  updateCrossfader(){ }
+  updateCrossfader(value){
+    // value: 0..1 (Deck A..Deck B)
+    if (!window.audioBackend?.backends?.juce) return;
+    window.audioBackend.backends.juce._request("mixer.param.set", { scope: "master", param: "cross", value: Number(value||0) }).catch(()=>{});
+  }
 
   _frameToSnapshot(frame){
     if (!frame) return { norm: 0, db: -60 };

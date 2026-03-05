@@ -3,6 +3,11 @@
   const host = document.getElementById("samplePatternEditor");
   if (!host) return;
 
+
+  // Sample Pattern convention (audio steps): 16 steps = 1 beat
+  const STEPS_PER_BEAT_SP = 16;
+  const BEATS_PER_BAR_SP = 4;
+
   const startEl = document.getElementById("samplePatternStart");
   const endEl = document.getElementById("samplePatternEnd");
   const beatsEl = document.getElementById("samplePatternBeats");
@@ -430,7 +435,7 @@
     startEl.value = String(editor.posStart);
     endEl.value = String(editor.posEnd);
     rootMidiEl.value = String(Math.floor(Number(program?.playback?.rootMidi ?? 60)));
-    const loadedPatternSteps = Math.max(1, Math.floor(Number(program?.playback?.patternSteps ?? (Number(program?.playback?.patternBeats ?? 4) * 4))));
+    const loadedPatternSteps = Math.max(1, Math.floor(Number(program?.playback?.patternSteps ?? (Number(program?.playback?.patternBeats ?? 4) * STEPS_PER_BEAT_SP))));
     beatsEl.value = String(loadedPatternSteps);
     pitchModeEl.value = String(program?.playback?.pitchMode || "chromatic");
     gainEl.value = String(Number(program?.playback?.gain ?? 1));
@@ -454,7 +459,8 @@
     }
 
     const patternSteps = Math.max(1, Math.min(128, Math.floor(+beatsEl.value || 16)));
-    const bars = Math.max(0.25, patternSteps / Math.max(1, Number(state?.stepsPerBar || 16)));
+    const beats = patternSteps / STEPS_PER_BEAT_SP;
+    const bars  = Math.max(0.25, beats / BEATS_PER_BAR_SP);
     const rootMidi = Math.max(24, Math.min(96, Math.floor(+rootMidiEl.value || 60)));
     const mixOut = Math.max(1, Math.floor(+mixOutEl.value || 1));
 
@@ -483,7 +489,7 @@
       startNorm: clamp01(+startEl.value || editor.posStart),
       endNorm: clamp01(+endEl.value || editor.posEnd),
       patternSteps,
-      patternBeats: patternSteps / 4,
+      patternBeats: patternSteps / STEPS_PER_BEAT_SP,
       rootMidi,
       pitchMode: pitchModeEl.value || "chromatic",
       gain: Math.max(0, Math.min(1.6, +gainEl.value || 1)),

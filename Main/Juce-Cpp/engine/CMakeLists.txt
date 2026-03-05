@@ -13,7 +13,25 @@ juce_add_console_app(sls-audio-engine
 
 target_sources(sls-audio-engine PRIVATE
     src/main.cpp
+    src/MixerEngine.cpp
+    src/FxChain.cpp
+    src/FxFactory.cpp
+    src/FxDelay.cpp
+    src/FxChorus.cpp
+    src/FxFlanger.cpp
+    src/FxCompressor.cpp
+    src/FxGrossBeat.cpp
+    src/FxReverb.cpp
+    src/LfoPresetEngine.cpp
+    src/LfoCurveEngine.cpp
+    src/ModMatrix.cpp
 )
+
+# Engine module headers
+target_include_directories(sls-audio-engine PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/include
+)
+
 
 # Avoid webkit/curl probes & deps
 target_compile_definitions(sls-audio-engine PRIVATE

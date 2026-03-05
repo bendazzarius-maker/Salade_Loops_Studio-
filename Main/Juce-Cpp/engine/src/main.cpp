@@ -16,6 +16,9 @@
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include "FxBase.h"
+#include "FxDelay.h"
+
 #if defined(_WIN32) || defined(_WIN64)
   #include <windows.h>
   #define SLS_GET_PID() ((int)::GetCurrentProcessId())
@@ -102,6 +105,8 @@ struct MixerChannelState {
   float eqHigh = 0.0f;
   bool mute = false;
   bool solo = false;
+
+  int xAssign = 2; // 0=A, 1=B, 2=OFF
 };
 
 struct FxUnit {
@@ -111,12 +116,17 @@ struct FxUnit {
   bool bypass = false;
   juce::NamedValueSet params;
   juce::Reverb reverb;
+  std::unique_ptr<FxBase> dsp; // per-instance DSP (e.g., FxDelay)
 
   float getParam(const juce::String& name, float def) const {
     const auto v = params.getWithDefault(name, def);
     if (v.isInt() || v.isDouble()) return (float)(double)v;
     return def;
   }
+  int delayIdx = 0;
+  float dampStateL = 0.0f;
+  float dampStateR = 0.0f;
+
 };
 
 struct ChannelDSP {
@@ -147,6 +157,36 @@ struct BlockEvent {
 };
 
 // ------------------------------ Helpers ------------------------------
+
+static int _parseDivision(const juce::String& div) {
+  const auto s = div.trim();
+  int denom = 0;
+  // quick parse for "1:8"
+  const int colon = s.indexOfChar(':');
+  if (colon >= 0) denom = s.substring(colon + 1).trim().getIntValue();
+  if (denom == 0) denom = 8;
+  switch (denom) { case 2: case 3: case 4: case 6: case 8: case 16: return denom; default: return 8; }
+}
+
+static float _delayTimeFromDivision(float bpm, int denom) {
+  const float beat = 60.0f / juce::jmax(1.0f, bpm);
+  const float whole = beat * 4.0f;
+  return whole / (float)juce::jmax(1, denom);
+}
+
+static float _computeFeedbackFromRepeats(float repeats, float endGain) {
+  repeats = juce::jmax(1.0f, repeats);
+  endGain = juce::jlimit(0.01f, 0.9f, endGain);
+  return juce::jlimit(0.0f, 0.95f, std::pow(endGain, 1.0f / repeats));
+}
+
+static float _onePoleAlphaFromCutoff(float cutoffHz, float sr) {
+  cutoffHz = juce::jlimit(20.0f, 20000.0f, cutoffHz);
+  sr = juce::jmax(1.0f, sr);
+  const float x = -2.0f * juce::MathConstants<float>::pi * cutoffHz / sr;
+  return 1.0f - std::exp(x);
+}
+
 
 static double getDoubleProp(const juce::DynamicObject* o, const char* key, double def) {
   if (!o) return def;
@@ -369,6 +409,7 @@ public:
         playArmed.store(false);
         playing.store(true);
       }
+    }
     if (playArmed.load() && samplePos >= playStartSamplePos) {
       playArmed.store(false);
       playing.store(true);
@@ -480,51 +521,69 @@ public:
       }
 
       // Mix channels -> master
-      float L = 0.0f, R = 0.0f;
+      
+// Mix channels -> master
+float offL = 0.0f, offR = 0.0f; // OFF bus (always audible)
+float aL = 0.0f, aR = 0.0f;     // Deck A bus
+float bL = 0.0f, bR = 0.0f;     // Deck B bus
+bool anyAB = false;
 
-      for (int ch = 0; ch < channelCount; ++ch) {
-        float cl = busL[(size_t)ch];
-        float cr = busR[(size_t)ch];
+for (int ch = 0; ch < channelCount; ++ch) {
+  float cl = busL[(size_t)ch];
+  float cr = busR[(size_t)ch];
 
-        // EQ + FX
-        channelDsp[(size_t)ch].processEq(cl, cr);
-        processFxChain(channelDsp[(size_t)ch].fx, cl, cr);
+  // EQ + FX
+  channelDsp[(size_t)ch].processEq(cl, cr);
+  processFxChain(channelDsp[(size_t)ch].fx, cl, cr);
 
-        // channel gain/pan
-        const auto& m = mixerStates[(size_t)ch];
-        cl *= m.gain;
-        cr *= m.gain;
+  const auto& m = mixerStates[(size_t)ch];
+  cl *= m.gain;
+  cr *= m.gain;
 
-        const float pan = juce::jlimit(-1.0f, 1.0f, m.pan);
-        const float outL = cl * (1.0f - pan);
-        const float outR = cr * (1.0f + pan);
+  const float pan = juce::jlimit(-1.0f, 1.0f, m.pan);
+  const float outL = cl * (1.0f - pan);
+  const float outR = cr * (1.0f + pan);
 
-        // Meters (per-sample accumulation into block rms)
-        meterChPeakL[(size_t)ch] = std::max(meterChPeakL[(size_t)ch], std::abs(outL));
-        meterChPeakR[(size_t)ch] = std::max(meterChPeakR[(size_t)ch], std::abs(outR));
-        meterChRmsAccL[(size_t)ch] += outL * outL;
-        meterChRmsAccR[(size_t)ch] += outR * outR;
+  meterChPeakL[(size_t)ch] = std::max(meterChPeakL[(size_t)ch], std::abs(outL));
+  meterChPeakR[(size_t)ch] = std::max(meterChPeakR[(size_t)ch], std::abs(outR));
+  meterChRmsAccL[(size_t)ch] += outL * outL;
+  meterChRmsAccR[(size_t)ch] += outR * outR;
 
-        L += outL;
-        R += outR;
-      }
+  if (m.xAssign == 0) { aL += outL; aR += outR; anyAB = true; }
+  else if (m.xAssign == 1) { bL += outL; bR += outR; anyAB = true; }
+  else { offL += outL; offR += outR; }
+}
 
-      // Master FX
-      processFxChain(masterFx, L, R);
+float L = 0.0f, R = 0.0f;
+if (!anyAB) {
+  L = offL; R = offR;
+} else {
+  const float c = juce::jlimit(0.0f, 1.0f, masterCross);
+  const float gA = std::cos(c * juce::MathConstants<float>::halfPi);
+  const float gB = std::sin(c * juce::MathConstants<float>::halfPi);
+  L = offL + (aL * gA) + (bL * gB);
+  R = offR + (aR * gA) + (bR * gB);
+}
 
-      // Master gain + crossfader
-      L *= masterGain;
-      R *= masterGain;
+masterDsp.processEq(L, R);
 
-      // Crossfader (simple stereo balance style; keeps audible behavior)
-      // crossfader -1 => favor Left, +1 => favor Right
-      const float xf = juce::jlimit(-1.0f, 1.0f, crossfader);
-      const float xfL = (xf < 0.0f) ? 1.0f : (1.0f - xf);
-      const float xfR = (xf > 0.0f) ? 1.0f : (1.0f + xf);
-      L *= xfL;
-      R *= xfR;
 
-      // Output
+// Master FX
+processFxChain(masterFx, L, R);
+
+// Master gain
+L *= masterGain;
+R *= masterGain;
+
+if (!anyAB) {
+  const float xf = juce::jlimit(-1.0f, 1.0f, crossfader);
+  const float xfL = (xf < 0.0f) ? 1.0f : (1.0f - xf);
+  const float xfR = (xf > 0.0f) ? 1.0f : (1.0f + xf);
+  L *= xfL;
+  R *= xfR;
+}
+
+// Output
       if (outChs > 0 && out[0]) out[0][i] = L;
       if (outChs > 1 && out[1]) out[1][i] = R;
 
@@ -583,6 +642,11 @@ private:
   float masterGain = 0.85f;
   float crossfader = 0.0f;
 
+
+  float masterCross = 0.5f;
+  float masterEqLow = 0.0f;
+  float masterEqMid = 0.0f;
+  float masterEqHigh = 0.0f;
   juce::int64 samplePos = 0;
   juce::int64 playArmCountdownSamples = 0;
   juce::int64 playStartSamplePos = 0;
@@ -602,6 +666,7 @@ private:
 
   std::vector<MixerChannelState> mixerStates;
   std::vector<ChannelDSP> channelDsp;
+  ChannelDSP masterDsp;
   std::vector<std::unique_ptr<FxUnit>> masterFx;
 
   // Delay buffers (shared)
@@ -678,6 +743,7 @@ private:
   // ------------------------------ EQ / DSP ------------------------------
 
   void refreshEqForChannel(int ch) {
+	  std::scoped_lock lk(audioMutex);
     if (ch < 0 || ch >= (int)channelDsp.size() || ch >= (int)mixerStates.size()) return;
 
     auto& dsp = channelDsp[(size_t)ch];
@@ -697,6 +763,24 @@ private:
     dsp.highL.reset(); dsp.highR.reset();
   }
 
+
+void refreshMasterEq() {
+  std::scoped_lock lk(audioMutex);
+  const auto sr = std::max(22050.0, sampleRate);
+
+  masterDsp.lowL.coefficients  = juce::dsp::IIR::Coefficients<float>::makeLowShelf (sr, 120.0f,  0.707f, juce::Decibels::decibelsToGain(masterEqLow));
+  masterDsp.lowR.coefficients  = juce::dsp::IIR::Coefficients<float>::makeLowShelf (sr, 120.0f,  0.707f, juce::Decibels::decibelsToGain(masterEqLow));
+  masterDsp.midL.coefficients  = juce::dsp::IIR::Coefficients<float>::makePeakFilter(sr, 1200.0f, 0.9f,   juce::Decibels::decibelsToGain(masterEqMid));
+  masterDsp.midR.coefficients  = juce::dsp::IIR::Coefficients<float>::makePeakFilter(sr, 1200.0f, 0.9f,   juce::Decibels::decibelsToGain(masterEqMid));
+  masterDsp.highL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sr, 8000.0f,  0.707f, juce::Decibels::decibelsToGain(masterEqHigh));
+  masterDsp.highR.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sr, 8000.0f,  0.707f, juce::Decibels::decibelsToGain(masterEqHigh));
+
+  masterDsp.lowL.reset(); masterDsp.lowR.reset();
+  masterDsp.midL.reset(); masterDsp.midR.reset();
+  masterDsp.highL.reset(); masterDsp.highR.reset();
+}
+
+
   void refreshDspSpecs() {
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32)juce::jmax(1, bufferSize), 1 };
 
@@ -706,6 +790,8 @@ private:
       d.midL.prepare(spec);  d.midR.prepare(spec);
       d.highL.prepare(spec); d.highR.prepare(spec);
       refreshEqForChannel(ch);
+    refreshMasterEq();
+
     }
   }
 
@@ -714,7 +800,8 @@ private:
   std::vector<std::unique_ptr<FxUnit>>& resolveFxTarget(const juce::DynamicObject* d) {
     if (d && d->hasProperty("target")) {
       if (auto* t = d->getProperty("target").getDynamicObject()) {
-        if (getStringProp(t, "scope", "master") == "ch") {
+        const auto scope = getStringProp(t, "scope", "master").toLowerCase();
+if (scope == "channel" || scope == "ch") {
           const int ch = juce::jlimit(0, channelCount - 1, getIntProp(t, "ch", 0));
           return channelDsp[(size_t)ch].fx;
         }
@@ -728,7 +815,50 @@ private:
     return nullptr;
   }
 
-  void handleFxSetOp(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+  
+void ensureFxDsp(FxUnit& u) {
+  const auto type = u.type.toLowerCase();
+
+  if (type.contains("delay")) {
+    if (!u.dsp) {
+      auto dly = std::make_unique<FxDelay>();
+      // max delay seconds = 2 (matches WebAudio createDelay(2.0))
+      dly->prepare(sampleRate, bufferSize, 2.0);
+      u.dsp = std::move(dly);
+    }
+    return;
+  }
+
+  // Other FX types will be added here (chorus, flanger, compressor, grossBeat...)
+}
+
+void applyFxParamsToDsp(FxUnit& u) {
+  if (!u.dsp) return;
+
+  for (int i = 0; i < u.params.size(); ++i) {
+    const auto juceName = u.params.getName(i).toString();
+    const std::string name = juceName.toStdString();
+    const auto v = u.params.getValueAt(i);
+
+    if (v.isInt() || v.isDouble()) {
+      u.dsp->setParam(name, (float)(double)v);
+      continue;
+    }
+
+    if (v.isString()) {
+      // FxDelay needs division/rate as string
+      if (name == "division" || name == "rate") {
+        if (auto* dly = dynamic_cast<FxDelay*>(u.dsp.get())) {
+          dly->setDivision(v.toString().toStdString());
+        }
+      }
+    }
+  }
+}
+
+void handleFxSetOp(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    // IPC thread modifies FX lists/instances; audio callback processes them.
+    std::scoped_lock lk(audioMutex);
     auto& list = resolveFxTarget(d);
 
     if (op == "fx.chain.set") {
@@ -748,6 +878,8 @@ private:
             if (auto* p = o->getProperty("params").getDynamicObject())
               u->params = p->getProperties();
           }
+          ensureFxDsp(*u);
+          applyFxParamsToDsp(*u);
           list.push_back(std::move(u));
         }
       }
@@ -764,6 +896,7 @@ private:
         auto u = std::make_unique<FxUnit>();
         u->id = fxId;
         u->type = getStringProp(d, "type", "reverb");
+        ensureFxDsp(*u);
         u->enabled = true;
         fx = u.get();
         list.push_back(std::move(u));
@@ -772,6 +905,8 @@ private:
       if (d->hasProperty("params")) {
         if (auto* p = d->getProperty("params").getDynamicObject())
           fx->params = p->getProperties();
+        ensureFxDsp(*fx);
+        applyFxParamsToDsp(*fx);
       }
       return resOk(op, id, juce::var());
     }
@@ -806,25 +941,57 @@ private:
         continue;
       }
 
-      if (type.contains("delay")) {
-        const float t   = juce::jlimit(0.01f, 1.5f, u.getParam("time", 0.24f));
-        const float fb  = juce::jlimit(0.0f,  0.95f, u.getParam("feedback", 0.3f));
-        const float wet = juce::jlimit(0.0f,  1.0f, u.getParam("mix", 0.25f));
+      
+if (type.contains("delay")) {
+  const float curBpm = (float)bpm.load();
 
-        const int delaySamp = (int)std::llround(t * std::max(1.0, sampleRate));
-        const int idx = delayIndex++ % (int)delayBufferL.size();
-        const int ridx = (idx - delaySamp + (int)delayBufferL.size()) % (int)delayBufferL.size();
+  const float wet = juce::jlimit(0.0f, 1.0f, u.getParam("wet", u.getParam("mix", 0.25f)));
+  const float dry = 1.0f - wet;
 
-        const float dl = delayBufferL[(size_t)ridx];
-        const float dr = delayBufferR[(size_t)ridx];
+  float fb = u.getParam("feedback", -1.0f);
+  if (fb < 0.0f) {
+    const float repeats = u.getParam("repeats", 0.0f);
+    if (repeats > 0.0f) {
+      const float endGain = u.getParam("endGain", 0.1f);
+      fb = _computeFeedbackFromRepeats(repeats, endGain);
+    } else fb = 0.35f;
+  }
+  fb = juce::jlimit(0.0f, 0.95f, fb);
 
-        delayBufferL[(size_t)idx] = l + dl * fb;
-        delayBufferR[(size_t)idx] = r + dr * fb;
+  const float dampHz = juce::jlimit(500.0f, 20000.0f, u.getParam("damp", 12000.0f));
+  const float alpha = _onePoleAlphaFromCutoff(dampHz, (float)sampleRate);
 
-        l = l * (1.0f - wet) + dl * wet;
-        r = r * (1.0f - wet) + dr * wet;
-        continue;
-      }
+  float tSec = u.getParam("time", -1.0f);
+  if (!(tSec > 0.0f)) {
+    const auto divStr = u.params.getWithDefault("division", u.params.getWithDefault("rate", juce::var("1:8"))).toString();
+    const int denom = _parseDivision(divStr);
+    tSec = _delayTimeFromDivision(curBpm, denom);
+  }
+  tSec = juce::jlimit(0.01f, 1.99f, tSec);
+
+  const int delaySamp = (int)std::llround(tSec * (float)std::max(1.0, sampleRate));
+  const int N = (int)delayBufferL.size();
+
+  int idx = u.delayIdx++ % N;
+  int ridx = idx - delaySamp;
+  if (ridx < 0) ridx += N;
+
+  const float dlIn = delayBufferL[(size_t)ridx];
+  const float drIn = delayBufferR[(size_t)ridx];
+
+  // damping in feedback
+  u.dampStateL = u.dampStateL + alpha * (dlIn - u.dampStateL);
+  u.dampStateR = u.dampStateR + alpha * (drIn - u.dampStateR);
+  const float dl = u.dampStateL;
+  const float dr = u.dampStateR;
+
+  delayBufferL[(size_t)idx] = l + dl * fb;
+  delayBufferR[(size_t)idx] = r + dr * fb;
+
+  l = l * dry + dl * wet;
+  r = r * dry + dr * wet;
+  continue;
+}
     }
   }
 
@@ -923,6 +1090,9 @@ private:
   }
 
   void handleMixerInit(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    // Mutates DSP/mixer structures that are concurrently read by the audio callback.
+    // Guard with the same mutex used in audioDeviceIOCallbackWithContext to avoid races/SEGV.
+    std::scoped_lock lk(audioMutex);
     channelCount = juce::jlimit(1, 64, getIntProp(d, "channels", channelCount));
 
     mixerStates.resize((size_t)channelCount);
@@ -1273,7 +1443,6 @@ private:
 
     auto appendSample = [&](int note, const juce::String& rawPath, const juce::File& baseDir) {
       juce::File file(rawPath);
-      if (!file.isAbsolutePath()) file = baseDir.getChildFile(rawPath);
       if (!juce::File::isAbsolutePath(rawPath)) file = baseDir.getChildFile(rawPath);
       auto sd = loadSampleFromPath(file.getFullPathName());
       if (sd) mapping[note] = sd;
@@ -1397,6 +1566,8 @@ private:
   // ------------------------------ Mixer ------------------------------
 
   void handleMixerParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    // IPC thread mutates shared DSP state; audio callback reads it concurrently.
+    std::scoped_lock lk(audioMutex);
     if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
 
     const auto scope = getStringProp(d, "scope", "master");
@@ -1406,7 +1577,10 @@ private:
     if (scope == "master") {
       if (param == "gain") masterGain = std::max(0.0f, value);
       else if (param == "crossfader") crossfader = juce::jlimit(-1.0f, 1.0f, value);
-
+      else if (param == "cross") { masterCross = juce::jlimit(0.0f, 1.0f, value); crossfader = (masterCross - 0.5f) * 2.0f; }
+      else if (param == "eqLow")  { masterEqLow = value;  refreshMasterEq(); }
+      else if (param == "eqMid")  { masterEqMid = value;  refreshMasterEq(); }
+      else if (param == "eqHigh") { masterEqHigh = value; refreshMasterEq(); }
       resOk(op, id, juce::var());
       return;
     }
@@ -1421,6 +1595,7 @@ private:
     else if (param == "eqHigh") m.eqHigh = value;
     else if (param == "mute") m.mute = value >= 0.5f;
     else if (param == "solo") m.solo = value >= 0.5f;
+    else if (param == "xAssign") m.xAssign = juce::jlimit(0, 2, (int)std::lround(value));
 
     // Refresh EQ when any eq param changes (safe to call anyway)
     refreshEqForChannel(ch);
@@ -1432,7 +1607,11 @@ private:
   void handleMixerCompatMaster(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
     if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
     if (d->hasProperty("gain")) masterGain = (float)std::max(0.0, getDoubleProp(d, "gain", masterGain));
-    if (d->hasProperty("crossfader")) crossfader = (float)juce::jlimit(-1.0, 1.0, getDoubleProp(d, "crossfader", crossfader));
+    if (d->hasProperty("eqLow"))  { masterEqLow  = (float)getDoubleProp(d, "eqLow",  masterEqLow);  refreshMasterEq(); }
+    if (d->hasProperty("eqMid"))  { masterEqMid  = (float)getDoubleProp(d, "eqMid",  masterEqMid);  refreshMasterEq(); }
+    if (d->hasProperty("eqHigh")) { masterEqHigh = (float)getDoubleProp(d, "eqHigh", masterEqHigh); refreshMasterEq(); }
+    if (d->hasProperty("crossfader")) { crossfader = (float)juce::jlimit(-1.0, 1.0, getDoubleProp(d, "crossfader", crossfader)); masterCross = (crossfader * 0.5f) + 0.5f; }
+    if (d->hasProperty("cross")) { masterCross = (float)juce::jlimit(0.0, 1.0, getDoubleProp(d, "cross", masterCross)); crossfader = (masterCross - 0.5f) * 2.0f; }
     resOk(op, id, juce::var());
   }
 
@@ -1449,6 +1628,18 @@ private:
     if (d->hasProperty("eqLow"))  m.eqLow  = (float)getDoubleProp(d, "eqLow",  m.eqLow);
     if (d->hasProperty("eqMid"))  m.eqMid  = (float)getDoubleProp(d, "eqMid",  m.eqMid);
     if (d->hasProperty("eqHigh")) m.eqHigh = (float)getDoubleProp(d, "eqHigh", m.eqHigh);
+
+    if (d->hasProperty("xAssign")) {
+      const auto v = d->getProperty("xAssign");
+      if (v.isString()) {
+        const auto s = v.toString().toLowerCase();
+        if (s == "a") m.xAssign = 0;
+        else if (s == "b") m.xAssign = 1;
+        else m.xAssign = 2;
+      } else if (v.isInt() || v.isDouble()) {
+        m.xAssign = juce::jlimit(0, 2, (int)v);
+      }
+    }
 
     refreshEqForChannel(ch);
     resOk(op, id, juce::var());
