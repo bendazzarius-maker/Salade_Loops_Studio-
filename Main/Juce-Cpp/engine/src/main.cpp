@@ -18,6 +18,7 @@
 
 #include "FxBase.h"
 #include "FxDelay.h"
+#include "FxGrossBeat.h"
 
 #if defined(_WIN32) || defined(_WIN64)
   #include <windows.h>
@@ -599,7 +600,7 @@ for (int ch = 0; ch < channelCount; ++ch) {
 
   // EQ + FX
   channelDsp[(size_t)ch].processEq(cl, cr);
-  processFxChain(channelDsp[(size_t)ch].fx, cl, cr);
+  processFxChain(channelDsp[(size_t)ch].fx, cl, cr, samplePos + i);
 
   const auto& m = mixerStates[(size_t)ch];
   const float chGain = channelSmoothers[(size_t)ch].gain.getNextValue();
@@ -635,7 +636,7 @@ masterDsp.processEq(L, R);
 
 
 // Master FX
-processFxChain(masterFx, L, R);
+processFxChain(masterFx, L, R, samplePos + i);
 
 // Master gain
 const float mg = masterGainSmoothed.getNextValue();
@@ -907,6 +908,15 @@ void refreshMasterEq() {
       }
       return;
     }
+
+    if (type.contains("gross")) {
+      if (!u.dsp) {
+        auto gb = std::make_unique<FxGrossBeat>();
+        gb->prepare(sampleRate, bufferSize, 2);
+        u.dsp = std::move(gb);
+      }
+      return;
+    }
   }
 
   void applyFxParamsToDsp(FxUnit& u) {
@@ -924,8 +934,24 @@ void refreshMasterEq() {
 
       if (v.isString()) {
         if (name == "division" || name == "rate") {
-          if (auto* dly = dynamic_cast<FxDelay*>(u.dsp.get()))
-            dly->setDivision(v.toString().toStdString());
+          if (auto* dly = dynamic_cast<FxDelay*>(u.dsp.get())) dly->setDivision(v.toString().toStdString());
+          if (auto* gb = dynamic_cast<FxGrossBeat*>(u.dsp.get())) gb->setDivision(v.toString().toStdString());
+        }
+      }
+
+      if (v.isArray()) {
+        if (name == "pattern") {
+          if (auto* gb = dynamic_cast<FxGrossBeat*>(u.dsp.get())) {
+            std::vector<float> pat;
+            if (auto* arr = v.getArray()) {
+              pat.reserve((size_t)arr->size());
+              for (const auto& pv : *arr) {
+                if (pv.isDouble() || pv.isInt() || pv.isBool())
+                  pat.push_back((float)(double)pv);
+              }
+            }
+            gb->setPattern(pat);
+          }
         }
       }
     }
@@ -1011,7 +1037,7 @@ void refreshMasterEq() {
     return resOk(op, id, juce::var());
   }
 
-  void processFxChain(std::vector<std::unique_ptr<FxUnit>>& fx, float& l, float& r) {
+  void processFxChain(std::vector<std::unique_ptr<FxUnit>>& fx, float& l, float& r, int64_t samplePosNow) {
     for (auto& uPtr : fx) {
       if (!uPtr) continue;
       auto& u = *uPtr;
@@ -1031,13 +1057,13 @@ void refreshMasterEq() {
         continue;
       }
 
-      if (type.contains("delay")) {
+      if (type.contains("delay") || type.contains("gross")) {
         ensureFxDsp(u);
         if (!u.dsp) continue;
 
         float chansData[2] = { l, r };
         float* chans[2] = { &chansData[0], &chansData[1] };
-        u.dsp->process(chans, 2, 1, bpm.load(), samplePos, playing.load());
+        u.dsp->process(chans, 2, 1, bpm.load(), samplePosNow, playing.load());
         l = chansData[0];
         r = chansData[1];
         continue;
