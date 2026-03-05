@@ -600,7 +600,7 @@ for (int ch = 0; ch < channelCount; ++ch) {
 
   // EQ + FX
   channelDsp[(size_t)ch].processEq(cl, cr);
-  processFxChain(channelDsp[(size_t)ch].fx, cl, cr);
+  processFxChain(channelDsp[(size_t)ch].fx, cl, cr, samplePos + i);
 
   const auto& m = mixerStates[(size_t)ch];
   const float chGain = channelSmoothers[(size_t)ch].gain.getNextValue();
@@ -636,7 +636,7 @@ masterDsp.processEq(L, R);
 
 
 // Master FX
-processFxChain(masterFx, L, R);
+processFxChain(masterFx, L, R, samplePos + i);
 
 // Master gain
 const float mg = masterGainSmoothed.getNextValue();
@@ -1037,7 +1037,7 @@ void refreshMasterEq() {
     return resOk(op, id, juce::var());
   }
 
-  void processFxChain(std::vector<std::unique_ptr<FxUnit>>& fx, float& l, float& r) {
+  void processFxChain(std::vector<std::unique_ptr<FxUnit>>& fx, float& l, float& r, int64_t samplePosNow) {
     for (auto& uPtr : fx) {
       if (!uPtr) continue;
       auto& u = *uPtr;
@@ -1063,7 +1063,7 @@ void refreshMasterEq() {
 
         float chansData[2] = { l, r };
         float* chans[2] = { &chansData[0], &chansData[1] };
-        u.dsp->process(chans, 2, 1, bpm.load(), samplePos, playing.load());
+        u.dsp->process(chans, 2, 1, bpm.load(), samplePosNow, playing.load());
         l = chansData[0];
         r = chansData[1];
         continue;
