@@ -123,10 +123,11 @@ struct FxUnit {
     if (v.isInt() || v.isDouble()) return (float)(double)v;
     return def;
   }
-  int delayIdx = 0;
-  float dampStateL = 0.0f;
-  float dampStateR = 0.0f;
+};
 
+struct ChannelSmoothers {
+  juce::SmoothedValue<float> gain;
+  juce::SmoothedValue<float> pan;
 };
 
 struct ChannelDSP {
@@ -154,6 +155,21 @@ struct ScheduledEvent {
 struct BlockEvent {
   int offset = 0;           // 0..n-1
   ScheduledEvent ev;
+};
+
+enum class RtCommandType {
+  MixerInit,
+  MixerParamSet,
+  MixerCompatMaster,
+  MixerCompatChannel,
+  FxChainSet,
+  FxParamSet,
+  FxBypassSet
+};
+
+struct RtCommand {
+  RtCommandType type {};
+  juce::var data;
 };
 
 // ------------------------------ Helpers ------------------------------
@@ -211,6 +227,12 @@ static bool getBoolProp(const juce::DynamicObject* o, const char* key, bool def)
   if (v.isInt() || v.isDouble()) return ((double)v) >= 0.5;
   return def;
 }
+
+static juce::var cloneVar(const juce::var& src) {
+  return juce::JSON::parse(juce::JSON::toString(src, false));
+}
+
+
 
 class Engine : public juce::AudioIODeviceCallback {
 public:
@@ -372,6 +394,37 @@ public:
     return resErr(op, id, "E_UNKNOWN_OP", "Unknown opcode");
   }
 
+  bool enqueueRtCommand(RtCommandType type, const juce::var& data) {
+    const uint32_t write = rtWriteIdx.load(std::memory_order_relaxed);
+    const uint32_t next = (write + 1u) % (uint32_t)kRtQueueCapacity;
+    const uint32_t read = rtReadIdx.load(std::memory_order_acquire);
+    if (next == read) {
+      rtQueueOverflowCount.fetch_add(1, std::memory_order_relaxed);
+      return false;
+    }
+
+    rtQueue[(size_t)write].type = type;
+    rtQueue[(size_t)write].data = data;
+    rtWriteIdx.store(next, std::memory_order_release);
+    return true;
+  }
+
+  bool popRtCommand(RtCommand& out) {
+    const uint32_t read = rtReadIdx.load(std::memory_order_relaxed);
+    const uint32_t write = rtWriteIdx.load(std::memory_order_acquire);
+    if (read == write) return false;
+
+    out = rtQueue[(size_t)read];
+    rtReadIdx.store((read + 1u) % (uint32_t)kRtQueueCapacity, std::memory_order_release);
+    return true;
+  }
+
+  inline float sanitizeFinite(float v) {
+    if (std::isfinite((double)v)) return juce::jlimit(-4.0f, 4.0f, v);
+    nanSanitizedSamples.fetch_add(1, std::memory_order_relaxed);
+    return 0.0f;
+  }
+
   // ------------------------------ Audio callbacks ------------------------------
 
   void audioDeviceAboutToStart(juce::AudioIODevice* d) override {
@@ -386,8 +439,6 @@ public:
     busL.assign((size_t)juce::jmax(1, channelCount), 0.0f);
     busR.assign((size_t)juce::jmax(1, channelCount), 0.0f);
 
-    // Safety: reset delay write index
-    delayIndex = 0;
   }
 
   void audioDeviceStopped() override {}
@@ -398,6 +449,20 @@ public:
                                        const juce::AudioIODeviceCallbackContext&) override
   {
     std::scoped_lock lk(audioMutex);
+    RtCommand cmd;
+    int rtBudget = 256;
+    while (rtBudget-- > 0 && popRtCommand(cmd)) {
+      auto* d = cmd.data.getDynamicObject();
+      switch (cmd.type) {
+        case RtCommandType::MixerInit: applyMixerInitRt(d); break;
+        case RtCommandType::MixerParamSet: applyMixerParamSetRt(d); break;
+        case RtCommandType::MixerCompatMaster: applyMixerCompatMasterRt(d); break;
+        case RtCommandType::MixerCompatChannel: applyMixerCompatChannelRt(d); break;
+        case RtCommandType::FxChainSet: applyFxSetOpRt("fx.chain.set", d); break;
+        case RtCommandType::FxParamSet: applyFxSetOpRt("fx.param.set", d); break;
+        case RtCommandType::FxBypassSet: applyFxSetOpRt("fx.bypass.set", d); break;
+      }
+    }
 
     for (int ch = 0; ch < outChs; ++ch)
       if (out[ch]) juce::FloatVectorOperations::clear(out[ch], n);
@@ -537,10 +602,11 @@ for (int ch = 0; ch < channelCount; ++ch) {
   processFxChain(channelDsp[(size_t)ch].fx, cl, cr);
 
   const auto& m = mixerStates[(size_t)ch];
-  cl *= m.gain;
-  cr *= m.gain;
+  const float chGain = channelSmoothers[(size_t)ch].gain.getNextValue();
+  const float pan = channelSmoothers[(size_t)ch].pan.getNextValue();
+  cl *= chGain;
+  cr *= chGain;
 
-  const float pan = juce::jlimit(-1.0f, 1.0f, m.pan);
   const float outL = cl * (1.0f - pan);
   const float outR = cr * (1.0f + pan);
 
@@ -558,7 +624,7 @@ float L = 0.0f, R = 0.0f;
 if (!anyAB) {
   L = offL; R = offR;
 } else {
-  const float c = juce::jlimit(0.0f, 1.0f, masterCross);
+  const float c = juce::jlimit(0.0f, 1.0f, masterCrossSmoothed.getNextValue());
   const float gA = std::cos(c * juce::MathConstants<float>::halfPi);
   const float gB = std::sin(c * juce::MathConstants<float>::halfPi);
   L = offL + (aL * gA) + (bL * gB);
@@ -572,11 +638,12 @@ masterDsp.processEq(L, R);
 processFxChain(masterFx, L, R);
 
 // Master gain
-L *= masterGain;
-R *= masterGain;
+const float mg = masterGainSmoothed.getNextValue();
+L *= mg;
+R *= mg;
 
 if (!anyAB) {
-  const float xf = juce::jlimit(-1.0f, 1.0f, crossfader);
+  const float xf = juce::jlimit(-1.0f, 1.0f, crossfaderSmoothed.getNextValue());
   const float xfL = (xf < 0.0f) ? 1.0f : (1.0f - xf);
   const float xfR = (xf > 0.0f) ? 1.0f : (1.0f + xf);
   L *= xfL;
@@ -584,6 +651,8 @@ if (!anyAB) {
 }
 
 // Output
+      L = sanitizeFinite(L);
+      R = sanitizeFinite(R);
       if (outChs > 0 && out[0]) out[0][i] = L;
       if (outChs > 1 && out[1]) out[1][i] = R;
 
@@ -641,9 +710,11 @@ private:
 
   float masterGain = 0.85f;
   float crossfader = 0.0f;
-
-
   float masterCross = 0.5f;
+
+  juce::SmoothedValue<float> masterGainSmoothed;
+  juce::SmoothedValue<float> masterCrossSmoothed;
+  juce::SmoothedValue<float> crossfaderSmoothed;
   float masterEqLow = 0.0f;
   float masterEqMid = 0.0f;
   float masterEqHigh = 0.0f;
@@ -666,13 +737,9 @@ private:
 
   std::vector<MixerChannelState> mixerStates;
   std::vector<ChannelDSP> channelDsp;
+  std::vector<ChannelSmoothers> channelSmoothers;
   ChannelDSP masterDsp;
   std::vector<std::unique_ptr<FxUnit>> masterFx;
-
-  // Delay buffers (shared)
-  mutable int delayIndex = 0;
-  std::array<float, 192000> delayBufferL {};
-  std::array<float, 192000> delayBufferR {};
 
   // bus buffers (avoid alloc in callback)
   std::vector<float> busL;
@@ -688,6 +755,14 @@ private:
   bool schedulerDebug = false;
 
   std::vector<BlockEvent> blockEvents;
+
+  static constexpr int kRtQueueCapacity = 2048;
+  std::array<RtCommand, kRtQueueCapacity> rtQueue;
+  std::atomic<uint32_t> rtWriteIdx { 0 };
+  std::atomic<uint32_t> rtReadIdx { 0 };
+
+  std::atomic<uint64_t> rtQueueOverflowCount { 0 };
+  std::atomic<uint64_t> nanSanitizedSamples { 0 };
 
   // ------------------------------ Metering ------------------------------
 
@@ -743,7 +818,6 @@ private:
   // ------------------------------ EQ / DSP ------------------------------
 
   void refreshEqForChannel(int ch) {
-	  std::scoped_lock lk(audioMutex);
     if (ch < 0 || ch >= (int)channelDsp.size() || ch >= (int)mixerStates.size()) return;
 
     auto& dsp = channelDsp[(size_t)ch];
@@ -758,14 +832,10 @@ private:
     dsp.highL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sr, 8000.0f,  0.707f, juce::Decibels::decibelsToGain(m.eqHigh));
     dsp.highR.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sr, 8000.0f,  0.707f, juce::Decibels::decibelsToGain(m.eqHigh));
 
-    dsp.lowL.reset(); dsp.lowR.reset();
-    dsp.midL.reset(); dsp.midR.reset();
-    dsp.highL.reset(); dsp.highR.reset();
   }
 
 
 void refreshMasterEq() {
-  std::scoped_lock lk(audioMutex);
   const auto sr = std::max(22050.0, sampleRate);
 
   masterDsp.lowL.coefficients  = juce::dsp::IIR::Coefficients<float>::makeLowShelf (sr, 120.0f,  0.707f, juce::Decibels::decibelsToGain(masterEqLow));
@@ -774,15 +844,13 @@ void refreshMasterEq() {
   masterDsp.midR.coefficients  = juce::dsp::IIR::Coefficients<float>::makePeakFilter(sr, 1200.0f, 0.9f,   juce::Decibels::decibelsToGain(masterEqMid));
   masterDsp.highL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sr, 8000.0f,  0.707f, juce::Decibels::decibelsToGain(masterEqHigh));
   masterDsp.highR.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sr, 8000.0f,  0.707f, juce::Decibels::decibelsToGain(masterEqHigh));
-
-  masterDsp.lowL.reset(); masterDsp.lowR.reset();
-  masterDsp.midL.reset(); masterDsp.midR.reset();
-  masterDsp.highL.reset(); masterDsp.highR.reset();
 }
-
 
   void refreshDspSpecs() {
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32)juce::jmax(1, bufferSize), 1 };
+    constexpr double rampSecs = 0.01;
+
+    channelSmoothers.resize((size_t)channelCount);
 
     for (int ch = 0; ch < channelCount; ++ch) {
       auto& d = channelDsp[(size_t)ch];
@@ -790,9 +858,22 @@ void refreshMasterEq() {
       d.midL.prepare(spec);  d.midR.prepare(spec);
       d.highL.prepare(spec); d.highR.prepare(spec);
       refreshEqForChannel(ch);
-    refreshMasterEq();
 
+      auto& sm = channelSmoothers[(size_t)ch];
+      sm.gain.reset(sampleRate, rampSecs);
+      sm.pan.reset(sampleRate, rampSecs);
+      sm.gain.setCurrentAndTargetValue(mixerStates[(size_t)ch].gain);
+      sm.pan.setCurrentAndTargetValue(mixerStates[(size_t)ch].pan);
     }
+
+    masterGainSmoothed.reset(sampleRate, rampSecs);
+    masterCrossSmoothed.reset(sampleRate, rampSecs);
+    crossfaderSmoothed.reset(sampleRate, rampSecs);
+    masterGainSmoothed.setCurrentAndTargetValue(masterGain);
+    masterCrossSmoothed.setCurrentAndTargetValue(masterCross);
+    crossfaderSmoothed.setCurrentAndTargetValue(crossfader);
+
+    refreshMasterEq();
   }
 
   // ------------------------------ FX ------------------------------
@@ -801,7 +882,7 @@ void refreshMasterEq() {
     if (d && d->hasProperty("target")) {
       if (auto* t = d->getProperty("target").getDynamicObject()) {
         const auto scope = getStringProp(t, "scope", "master").toLowerCase();
-if (scope == "channel" || scope == "ch") {
+        if (scope == "channel" || scope == "ch") {
           const int ch = juce::jlimit(0, channelCount - 1, getIntProp(t, "ch", 0));
           return channelDsp[(size_t)ch].fx;
         }
@@ -815,50 +896,44 @@ if (scope == "channel" || scope == "ch") {
     return nullptr;
   }
 
-  
-void ensureFxDsp(FxUnit& u) {
-  const auto type = u.type.toLowerCase();
+  void ensureFxDsp(FxUnit& u) {
+    const auto type = u.type.toLowerCase();
 
-  if (type.contains("delay")) {
-    if (!u.dsp) {
-      auto dly = std::make_unique<FxDelay>();
-      // max delay seconds = 2 (matches WebAudio createDelay(2.0))
-      dly->prepare(sampleRate, bufferSize, 2.0);
-      u.dsp = std::move(dly);
+    if (type.contains("delay")) {
+      if (!u.dsp) {
+        auto dly = std::make_unique<FxDelay>();
+        dly->prepare(sampleRate, bufferSize, 2);
+        u.dsp = std::move(dly);
+      }
+      return;
     }
-    return;
   }
 
-  // Other FX types will be added here (chorus, flanger, compressor, grossBeat...)
-}
+  void applyFxParamsToDsp(FxUnit& u) {
+    if (!u.dsp) return;
 
-void applyFxParamsToDsp(FxUnit& u) {
-  if (!u.dsp) return;
+    for (int i = 0; i < u.params.size(); ++i) {
+      const auto juceName = u.params.getName(i).toString();
+      const std::string name = juceName.toStdString();
+      const auto v = u.params.getValueAt(i);
 
-  for (int i = 0; i < u.params.size(); ++i) {
-    const auto juceName = u.params.getName(i).toString();
-    const std::string name = juceName.toStdString();
-    const auto v = u.params.getValueAt(i);
+      if (v.isInt() || v.isDouble()) {
+        u.dsp->setParam(name, (float)(double)v);
+        continue;
+      }
 
-    if (v.isInt() || v.isDouble()) {
-      u.dsp->setParam(name, (float)(double)v);
-      continue;
-    }
-
-    if (v.isString()) {
-      // FxDelay needs division/rate as string
-      if (name == "division" || name == "rate") {
-        if (auto* dly = dynamic_cast<FxDelay*>(u.dsp.get())) {
-          dly->setDivision(v.toString().toStdString());
+      if (v.isString()) {
+        if (name == "division" || name == "rate") {
+          if (auto* dly = dynamic_cast<FxDelay*>(u.dsp.get()))
+            dly->setDivision(v.toString().toStdString());
         }
       }
     }
-  }
-}
 
-void handleFxSetOp(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    // IPC thread modifies FX lists/instances; audio callback processes them.
-    std::scoped_lock lk(audioMutex);
+    u.dsp->setBypass(u.bypass);
+  }
+
+  void applyFxSetOpRt(const juce::String& op, const juce::DynamicObject* d) {
     auto& list = resolveFxTarget(d);
 
     if (op == "fx.chain.set") {
@@ -883,10 +958,10 @@ void handleFxSetOp(const juce::String& op, const juce::String& id, const juce::D
           list.push_back(std::move(u));
         }
       }
-      return resOk(op, id, juce::var());
+      return;
     }
 
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data object");
+    if (!d) return;
 
     if (op == "fx.param.set") {
       const auto fxId = getStringProp(d, "id", "fx");
@@ -896,8 +971,8 @@ void handleFxSetOp(const juce::String& op, const juce::String& id, const juce::D
         auto u = std::make_unique<FxUnit>();
         u->id = fxId;
         u->type = getStringProp(d, "type", "reverb");
-        ensureFxDsp(*u);
         u->enabled = true;
+        ensureFxDsp(*u);
         fx = u.get();
         list.push_back(std::move(u));
       }
@@ -908,17 +983,32 @@ void handleFxSetOp(const juce::String& op, const juce::String& id, const juce::D
         ensureFxDsp(*fx);
         applyFxParamsToDsp(*fx);
       }
-      return resOk(op, id, juce::var());
+      return;
     }
 
     if (op == "fx.bypass.set") {
       const auto fxId = getStringProp(d, "id", "fx");
-      if (auto* fx = findFx(list, fxId))
+      if (auto* fx = findFx(list, fxId)) {
         fx->bypass = d->hasProperty("bypass") ? (bool)d->getProperty("bypass") : false;
-      return resOk(op, id, juce::var());
+        if (fx->dsp) fx->dsp->setBypass(fx->bypass);
+      }
+      return;
     }
+  }
 
-    return resErr(op, id, "E_UNKNOWN_OP", "Unknown opcode");
+  void handleFxSetOp(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data object");
+
+    RtCommandType type = RtCommandType::FxParamSet;
+    if (op == "fx.chain.set") type = RtCommandType::FxChainSet;
+    else if (op == "fx.param.set") type = RtCommandType::FxParamSet;
+    else if (op == "fx.bypass.set") type = RtCommandType::FxBypassSet;
+    else return resErr(op, id, "E_UNKNOWN_OP", "Unknown opcode");
+
+    if (!enqueueRtCommand(type, cloneVar(juce::var(const_cast<juce::DynamicObject*>(d)))))
+      return resErr(op, id, "E_BUSY", "Audio command queue full");
+
+    return resOk(op, id, juce::var());
   }
 
   void processFxChain(std::vector<std::unique_ptr<FxUnit>>& fx, float& l, float& r) {
@@ -941,57 +1031,17 @@ void handleFxSetOp(const juce::String& op, const juce::String& id, const juce::D
         continue;
       }
 
-      
-if (type.contains("delay")) {
-  const float curBpm = (float)bpm.load();
+      if (type.contains("delay")) {
+        ensureFxDsp(u);
+        if (!u.dsp) continue;
 
-  const float wet = juce::jlimit(0.0f, 1.0f, u.getParam("wet", u.getParam("mix", 0.25f)));
-  const float dry = 1.0f - wet;
-
-  float fb = u.getParam("feedback", -1.0f);
-  if (fb < 0.0f) {
-    const float repeats = u.getParam("repeats", 0.0f);
-    if (repeats > 0.0f) {
-      const float endGain = u.getParam("endGain", 0.1f);
-      fb = _computeFeedbackFromRepeats(repeats, endGain);
-    } else fb = 0.35f;
-  }
-  fb = juce::jlimit(0.0f, 0.95f, fb);
-
-  const float dampHz = juce::jlimit(500.0f, 20000.0f, u.getParam("damp", 12000.0f));
-  const float alpha = _onePoleAlphaFromCutoff(dampHz, (float)sampleRate);
-
-  float tSec = u.getParam("time", -1.0f);
-  if (!(tSec > 0.0f)) {
-    const auto divStr = u.params.getWithDefault("division", u.params.getWithDefault("rate", juce::var("1:8"))).toString();
-    const int denom = _parseDivision(divStr);
-    tSec = _delayTimeFromDivision(curBpm, denom);
-  }
-  tSec = juce::jlimit(0.01f, 1.99f, tSec);
-
-  const int delaySamp = (int)std::llround(tSec * (float)std::max(1.0, sampleRate));
-  const int N = (int)delayBufferL.size();
-
-  int idx = u.delayIdx++ % N;
-  int ridx = idx - delaySamp;
-  if (ridx < 0) ridx += N;
-
-  const float dlIn = delayBufferL[(size_t)ridx];
-  const float drIn = delayBufferR[(size_t)ridx];
-
-  // damping in feedback
-  u.dampStateL = u.dampStateL + alpha * (dlIn - u.dampStateL);
-  u.dampStateR = u.dampStateR + alpha * (drIn - u.dampStateR);
-  const float dl = u.dampStateL;
-  const float dr = u.dampStateR;
-
-  delayBufferL[(size_t)idx] = l + dl * fb;
-  delayBufferR[(size_t)idx] = r + dr * fb;
-
-  l = l * dry + dl * wet;
-  r = r * dry + dr * wet;
-  continue;
-}
+        float chansData[2] = { l, r };
+        float* chans[2] = { &chansData[0], &chansData[1] };
+        u.dsp->process(chans, 2, 1, bpm.load(), samplePos, playing.load());
+        l = chansData[0];
+        r = chansData[1];
+        continue;
+      }
     }
   }
 
@@ -1089,10 +1139,7 @@ if (type.contains("delay")) {
     resOk(op, id, engineConfig());
   }
 
-  void handleMixerInit(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    // Mutates DSP/mixer structures that are concurrently read by the audio callback.
-    // Guard with the same mutex used in audioDeviceIOCallbackWithContext to avoid races/SEGV.
-    std::scoped_lock lk(audioMutex);
+  void applyMixerInitRt(const juce::DynamicObject* d) {
     channelCount = juce::jlimit(1, 64, getIntProp(d, "channels", channelCount));
 
     mixerStates.resize((size_t)channelCount);
@@ -1101,10 +1148,14 @@ if (type.contains("delay")) {
 
     refreshDspSpecs();
 
-    // Keep buses in sync
     busL.assign((size_t)juce::jmax(1, channelCount), 0.0f);
     busR.assign((size_t)juce::jmax(1, channelCount), 0.0f);
+  }
 
+  void handleMixerInit(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
+    if (!enqueueRtCommand(RtCommandType::MixerInit, cloneVar(juce::var(const_cast<juce::DynamicObject*>(d)))))
+      return resErr(op, id, "E_BUSY", "Audio command queue full");
     resOk(op, id, juce::var());
   }
 
@@ -1565,31 +1616,36 @@ if (type.contains("delay")) {
 
   // ------------------------------ Mixer ------------------------------
 
-  void handleMixerParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    // IPC thread mutates shared DSP state; audio callback reads it concurrently.
-    std::scoped_lock lk(audioMutex);
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
+  void applyMixerParamSetRt(const juce::DynamicObject* d) {
+    if (!d) return;
 
     const auto scope = getStringProp(d, "scope", "master");
     const auto param = getStringProp(d, "param", "gain");
     const float value = (float)getDoubleProp(d, "value", 0.0);
 
     if (scope == "master") {
-      if (param == "gain") masterGain = std::max(0.0f, value);
-      else if (param == "crossfader") crossfader = juce::jlimit(-1.0f, 1.0f, value);
-      else if (param == "cross") { masterCross = juce::jlimit(0.0f, 1.0f, value); crossfader = (masterCross - 0.5f) * 2.0f; }
-      else if (param == "eqLow")  { masterEqLow = value;  refreshMasterEq(); }
+      if (param == "gain") {
+        masterGain = std::max(0.0f, value);
+        masterGainSmoothed.setTargetValue(masterGain);
+      } else if (param == "crossfader") {
+        crossfader = juce::jlimit(-1.0f, 1.0f, value);
+        crossfaderSmoothed.setTargetValue(crossfader);
+      } else if (param == "cross") {
+        masterCross = juce::jlimit(0.0f, 1.0f, value);
+        crossfader = (masterCross - 0.5f) * 2.0f;
+        masterCrossSmoothed.setTargetValue(masterCross);
+        crossfaderSmoothed.setTargetValue(crossfader);
+      } else if (param == "eqLow")  { masterEqLow = value;  refreshMasterEq(); }
       else if (param == "eqMid")  { masterEqMid = value;  refreshMasterEq(); }
       else if (param == "eqHigh") { masterEqHigh = value; refreshMasterEq(); }
-      resOk(op, id, juce::var());
       return;
     }
 
     const int ch = juce::jlimit(0, channelCount - 1, getIntProp(d, "ch", 0));
     auto& m = mixerStates[(size_t)ch];
 
-    if (param == "gain") m.gain = std::max(0.0f, value);
-    else if (param == "pan") m.pan = juce::jlimit(-1.0f, 1.0f, value);
+    if (param == "gain") { m.gain = std::max(0.0f, value); channelSmoothers[(size_t)ch].gain.setTargetValue(m.gain); }
+    else if (param == "pan") { m.pan = juce::jlimit(-1.0f, 1.0f, value); channelSmoothers[(size_t)ch].pan.setTargetValue(m.pan); }
     else if (param == "eqLow") m.eqLow = value;
     else if (param == "eqMid") m.eqMid = value;
     else if (param == "eqHigh") m.eqHigh = value;
@@ -1597,31 +1653,39 @@ if (type.contains("delay")) {
     else if (param == "solo") m.solo = value >= 0.5f;
     else if (param == "xAssign") m.xAssign = juce::jlimit(0, 2, (int)std::lround(value));
 
-    // Refresh EQ when any eq param changes (safe to call anyway)
     refreshEqForChannel(ch);
-
-    resOk(op, id, juce::var());
   }
 
-  // Compatibility: older calls { gain: ... }
-  void handleMixerCompatMaster(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
-    if (d->hasProperty("gain")) masterGain = (float)std::max(0.0, getDoubleProp(d, "gain", masterGain));
+  void applyMixerCompatMasterRt(const juce::DynamicObject* d) {
+    if (!d) return;
+    if (d->hasProperty("gain")) {
+      masterGain = (float)std::max(0.0, getDoubleProp(d, "gain", masterGain));
+      masterGainSmoothed.setTargetValue(masterGain);
+    }
     if (d->hasProperty("eqLow"))  { masterEqLow  = (float)getDoubleProp(d, "eqLow",  masterEqLow);  refreshMasterEq(); }
     if (d->hasProperty("eqMid"))  { masterEqMid  = (float)getDoubleProp(d, "eqMid",  masterEqMid);  refreshMasterEq(); }
     if (d->hasProperty("eqHigh")) { masterEqHigh = (float)getDoubleProp(d, "eqHigh", masterEqHigh); refreshMasterEq(); }
-    if (d->hasProperty("crossfader")) { crossfader = (float)juce::jlimit(-1.0, 1.0, getDoubleProp(d, "crossfader", crossfader)); masterCross = (crossfader * 0.5f) + 0.5f; }
-    if (d->hasProperty("cross")) { masterCross = (float)juce::jlimit(0.0, 1.0, getDoubleProp(d, "cross", masterCross)); crossfader = (masterCross - 0.5f) * 2.0f; }
-    resOk(op, id, juce::var());
+    if (d->hasProperty("crossfader")) {
+      crossfader = (float)juce::jlimit(-1.0, 1.0, getDoubleProp(d, "crossfader", crossfader));
+      masterCross = (crossfader * 0.5f) + 0.5f;
+      crossfaderSmoothed.setTargetValue(crossfader);
+      masterCrossSmoothed.setTargetValue(masterCross);
+    }
+    if (d->hasProperty("cross")) {
+      masterCross = (float)juce::jlimit(0.0, 1.0, getDoubleProp(d, "cross", masterCross));
+      crossfader = (masterCross - 0.5f) * 2.0f;
+      masterCrossSmoothed.setTargetValue(masterCross);
+      crossfaderSmoothed.setTargetValue(crossfader);
+    }
   }
 
-  void handleMixerCompatChannel(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
+  void applyMixerCompatChannelRt(const juce::DynamicObject* d) {
+    if (!d) return;
     const int ch = juce::jlimit(0, channelCount - 1, getIntProp(d, "ch", 0));
     auto& m = mixerStates[(size_t)ch];
 
-    if (d->hasProperty("gain")) m.gain = (float)std::max(0.0, getDoubleProp(d, "gain", m.gain));
-    if (d->hasProperty("pan"))  m.pan  = (float)juce::jlimit(-1.0, 1.0, getDoubleProp(d, "pan", m.pan));
+    if (d->hasProperty("gain")) { m.gain = (float)std::max(0.0, getDoubleProp(d, "gain", m.gain)); channelSmoothers[(size_t)ch].gain.setTargetValue(m.gain); }
+    if (d->hasProperty("pan"))  { m.pan  = (float)juce::jlimit(-1.0, 1.0, getDoubleProp(d, "pan", m.pan)); channelSmoothers[(size_t)ch].pan.setTargetValue(m.pan); }
     if (d->hasProperty("mute")) m.mute = (bool)d->getProperty("mute");
     if (d->hasProperty("solo")) m.solo = (bool)d->getProperty("solo");
 
@@ -1642,6 +1706,26 @@ if (type.contains("delay")) {
     }
 
     refreshEqForChannel(ch);
+  }
+
+  void handleMixerParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
+    if (!enqueueRtCommand(RtCommandType::MixerParamSet, cloneVar(juce::var(const_cast<juce::DynamicObject*>(d)))))
+      return resErr(op, id, "E_BUSY", "Audio command queue full");
+    resOk(op, id, juce::var());
+  }
+
+  void handleMixerCompatMaster(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
+    if (!enqueueRtCommand(RtCommandType::MixerCompatMaster, cloneVar(juce::var(const_cast<juce::DynamicObject*>(d)))))
+      return resErr(op, id, "E_BUSY", "Audio command queue full");
+    resOk(op, id, juce::var());
+  }
+
+  void handleMixerCompatChannel(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
+    if (!enqueueRtCommand(RtCommandType::MixerCompatChannel, cloneVar(juce::var(const_cast<juce::DynamicObject*>(d)))))
+      return resErr(op, id, "E_BUSY", "Audio command queue full");
     resOk(op, id, juce::var());
   }
 
