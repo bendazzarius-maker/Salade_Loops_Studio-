@@ -42,6 +42,17 @@ void FxDelay::prepare(double sampleRate, int maxBlockSize, int numChannels) {
   const int ringN = (int)std::ceil(maxDelaySec * mSampleRate) + 4;
   mRingL.assign((size_t)ringN, 0.0f);
   mRingR.assign((size_t)ringN, 0.0f);
+
+  constexpr double rampSec = 0.01;
+  wetSmoothed.reset(mSampleRate, rampSec);
+  feedbackSmoothed.reset(mSampleRate, rampSec);
+  timeSecSmoothed.reset(mSampleRate, rampSec);
+  wetSmoothed.setCurrentAndTargetValue(std::clamp(pWet.load(std::memory_order_relaxed), 0.0f, 1.0f));
+  feedbackSmoothed.setCurrentAndTargetValue(std::clamp(pFeedback.load(std::memory_order_relaxed), 0.0f, 0.95f));
+  float ts = pTimeSec.load(std::memory_order_relaxed);
+  if (!(ts > 0.0f)) ts = 0.25f;
+  timeSecSmoothed.setCurrentAndTargetValue(std::clamp(ts, 0.01f, 1.99f));
+
   reset();
 }
 
@@ -61,10 +72,21 @@ void FxDelay::setDivision(const std::string& div) {
 
 void FxDelay::setParam(const std::string& name, float value) {
   // Control-thread only
-  if (name == "wet") pWet.store(std::clamp(value, 0.0f, 1.0f), std::memory_order_relaxed);
-  else if (name == "mix") pWet.store(std::clamp(value, 0.0f, 1.0f), std::memory_order_relaxed);
-  else if (name == "feedback") pFeedback.store(std::clamp(value, 0.0f, 0.95f), std::memory_order_relaxed);
-  else if (name == "time" || name == "timeSec") pTimeSec.store(value, std::memory_order_relaxed);
+  if (name == "wet" || name == "mix") {
+    const float wet = std::clamp(value, 0.0f, 1.0f);
+    pWet.store(wet, std::memory_order_relaxed);
+    wetSmoothed.setTargetValue(wet);
+  }
+  else if (name == "feedback") {
+    const float fb = std::clamp(value, 0.0f, 0.95f);
+    pFeedback.store(fb, std::memory_order_relaxed);
+    feedbackSmoothed.setTargetValue(fb);
+  }
+  else if (name == "time" || name == "timeSec") {
+    pTimeSec.store(value, std::memory_order_relaxed);
+    if (value > 0.0f)
+      timeSecSmoothed.setTargetValue(std::clamp(value, 0.01f, 1.99f));
+  }
   else if (name == "damp" || name == "dampHz") pDampHz.store(value, std::memory_order_relaxed);
   else if (name == "division" || name == "rate") {
     // some UIs may send numeric denom; tolerate that
@@ -81,27 +103,29 @@ void FxDelay::process(float** chans, int numChannels, int numFrames,
   const int chCount = std::min(numChannels, 2);
   if (chCount < 1) return;
 
-  const float wet = std::clamp(pWet.load(std::memory_order_relaxed), 0.0f, 1.0f);
-  const float dry = 1.0f - wet;
-  float fb = std::clamp(pFeedback.load(std::memory_order_relaxed), 0.0f, 0.95f);
+  wetSmoothed.setTargetValue(std::clamp(pWet.load(std::memory_order_relaxed), 0.0f, 1.0f));
+  feedbackSmoothed.setTargetValue(std::clamp(pFeedback.load(std::memory_order_relaxed), 0.0f, 0.95f));
 
   const float dampHz = pDampHz.load(std::memory_order_relaxed);
   const float alpha = onePoleAlphaFromCutoff(dampHz, (float)mSampleRate);
 
-  float tSec = pTimeSec.load(std::memory_order_relaxed);
-  if (!(tSec > 0.0f)) {
+  float tSecTarget = pTimeSec.load(std::memory_order_relaxed);
+  if (!(tSecTarget > 0.0f)) {
     const int denom = std::max(1, pDenom.load(std::memory_order_relaxed));
-    tSec = delayTimeFromDivision((float)bpm, denom);
+    tSecTarget = delayTimeFromDivision((float)bpm, denom);
   }
-  tSec = std::clamp(tSec, 0.01f, 1.99f);
+  timeSecSmoothed.setTargetValue(std::clamp(tSecTarget, 0.01f, 1.99f));
 
   const int ringN = (int)mRingL.size();
   if (ringN < 8) return;
 
-  int delaySamp = (int)std::llround(tSec * (float)mSampleRate);
-  delaySamp = std::clamp(delaySamp, 1, ringN - 1);
-
   for (int i = 0; i < numFrames; ++i) {
+    const float wet = wetSmoothed.getNextValue();
+    const float dry = 1.0f - wet;
+    float fb = feedbackSmoothed.getNextValue();
+    const float tSec = timeSecSmoothed.getNextValue();
+    int delaySamp = (int)std::llround(tSec * (float)mSampleRate);
+    delaySamp = std::clamp(delaySamp, 1, ringN - 1);
     float l = chans[0] ? chans[0][i] : 0.0f;
     float r = (chCount > 1 && chans[1]) ? chans[1][i] : l;
 

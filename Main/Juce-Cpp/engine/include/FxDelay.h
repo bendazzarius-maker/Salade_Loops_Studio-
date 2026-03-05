@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <juce_audio_basics/juce_audio_basics.h>
 
 /*
   FxDelay (JUCE)
@@ -63,4 +64,8 @@ private:
   std::atomic<float> pTimeSec { -1.0f };      // if >0 => override tempo sync
   std::atomic<float> pDampHz { 12000.0f };
   std::atomic<int>   pDenom { 8 };            // division denom for tempo sync (1:denom)
+
+  juce::SmoothedValue<float> wetSmoothed;
+  juce::SmoothedValue<float> feedbackSmoothed;
+  juce::SmoothedValue<float> timeSecSmoothed;
 };
