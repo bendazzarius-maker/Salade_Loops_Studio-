@@ -85,12 +85,40 @@ struct SampleVoice {
 
   int fadeOutTotal = 256;
   int fadeOutRemaining = 0;
+  int fadeInTotal = 64;
+  int fadeInRemaining = 0;
+  int loopCrossfadeSamples = 192;
+  int releaseTailSamples = 192;
 
   bool loopEnabled = false;
   int loopStart = 0;
   int loopEnd = 0;
   int releaseEnd = 0;
 };
+
+static float sampleAtHermite(const juce::AudioBuffer<float>& b, int ch, double pos) {
+  const int n = b.getNumSamples();
+  if (n <= 0) return 0.0f;
+
+  const double safePos = juce::jlimit(0.0, (double)std::max(0, n - 1), pos);
+  const int i1 = juce::jlimit(0, n - 1, (int)std::floor(safePos));
+  const float t = (float)(safePos - (double)i1);
+
+  const int i0 = juce::jlimit(0, n - 1, i1 - 1);
+  const int i2 = juce::jlimit(0, n - 1, i1 + 1);
+  const int i3 = juce::jlimit(0, n - 1, i1 + 2);
+
+  const float y0 = b.getSample(ch, i0);
+  const float y1 = b.getSample(ch, i1);
+  const float y2 = b.getSample(ch, i2);
+  const float y3 = b.getSample(ch, i3);
+
+  const float c0 = y1;
+  const float c1 = 0.5f * (y2 - y0);
+  const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+  const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+  return ((c3 * t + c2) * t + c1) * t + c0;
+}
 
 struct TouskiRuntimeParams {
   float posAction = 0.0f;
@@ -521,42 +549,85 @@ public:
         if (!sv.active || !sv.sample) continue;
 
         const auto& b = sv.sample->buffer;
-        const int ip = (int)sv.pos;
-
-        if (!sv.releasing && sv.loopEnabled && sv.loopEnd > sv.loopStart && ip >= sv.loopEnd) {
-          sv.pos = (double)sv.loopStart;
+        if (b.getNumSamples() <= 1) {
+          sv.active = false;
+          continue;
         }
+
+        const int ip = (int)sv.pos;
 
         if (ip >= sv.end || ip >= b.getNumSamples() - 1) {
           sv.active = false;
           continue;
         }
 
-        float fade = 1.0f;
+        float amp = 1.0f;
+        if (sv.fadeInRemaining > 0) {
+          const int done = sv.fadeInTotal - sv.fadeInRemaining;
+          amp *= (float)done / (float)std::max(1, sv.fadeInTotal);
+          --sv.fadeInRemaining;
+        }
+
         if (sv.releasing) {
           if (sv.fadeOutRemaining <= 0) {
             sv.active = false;
             continue;
           }
-          fade = (float)sv.fadeOutRemaining / (float)std::max(1, sv.fadeOutTotal);
+          amp *= (float)sv.fadeOutRemaining / (float)std::max(1, sv.fadeOutTotal);
           --sv.fadeOutRemaining;
         }
 
-        const float frac = (float)(sv.pos - ip);
-        float inL = b.getSample(0, ip) + (b.getSample(0, ip + 1) - b.getSample(0, ip)) * frac;
-        float inR = (b.getNumChannels() > 1)
-          ? (b.getSample(1, ip) + (b.getSample(1, ip + 1) - b.getSample(1, ip)) * frac)
-          : inL;
+        if (ip >= sv.end) {
+          sv.active = false;
+          continue;
+        }
+
+        const bool canLoopXf = !sv.releasing && sv.loopEnabled && sv.loopEnd > sv.loopStart && sv.loopCrossfadeSamples > 0;
+        const double loopLen = (double)std::max(1, sv.loopEnd - sv.loopStart);
+
+        float inL = 0.0f;
+        float inR = 0.0f;
+
+        if (canLoopXf) {
+          const double distToLoopEnd = (double)sv.loopEnd - sv.pos;
+          const double xfadeS = (double)std::min(sv.loopCrossfadeSamples, std::max(1, sv.loopEnd - sv.loopStart - 1));
+          if (xfadeS > 0.0 && distToLoopEnd > 0.0 && distToLoopEnd <= xfadeS) {
+            const float t = (float)(1.0 - (distToLoopEnd / xfadeS));
+            const double wrapPos = sv.pos - (double)sv.loopEnd + (double)sv.loopStart;
+            const float a = std::cos(t * juce::MathConstants<float>::halfPi);
+            const float bMix = std::sin(t * juce::MathConstants<float>::halfPi);
+
+            const float mainL = sampleAtHermite(b, 0, sv.pos);
+            const float wrapL = sampleAtHermite(b, 0, wrapPos);
+            inL = mainL * a + wrapL * bMix;
+
+            const int rch = (b.getNumChannels() > 1) ? 1 : 0;
+            const float mainR = sampleAtHermite(b, rch, sv.pos);
+            const float wrapR = sampleAtHermite(b, rch, wrapPos);
+            inR = mainR * a + wrapR * bMix;
+          } else {
+            inL = sampleAtHermite(b, 0, sv.pos);
+            inR = sampleAtHermite(b, (b.getNumChannels() > 1) ? 1 : 0, sv.pos);
+          }
+        } else {
+          inL = sampleAtHermite(b, 0, sv.pos);
+          inR = sampleAtHermite(b, (b.getNumChannels() > 1) ? 1 : 0, sv.pos);
+        }
 
         int idx = juce::jlimit(0, (int)mixerStates.size() - 1, sv.mixCh - 1);
         const auto& mc = mixerStates[(size_t)idx];
 
         if (mc.mute || (anySolo && !mc.solo)) { sv.pos += sv.rate; continue; }
 
-        busL[(size_t)idx] += inL * sv.gainL * fade;
-        busR[(size_t)idx] += inR * sv.gainR * fade;
+        busL[(size_t)idx] += inL * sv.gainL * amp;
+        busR[(size_t)idx] += inR * sv.gainR * amp;
 
         sv.pos += sv.rate;
+
+        if (canLoopXf) {
+          while (sv.pos >= (double)sv.loopEnd)
+            sv.pos -= loopLen;
+        }
       }
 
       // Synth voices
@@ -1350,6 +1421,12 @@ void refreshMasterEq() {
       sv.end = std::max(sv.loopEnd, sv.releaseEnd);
       sv.pos = (double)sv.start;
       sv.loopEnabled = true;
+      sv.fadeInTotal = std::max(16, (int)std::llround(sampleRate * 0.002));
+      sv.fadeInRemaining = sv.fadeInTotal;
+      sv.loopCrossfadeSamples = std::max(24, (int)std::llround(sampleRate * 0.004));
+      sv.releaseTailSamples = std::max(32, (int)std::llround(sampleRate * 0.004));
+      sv.fadeOutTotal = sv.releaseTailSamples;
+      sv.fadeOutRemaining = 0;
 
       const double pitchRatio = std::pow(2.0, (double)(ev.note - root) / 12.0);
       sv.rate = pitchRatio * (chosen->sampleRate / std::max(1.0, sampleRate));
@@ -1370,6 +1447,8 @@ void refreshMasterEq() {
           sv.releasing = true;
           sv.loopEnabled = false;
           sv.end = std::max(1, sv.releaseEnd > 0 ? sv.releaseEnd : sv.end);
+          sv.fadeOutTotal = std::max(16, sv.releaseTailSamples);
+          sv.fadeOutRemaining = sv.fadeOutTotal;
         }
       }
       return;
@@ -1674,6 +1753,12 @@ void refreshMasterEq() {
     sv.end = std::max(sv.loopEnd, sv.releaseEnd);
     sv.pos = (double)sv.start;
     sv.loopEnabled = true;
+    sv.fadeInTotal = std::max(16, (int)std::llround(sampleRate * 0.002));
+    sv.fadeInRemaining = sv.fadeInTotal;
+    sv.loopCrossfadeSamples = std::max(24, (int)std::llround(sampleRate * 0.004));
+    sv.releaseTailSamples = std::max(32, (int)std::llround(sampleRate * 0.004));
+    sv.fadeOutTotal = sv.releaseTailSamples;
+    sv.fadeOutRemaining = 0;
 
     const double pitchRatio = std::pow(2.0, (double)(note - root) / 12.0);
     sv.rate = pitchRatio * (chosen->sampleRate / std::max(1.0, sampleRate));
@@ -1701,6 +1786,8 @@ void refreshMasterEq() {
         sv.releasing = true;
         sv.loopEnabled = false;
         sv.end = std::max(1, sv.releaseEnd > 0 ? sv.releaseEnd : sv.end);
+        sv.fadeOutTotal = std::max(16, sv.releaseTailSamples);
+        sv.fadeOutRemaining = sv.fadeOutTotal;
       }
     }
     resOk(op, id, juce::var());
