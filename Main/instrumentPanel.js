@@ -230,6 +230,24 @@ function renderInstrumentPanel(){
     } else {
       ch.params[key]=val;
     }
+
+    // Live Touski program switch (no need to restart transport)
+    try{
+      const isTouski = String(ch.preset || "").toLowerCase().includes("touski");
+      if(isTouski && (key === "programPath" || key === "path")){
+        const instId = String(ch.id || "touski");
+        const programPath = String(val || "").trim();
+        if(programPath && window.audioBackend?.backends?.juce?._request){
+          window.audioBackend.backends.juce._request("touski.program.load", { instId, programPath }).catch(()=>{});
+        }
+      }
+      if(isTouski && ["posAction","posLoopStart","posLoopEnd","posRelease","keyActionPct","loopStartPct","loopEndPct","releasePct"].includes(String(key))){
+        const instId = String(ch.id || "touski");
+        if(window.audioBackend?.backends?.juce?._request){
+          window.audioBackend.backends.juce._request("touski.param.set", { instId, params: ch.params || {} }).catch(()=>{});
+        }
+      }
+    }catch(_){ }
     // optional live update hook (future): could re-render audio nodes etc.
   });
 }

@@ -22,6 +22,7 @@
   const rootNoteEl = document.getElementById("samplerRootNote");
   const rootHzEl = document.getElementById("samplerRootHz");
   const waveCanvas = document.getElementById("samplerWaveCanvas");
+  const waveDropEl = waveCanvas ? waveCanvas.closest(".samplerWave") : null;
   const pianoMapEl = document.getElementById("samplerPianoMap");
   const loopStatusEl = document.getElementById("samplerLoopStatus");
   const modeActionBtn = document.getElementById("samplerModeAction");
@@ -113,6 +114,32 @@
 
   function setProgramStatus(message) {
     if (programStatusEl) programStatusEl.textContent = message;
+  }
+
+  function assignProgramToActiveTouski(program) {
+    try {
+      const ch = (typeof activeChannel === "function") ? activeChannel() : null;
+      if (!ch) return;
+      const preset = String(ch.preset || "").toLowerCase();
+      if (!preset.includes("touski")) return;
+      ch.params = (ch.params && typeof ch.params === "object") ? ch.params : {};
+      const path = String(program?.filePath || program?.path || "").trim();
+      if (!path) return;
+      ch.params.programPath = path;
+      if (program?.rootMidi != null) ch.params.rootMidi = Number(program.rootMidi) || ch.params.rootMidi;
+      const toPct01 = (v, fb=0) => Number.isFinite(+v) ? Math.max(0, Math.min(1, +v)) : fb;
+      ch.params.posAction = toPct01(program?.posAction, (Number(program?.keyActionPct)||0)/100);
+      ch.params.posLoopStart = toPct01(program?.posLoopStart, (Number(program?.loopStartPct)||15)/100);
+      ch.params.posLoopEnd = toPct01(program?.posLoopEnd, (Number(program?.loopEndPct)||90)/100);
+      ch.params.posRelease = toPct01(program?.posRelease, (Number(program?.releasePct)||100)/100);
+      const samplePath = String(program?.samplePath || program?.sample?.path || "").trim();
+      const rootMidi = Number(program?.rootMidi ?? 60) || 60;
+      if (samplePath) {
+        ch.params.samples = [{ note: rootMidi, samplePath }];
+        ch.params.mapping = Array.isArray(program?.mapping) ? program.mapping : [{ midi: rootMidi, ratio: 1 }];
+      }
+      if (typeof window.renderInstrumentPanel === "function") window.renderInstrumentPanel();
+    } catch (_error) {}
   }
 
   async function autoplaySelectedSample(url, force = false) {
@@ -844,7 +871,12 @@
       renderPianoMap([], null);
       return;
     }
-    setStatus(`Import prêt: ${imported.relativePath || imported.name} (analyse root note en cours).`);
+    const importedLabel = imported.relativePath || imported.name;
+    const ext = String(imported.ext || imported.name || "").toLowerCase();
+    const mp3Hint = ext.endsWith(".mp3") || ext === ".mp3"
+      ? " ⚠ mp3: selon build JUCE, préférez .wav si un programme ne se charge pas."
+      : "";
+    setStatus(`Import prêt: ${importedLabel} (analyse root note en cours).${mp3Hint}`);
     if (String(imported.path || "") !== lastImportedPath) {
       lastImportedPath = String(imported.path || "");
       analyzeImportedSample(imported);
@@ -871,16 +903,26 @@
       ? extrapolatePianoMap(resolvedRootMidi).map((row) => ({ midi: row.midi, ratio: row.ratio }))
       : [];
 
+    const keyActionPct = Math.round(positions.pos_action * 100);
+    const loopStartPct = Math.round(positions.pos_loop_start * 100);
+    const loopEndPct = Math.round(positions.pos_loop_end * 100);
+    const releasePct = Math.round(positions.pos_release * 100);
+    const samplePath = String(sample?.path || sample?.filePath || "");
+
     return {
+      version: 2,
       id: mode === "update" ? (sourceProgram?.id || undefined) : undefined,
       filePath: sourceProgram?.filePath || null,
       relativeFilePath: sourceProgram?.relativeFilePath || null,
       category: programCategoryEl?.value || sourceProgram?.category || "",
       name: rawName || suggestedName,
       sample: sample || null,
+      samplePath,
       rootMidi: resolvedRootMidi,
+      rootNote: resolvedRootMidi,
       rootHz: Number.isFinite(analysisState?.freq) ? analysisState.freq : (Number.isFinite(rootHzFromUI) ? rootHzFromUI : null),
       noteMap: professionalNoteMap,
+      mapping: professionalNoteMap,
       pitchInterpolation: {
         engine: "phase-vocoder",
         fftSize: 2048,
@@ -890,9 +932,20 @@
       posLoopStart: positions.pos_loop_start,
       posLoopEnd: positions.pos_loop_end,
       posRelease: positions.pos_release,
-      loopStartPct: Math.round(positions.pos_loop_start * 100),
-      loopEndPct: Math.round(positions.pos_loop_end * 100),
-      sustainPct: Math.round(positions.pos_loop_end * 100),
+      keyActionPct,
+      loopStartPct,
+      loopEndPct,
+      sustainPct: loopEndPct,
+      releasePct,
+      smartPlayback: {
+        keyActionPct,
+        loopStartPct,
+        loopEndPct,
+        releasePct,
+        mode: "hold_loop_then_release",
+      },
+      samples: samplePath ? [{ note: Number(resolvedRootMidi ?? 60), samplePath }] : [],
+      zones: samplePath ? [{ rootMidi: Number(resolvedRootMidi ?? 60), samplePath, keyActionPct, loopStartPct, loopEndPct, releasePct }] : [],
     };
   }
 
@@ -1084,12 +1137,13 @@
 
   dropZoneEl?.addEventListener("dragleave", () => dropZoneEl.classList.remove("dragover"));
 
-  dropZoneEl?.addEventListener("drop", (event) => {
+  function handleSampleDrop(event) {
     event.preventDefault();
-    dropZoneEl.classList.remove("dragover");
+    dropZoneEl?.classList.remove("dragover");
+    waveDropEl?.classList.remove("dragover");
 
     let sample = directory.state.dragSample;
-    const raw = event.dataTransfer.getData("application/x-sls-sample");
+    const raw = event.dataTransfer?.getData("application/x-sls-sample");
     if (!sample && raw) {
       try {
         sample = JSON.parse(raw);
@@ -1104,7 +1158,16 @@
     }
 
     directory.importSample(sample);
+  }
+
+  dropZoneEl?.addEventListener("drop", handleSampleDrop);
+
+  waveDropEl?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    waveDropEl.classList.add("dragover");
   });
+  waveDropEl?.addEventListener("dragleave", () => waveDropEl.classList.remove("dragover"));
+  waveDropEl?.addEventListener("drop", handleSampleDrop);
 
   modeActionBtn?.addEventListener("click", () => setEditMode("pos_action"));
   modeLoopStartBtn?.addEventListener("click", () => setEditMode("pos_loop_start"));
@@ -1154,8 +1217,10 @@
       setProgramStatus(`Erreur sauvegarde programme: ${result?.error || "inconnue"}`);
       return;
     }
-    setProgramStatus(`Programme sauvegardé: ${result.program?.name || payload.name}`);
-    global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: result.program || payload }));
+    const savedProgram = result.program || payload;
+    setProgramStatus(`Programme sauvegardé: ${savedProgram?.name || payload.name}`);
+    assignProgramToActiveTouski(savedProgram);
+    global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: savedProgram }));
   }
 
   programUpdateBtn?.addEventListener("click", () => saveProgramWithMode("update"));
@@ -1203,6 +1268,7 @@
     updateLoopStatus();
     drawWaveform(analysisState?.buffer || null);
     setProgramStatus(`Programme chargé: ${program.name}`);
+    assignProgramToActiveTouski(program);
     global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: program }));
   });
 

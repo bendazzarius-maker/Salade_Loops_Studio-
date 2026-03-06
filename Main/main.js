@@ -505,6 +505,74 @@ ipcMain.handle("sampler:scanDirectories", async (_evt, payload = {}) => {
   return { ok: true, roots: indexed };
 });
 
+async function resolveNonCollidingFilePath(basePath) {
+  let candidate = basePath;
+  let i = 2;
+  const ext = path.extname(basePath);
+  const dir = path.dirname(basePath);
+  const stem = path.basename(basePath, ext);
+  while (true) {
+    try {
+      await fs.access(candidate);
+      candidate = path.join(dir, `${stem}_${i}${ext}`);
+      i += 1;
+    } catch (_missing) {
+      return candidate;
+    }
+  }
+}
+
+function normalizeSamplerProgramShape(program = {}) {
+  const posAction = Number.isFinite(+program.posAction) ? +program.posAction : ((Number(program.keyActionPct) || 0) / 100);
+  const posLoopStartRaw = Number.isFinite(+program.posLoopStart) ? +program.posLoopStart : ((Number(program.loopStartPct) || 15) / 100);
+  const posLoopEndRaw = Number.isFinite(+program.posLoopEnd) ? +program.posLoopEnd : ((Number(program.loopEndPct) || 90) / 100);
+  const posReleaseRaw = Number.isFinite(+program.posRelease) ? +program.posRelease : ((Number(program.releasePct) || 100) / 100);
+  const posLoopStart = Math.max(posAction + 0.001, posLoopStartRaw);
+  const posLoopEnd = Math.max(posLoopStart + 0.001, posLoopEndRaw);
+  const posRelease = Math.max(posLoopEnd, posReleaseRaw);
+  const keyActionPct = Math.round(Math.max(0, Math.min(1, posAction)) * 100);
+  const loopStartPct = Math.round(Math.max(0, Math.min(1, posLoopStart)) * 100);
+  const loopEndPct = Math.round(Math.max(0, Math.min(1, posLoopEnd)) * 100);
+  const releasePct = Math.round(Math.max(0, Math.min(1, posRelease)) * 100);
+  const samplePath = String(program.samplePath || program.sample?.path || "").trim();
+  const noteMap = Array.isArray(program.noteMap) ? program.noteMap : (Array.isArray(program.mapping) ? program.mapping : []);
+  const samples = Array.isArray(program.samples) ? program.samples : [];
+  const zones = Array.isArray(program.zones) ? program.zones : [];
+  if (!samples.length && samplePath) {
+    samples.push({ note: Number(program.rootMidi ?? 60) || 60, samplePath });
+  }
+  if (!zones.length && samplePath) {
+    zones.push({ rootMidi: Number(program.rootMidi ?? 60) || 60, samplePath, keyActionPct, loopStartPct, loopEndPct, releasePct });
+  }
+
+  return {
+    ...program,
+    version: Number(program.version || 2),
+    samplePath,
+    posAction,
+    posLoopStart,
+    posLoopEnd,
+    posRelease,
+    keyActionPct,
+    loopStartPct,
+    loopEndPct,
+    releasePct,
+    sustainPct: loopEndPct,
+    noteMap,
+    mapping: noteMap,
+    samples,
+    zones,
+    smartPlayback: {
+      keyActionPct,
+      loopStartPct,
+      loopEndPct,
+      releasePct,
+      mode: "hold_loop_then_release",
+      ...(program.smartPlayback && typeof program.smartPlayback === "object" ? program.smartPlayback : {}),
+    },
+  };
+}
+
 async function ensureSamplerProgramsRoot() {
   const root = samplerProgramsRoot();
   await fs.mkdir(root, { recursive: true });
@@ -613,12 +681,13 @@ ipcMain.handle("sampler:saveProgram", async (_evt, payload = {}) => {
     if (!dir.startsWith(path.resolve(root))) return { ok: false, error: "Dossier invalide" };
     await fs.mkdir(dir, { recursive: true });
     outFile = path.join(dir, fileName);
+    if (mode === "saveAs") outFile = await resolveNonCollidingFilePath(outFile);
   }
 
   const relativeFilePath = path.relative(root, outFile).replace(/\\/g, "/");
 
   const toWrite = {
-    ...program,
+    ...normalizeSamplerProgramShape(program),
     id: relativeFilePath,
     updatedAt: new Date().toISOString(),
     category: path.dirname(relativeFilePath).replace(/\\/g, "/") || "",
