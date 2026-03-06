@@ -187,7 +187,7 @@ struct RtCommand {
 
 // ------------------------------ Helpers ------------------------------
 
-static [[maybe_unused]] int _parseDivision(const juce::String& div) {
+[[maybe_unused]] static int _parseDivision(const juce::String& div) {
   const auto s = div.trim();
   int denom = 0;
   // quick parse for "1:8"
@@ -197,19 +197,19 @@ static [[maybe_unused]] int _parseDivision(const juce::String& div) {
   switch (denom) { case 2: case 3: case 4: case 6: case 8: case 16: return denom; default: return 8; }
 }
 
-static [[maybe_unused]] float _delayTimeFromDivision(float bpm, int denom) {
+[[maybe_unused]] static float _delayTimeFromDivision(float bpm, int denom) {
   const float beat = 60.0f / juce::jmax(1.0f, bpm);
   const float whole = beat * 4.0f;
   return whole / (float)juce::jmax(1, denom);
 }
 
-static [[maybe_unused]] float _computeFeedbackFromRepeats(float repeats, float endGain) {
+[[maybe_unused]] static float _computeFeedbackFromRepeats(float repeats, float endGain) {
   repeats = juce::jmax(1.0f, repeats);
   endGain = juce::jlimit(0.01f, 0.9f, endGain);
   return juce::jlimit(0.0f, 0.95f, std::pow(endGain, 1.0f / repeats));
 }
 
-static [[maybe_unused]] float _onePoleAlphaFromCutoff(float cutoffHz, float sr) {
+[[maybe_unused]] static float _onePoleAlphaFromCutoff(float cutoffHz, float sr) {
   cutoffHz = juce::jlimit(20.0f, 20000.0f, cutoffHz);
   sr = juce::jmax(1.0f, sr);
   const float x = -2.0f * juce::MathConstants<float>::pi * cutoffHz / sr;
