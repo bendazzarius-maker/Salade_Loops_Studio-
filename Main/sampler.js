@@ -22,6 +22,7 @@
   const rootNoteEl = document.getElementById("samplerRootNote");
   const rootHzEl = document.getElementById("samplerRootHz");
   const waveCanvas = document.getElementById("samplerWaveCanvas");
+  const waveDropEl = waveCanvas ? waveCanvas.closest(".samplerWave") : null;
   const pianoMapEl = document.getElementById("samplerPianoMap");
   const loopStatusEl = document.getElementById("samplerLoopStatus");
   const modeActionBtn = document.getElementById("samplerModeAction");
@@ -1084,12 +1085,13 @@
 
   dropZoneEl?.addEventListener("dragleave", () => dropZoneEl.classList.remove("dragover"));
 
-  dropZoneEl?.addEventListener("drop", (event) => {
+  function handleSampleDrop(event) {
     event.preventDefault();
-    dropZoneEl.classList.remove("dragover");
+    dropZoneEl?.classList.remove("dragover");
+    waveDropEl?.classList.remove("dragover");
 
     let sample = directory.state.dragSample;
-    const raw = event.dataTransfer.getData("application/x-sls-sample");
+    const raw = event.dataTransfer?.getData("application/x-sls-sample");
     if (!sample && raw) {
       try {
         sample = JSON.parse(raw);
@@ -1104,7 +1106,16 @@
     }
 
     directory.importSample(sample);
+  }
+
+  dropZoneEl?.addEventListener("drop", handleSampleDrop);
+
+  waveDropEl?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    waveDropEl.classList.add("dragover");
   });
+  waveDropEl?.addEventListener("dragleave", () => waveDropEl.classList.remove("dragover"));
+  waveDropEl?.addEventListener("drop", handleSampleDrop);
 
   modeActionBtn?.addEventListener("click", () => setEditMode("pos_action"));
   modeLoopStartBtn?.addEventListener("click", () => setEditMode("pos_loop_start"));
