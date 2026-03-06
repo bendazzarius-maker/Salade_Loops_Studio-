@@ -127,6 +127,17 @@
       if (!path) return;
       ch.params.programPath = path;
       if (program?.rootMidi != null) ch.params.rootMidi = Number(program.rootMidi) || ch.params.rootMidi;
+      const toPct01 = (v, fb=0) => Number.isFinite(+v) ? Math.max(0, Math.min(1, +v)) : fb;
+      ch.params.posAction = toPct01(program?.posAction, (Number(program?.keyActionPct)||0)/100);
+      ch.params.posLoopStart = toPct01(program?.posLoopStart, (Number(program?.loopStartPct)||15)/100);
+      ch.params.posLoopEnd = toPct01(program?.posLoopEnd, (Number(program?.loopEndPct)||90)/100);
+      ch.params.posRelease = toPct01(program?.posRelease, (Number(program?.releasePct)||100)/100);
+      const samplePath = String(program?.samplePath || program?.sample?.path || "").trim();
+      const rootMidi = Number(program?.rootMidi ?? 60) || 60;
+      if (samplePath) {
+        ch.params.samples = [{ note: rootMidi, samplePath }];
+        ch.params.mapping = Array.isArray(program?.mapping) ? program.mapping : [{ midi: rootMidi, ratio: 1 }];
+      }
       if (typeof window.renderInstrumentPanel === "function") window.renderInstrumentPanel();
     } catch (_error) {}
   }
@@ -933,6 +944,8 @@
         releasePct,
         mode: "hold_loop_then_release",
       },
+      samples: samplePath ? [{ note: Number(resolvedRootMidi ?? 60), samplePath }] : [],
+      zones: samplePath ? [{ rootMidi: Number(resolvedRootMidi ?? 60), samplePath, keyActionPct, loopStartPct, loopEndPct, releasePct }] : [],
     };
   }
 

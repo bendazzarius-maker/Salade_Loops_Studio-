@@ -539,7 +539,10 @@ function _collectEngineEventsForRange(startStep, endStep){
             if (channelPreset.toLowerCase().includes("touski")) {
               const instId = String(ch.id || `touski-${tr.id || 'track'}`);
               const programPath = effectiveParams.programPath || effectiveParams.path || "";
-              events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath });
+              const samples = Array.isArray(effectiveParams.samples)
+                ? effectiveParams.samples
+                : (effectiveParams.samplePath ? [{ note: Number(effectiveParams.rootMidi ?? 60), samplePath: String(effectiveParams.samplePath) }] : []);
+              events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath, samples });
               events.push({ atPpq: atPpq + durPpq, type: "touski.note.off", instId, mixCh, note, vel: 0 });
               continue;
             }
@@ -588,14 +591,17 @@ async function _preloadEngineAssets(events, juce){
       delete ev.samplePath;
     }
 
-    if (ev.type === "touski.note.on" && ev.programPath) {
-      const key = `${ev.instId}::${ev.programPath}`;
+    if (ev.type === "touski.note.on") {
+      const pth = String(ev.programPath || "").trim();
+      const sam = Array.isArray(ev.samples) ? ev.samples : [];
+      const key = `${ev.instId}::${pth}::${sam.length}`;
       if (!touskiLoads.has(key)) {
-        const res = await juce.touskiProgramLoad({ instId: ev.instId, programPath: ev.programPath });
-        if (!res?.ok) console.warn("[SLS][touski.preload.fail]", { instId: ev.instId, programPath: ev.programPath, res });
+        const res = await juce.touskiProgramLoad({ instId: ev.instId, programPath: pth, samples: sam });
+        if (!res?.ok) console.warn("[SLS][touski.preload.fail]", { instId: ev.instId, programPath: pth, samples: sam.length, res });
         touskiLoads.add(key);
       }
       delete ev.programPath;
+      if (!sam.length) delete ev.samples;
     }
   }
 }

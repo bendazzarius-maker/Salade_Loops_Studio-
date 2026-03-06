@@ -552,6 +552,8 @@ function normalizeSamplerProgramShape(program = {}) {
     sustainPct: loopEndPct,
     noteMap,
     mapping: noteMap,
+    samples,
+    zones,
     smartPlayback: {
       keyActionPct,
       loopStartPct,
