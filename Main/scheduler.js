@@ -920,11 +920,33 @@ function tick() {
     if (!state.loop && pb.nextStep >= pb.endStep) break;
   }
 
+  // Backend loop bridge (JUCE scheduler window is finite, so force seek at range boundary when loop is ON)
+  try{
+    if(_isJuceTransportScheduling() && state.loop && pb.endStep > 0){
+      const engineAbsStep = Math.floor(Math.max(0, _enginePpq()) * (state.stepsPerBar/4));
+      const relStep = engineAbsStep - Math.max(0, Math.floor(pb.rangeStartStep||0));
+      if(relStep >= pb.endStep){
+        const juce = window.audioBackend?.backends?.juce;
+        if(juce && !pb.__loopSeekPending){
+          pb.__loopSeekPending = true;
+          const fromPpq = Math.max(0, (pb.rangeStartStep||0) * _ppqPerStep());
+          juce._request("transport.seek", { ppq: fromPpq })
+            .catch(()=>{})
+            .finally(()=>{ pb.__loopSeekPending = false; });
+        }
+      }
+    }
+  }catch(_){ }
+
   // UI readhead
   const enginePpq = _enginePpq();
   const absStepFromEngine = Math.floor(Math.max(0, enginePpq) * (state.stepsPerBar/4));
   const elapsed = Math.max(0, now - pb.startT);
-  const absStep = Number.isFinite(absStepFromEngine) && absStepFromEngine >= 0 ? absStepFromEngine : Math.floor(elapsed / sp);
+  const fallbackAbs = Math.floor(elapsed / sp);
+  const rangeStart = Math.max(0, Math.floor(pb.rangeStartStep||0));
+  const absStep = Number.isFinite(absStepFromEngine) && absStepFromEngine >= 0
+    ? Math.max(0, absStepFromEngine - rangeStart)
+    : fallbackAbs;
   const rangeLen = Math.max(1, pb.rangeEndStep - pb.rangeStartStep);
   const relUiStep = (state.loop && pb.endStep > 0) ? (absStep % pb.endStep) : absStep;
   const uiStep = pb.rangeStartStep + relUiStep;
@@ -945,7 +967,7 @@ function tick() {
     const p = activePattern();
     const bars = p ? patternLengthBars(p) : 1;
     const patSteps = Math.max(1, bars * state.stepsPerBar);
-    pb.uiRollStep = (pb.rangeStartStep + absStep) % patSteps;
+    pb.uiRollStep = Math.max(0, pb.uiSongStep) % patSteps;
   } catch (_) {
     pb.uiRollStep = uiStep;
   }
@@ -1047,11 +1069,12 @@ async function start() {
     pb.rangeStartStep = Math.max(0, Math.floor(selected.startStep||0));
     pb.rangeEndStep = Math.max(pb.rangeStartStep+1, Math.floor(selected.endStep||0));
     try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
-  }else{
-    // Smart play: no selection => full song playback
-    try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
+  }else if(state.mode === "song") {
     pb.rangeStartStep = 0;
     pb.rangeEndStep = playlistEndBar() * state.stepsPerBar;
+  } else {
+    pb.rangeStartStep = 0;
+    pb.rangeEndStep = Math.max(1, (activePattern() ? patternLengthBars(activePattern()) : 1) * state.stepsPerBar);
   }
 
   if (state.mode === "pattern") {
@@ -1081,7 +1104,7 @@ async function start() {
     const fromPpq = Math.max(0, startStep * _ppqPerStep());
     const toPpq = Math.max(fromPpq + 4, endStep * _ppqPerStep());
     await juce._request("schedule.setWindow", { fromPpq, toPpq });
-    await juce._request("transport.seek", { ppq: 0 });
+    await juce._request("transport.seek", { ppq: fromPpq });
 
     // prewarm guardrail: avoid first-block compression on first play
     await new Promise((resolve) => setTimeout(resolve, 120));

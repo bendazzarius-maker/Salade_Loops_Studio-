@@ -309,7 +309,7 @@
   .samplerMain{display:flex;flex-direction:column;gap:12px;padding-right:2px}
   .samplerSplitter{border-radius:999px;background:rgba(112,167,255,.2);border:1px solid rgba(112,167,255,.35);cursor:col-resize;align-self:stretch;transition:background .15s ease}
   .samplerSplitter:hover,.samplerSplitter.dragging{background:rgba(39,224,163,.32);border-color:rgba(39,224,163,.55)}
-  .samplerBlock{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
+  .samplerBlock{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0;position:relative;overflow:visible}
   .samplePatternEditor{margin:12px;border:1px solid rgba(112,167,255,.3);border-radius:12px;padding:12px;background:rgba(9,16,26,.78);display:flex;flex-direction:column;gap:10px}
   .samplePatternEditor canvas{display:block;width:100%;height:120px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:#070b12}
   .samplePatternRow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
@@ -319,8 +319,8 @@
   .samplerBlockRoots{flex:0 0 auto}
   .samplerBlockBrowser{flex:1 1 auto;min-height:220px}
   .samplerBlockPreview{grid-area:preview}
-  .samplerBlockKey{grid-area:key}
-  .samplerBlockPrograms{grid-area:programs}
+  .samplerBlockKey{grid-area:key;isolation:isolate;z-index:0}
+  .samplerBlockPrograms{grid-area:programs;isolation:isolate;z-index:1}
   .samplerSubhead{font-size:11px;color:var(--muted);font-weight:800;line-height:1.35}
   .samplerMeta{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
   .samplerMeta .small{margin:0}
@@ -338,8 +338,9 @@
   .samplerGrid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .samplerMetric{padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.04)}
   .samplerMetric .small b{color:var(--text)}
-  .samplerWave{position:relative}
+  .samplerWave{position:relative;z-index:1}
   .samplerWave canvas{display:block;width:100%;height:140px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#070b12}
+  .samplerWave.dragover canvas{border-color:var(--accent);box-shadow:0 0 0 2px rgba(39,224,163,.25) inset}
   .samplerToolbar{display:flex;gap:8px;flex-wrap:wrap}
   .samplerToolbar .btn2{width:auto;flex:1 1 150px;min-width:150px;margin-bottom:0}
   #samplerProgramsRootBtn,
@@ -356,7 +357,7 @@
   .samplerLegend{display:flex;gap:10px;flex-wrap:wrap}
   .samplerLegend span{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
   .samplerLegend i{width:10px;height:10px;border-radius:50%;display:inline-block}
-  .samplerPianoMap{max-height:180px;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px}
+  .samplerPianoMap{max-height:180px;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;position:relative;z-index:1}
   .samplerPianoMap table{width:100%;border-collapse:collapse;font-size:11px}
   .samplerPianoMap th,.samplerPianoMap td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left}
   .samplerPianoMap tr:last-child td{border-bottom:none}
@@ -366,6 +367,11 @@
   .samplerTreeNode:hover{background:rgba(255,255,255,.08)}
   .samplerTreeNode.active{background:rgba(112,167,255,.22);border-color:rgba(112,167,255,.45)}
   .samplerTreeNode .small{opacity:.85}
+
+  .samplerLegend,.samplerToolbar,.samplerProgramActions,.samplerProgramNewCatRow,#samplerProgramsRootBtn{position:relative;z-index:3;pointer-events:auto}
+  .samplerProgramActions{display:flex;gap:8px;flex-wrap:wrap}
+  .samplerProgramNewCatRow{display:flex;gap:8px;align-items:center}
+  .samplerProgramNewCatRow input{flex:1 1 260px}
 
   @media (max-width: 1200px){
     .samplerLayout{grid-template-columns:minmax(220px,var(--sampler-side-col)) 8px minmax(0,1fr);gap:10px;padding:10px}
@@ -613,7 +619,7 @@
             <div class="samplerActions">
               <button class="btn2" id="samplerImportSelected">⬇ Importer le sample sélectionné</button>
             </div>
-            <div id="samplerDropZone" class="samplerDropZone">Glissez-déposez un sample ici pour l'import Sampler Touski.</div>
+            <div id="samplerDropZone" class="samplerDropZone">Glissez-déposez un sample ici (ou sur la waveform ci-dessous) pour l'import Sampler Touski.</div>
             <div class="small" id="samplerDropStatus" style="margin-top:8px">Aucun sample importé.</div>
           </div>
           <div class="samplerBlock samplerBlockKey">
@@ -848,6 +854,8 @@ window.addEventListener('DOMContentLoaded', () => {
   btn.style.pointerEvents = 'auto';
 
   btn.addEventListener('click', (e) => {
+    if (e.__slsModeHandled) return;
+    e.__slsModeHandled = true;
     e.preventDefault();
     e.stopPropagation();
 
@@ -868,7 +876,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       const isPattern = window.state.mode === 'pattern';
       btn.classList.toggle('active', isPattern);
-      btn.textContent = isPattern ? '🎯 MODE: PATTERN' : '🎯 MODE: SONG';
+      btn.textContent = isPattern ? '🎯 MODE: PATTERN' : '🎼 MODE: SONG';
 
       // notify any listeners (optional)
       window.dispatchEvent(new CustomEvent('daw:mode', { detail: window.state.mode }));
