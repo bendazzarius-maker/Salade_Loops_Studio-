@@ -539,7 +539,20 @@ function _collectEngineEventsForRange(startStep, endStep){
             if (channelPreset.toLowerCase().includes("touski")) {
               const instId = String(ch.id || `touski-${tr.id || 'track'}`);
               const programPath = effectiveParams.programPath || effectiveParams.path || "";
-              events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath });
+              const samples = Array.isArray(effectiveParams.samples)
+                ? effectiveParams.samples
+                : (effectiveParams.samplePath ? [{ note: Number(effectiveParams.rootMidi ?? 60), samplePath: String(effectiveParams.samplePath) }] : []);
+              const touskiParams = {
+                posAction: Number.isFinite(+effectiveParams.posAction) ? +effectiveParams.posAction : undefined,
+                posLoopStart: Number.isFinite(+effectiveParams.posLoopStart) ? +effectiveParams.posLoopStart : undefined,
+                posLoopEnd: Number.isFinite(+effectiveParams.posLoopEnd) ? +effectiveParams.posLoopEnd : undefined,
+                posRelease: Number.isFinite(+effectiveParams.posRelease) ? +effectiveParams.posRelease : undefined,
+                keyActionPct: Number.isFinite(+effectiveParams.keyActionPct) ? +effectiveParams.keyActionPct : undefined,
+                loopStartPct: Number.isFinite(+effectiveParams.loopStartPct) ? +effectiveParams.loopStartPct : undefined,
+                loopEndPct: Number.isFinite(+effectiveParams.loopEndPct) ? +effectiveParams.loopEndPct : undefined,
+                releasePct: Number.isFinite(+effectiveParams.releasePct) ? +effectiveParams.releasePct : undefined,
+              };
+              events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath, samples, touskiParams });
               events.push({ atPpq: atPpq + durPpq, type: "touski.note.off", instId, mixCh, note, vel: 0 });
               continue;
             }
@@ -588,14 +601,22 @@ async function _preloadEngineAssets(events, juce){
       delete ev.samplePath;
     }
 
-    if (ev.type === "touski.note.on" && ev.programPath) {
-      const key = `${ev.instId}::${ev.programPath}`;
+    if (ev.type === "touski.note.on") {
+      const pth = String(ev.programPath || "").trim();
+      const sam = Array.isArray(ev.samples) ? ev.samples : [];
+      const tp = (ev.touskiParams && typeof ev.touskiParams === "object") ? ev.touskiParams : {};
+      const sig = JSON.stringify(tp);
+      const key = `${ev.instId}::${pth}::${sam.length}::${sig}`;
       if (!touskiLoads.has(key)) {
-        const res = await juce.touskiProgramLoad({ instId: ev.instId, programPath: ev.programPath });
-        if (!res?.ok) console.warn("[SLS][touski.preload.fail]", { instId: ev.instId, programPath: ev.programPath, res });
+        const res = await juce.touskiProgramLoad({ instId: ev.instId, programPath: pth, samples: sam });
+        if (!res?.ok) console.warn("[SLS][touski.preload.fail]", { instId: ev.instId, programPath: pth, samples: sam.length, res });
+        const pset = await juce._request("touski.param.set", { instId: ev.instId, params: tp });
+        if (!pset?.ok) console.warn("[SLS][touski.param.set.fail]", { instId: ev.instId, params: tp, pset });
         touskiLoads.add(key);
       }
       delete ev.programPath;
+      if (!sam.length) delete ev.samples;
+      delete ev.touskiParams;
     }
   }
 }
@@ -920,11 +941,33 @@ function tick() {
     if (!state.loop && pb.nextStep >= pb.endStep) break;
   }
 
+  // Backend loop bridge (JUCE scheduler window is finite, so force seek at range boundary when loop is ON)
+  try{
+    if(_isJuceTransportScheduling() && state.loop && pb.endStep > 0){
+      const engineAbsStep = Math.floor(Math.max(0, _enginePpq()) * (state.stepsPerBar/4));
+      const relStep = engineAbsStep - Math.max(0, Math.floor(pb.rangeStartStep||0));
+      if(relStep >= pb.endStep){
+        const juce = window.audioBackend?.backends?.juce;
+        if(juce && !pb.__loopSeekPending){
+          pb.__loopSeekPending = true;
+          const fromPpq = Math.max(0, (pb.rangeStartStep||0) * _ppqPerStep());
+          juce._request("transport.seek", { ppq: fromPpq })
+            .catch(()=>{})
+            .finally(()=>{ pb.__loopSeekPending = false; });
+        }
+      }
+    }
+  }catch(_){ }
+
   // UI readhead
   const enginePpq = _enginePpq();
   const absStepFromEngine = Math.floor(Math.max(0, enginePpq) * (state.stepsPerBar/4));
   const elapsed = Math.max(0, now - pb.startT);
-  const absStep = Number.isFinite(absStepFromEngine) && absStepFromEngine >= 0 ? absStepFromEngine : Math.floor(elapsed / sp);
+  const fallbackAbs = Math.floor(elapsed / sp);
+  const rangeStart = Math.max(0, Math.floor(pb.rangeStartStep||0));
+  const absStep = Number.isFinite(absStepFromEngine) && absStepFromEngine >= 0
+    ? Math.max(0, absStepFromEngine - rangeStart)
+    : fallbackAbs;
   const rangeLen = Math.max(1, pb.rangeEndStep - pb.rangeStartStep);
   const relUiStep = (state.loop && pb.endStep > 0) ? (absStep % pb.endStep) : absStep;
   const uiStep = pb.rangeStartStep + relUiStep;
@@ -945,7 +988,7 @@ function tick() {
     const p = activePattern();
     const bars = p ? patternLengthBars(p) : 1;
     const patSteps = Math.max(1, bars * state.stepsPerBar);
-    pb.uiRollStep = (pb.rangeStartStep + absStep) % patSteps;
+    pb.uiRollStep = Math.max(0, pb.uiSongStep) % patSteps;
   } catch (_) {
     pb.uiRollStep = uiStep;
   }
@@ -1047,11 +1090,12 @@ async function start() {
     pb.rangeStartStep = Math.max(0, Math.floor(selected.startStep||0));
     pb.rangeEndStep = Math.max(pb.rangeStartStep+1, Math.floor(selected.endStep||0));
     try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
-  }else{
-    // Smart play: no selection => full song playback
-    try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
+  }else if(state.mode === "song") {
     pb.rangeStartStep = 0;
     pb.rangeEndStep = playlistEndBar() * state.stepsPerBar;
+  } else {
+    pb.rangeStartStep = 0;
+    pb.rangeEndStep = Math.max(1, (activePattern() ? patternLengthBars(activePattern()) : 1) * state.stepsPerBar);
   }
 
   if (state.mode === "pattern") {
@@ -1081,7 +1125,7 @@ async function start() {
     const fromPpq = Math.max(0, startStep * _ppqPerStep());
     const toPpq = Math.max(fromPpq + 4, endStep * _ppqPerStep());
     await juce._request("schedule.setWindow", { fromPpq, toPpq });
-    await juce._request("transport.seek", { ppq: 0 });
+    await juce._request("transport.seek", { ppq: fromPpq });
 
     // prewarm guardrail: avoid first-block compression on first play
     await new Promise((resolve) => setTimeout(resolve, 120));

@@ -4,13 +4,19 @@
     return global.audioBackend?.backends?.juce?._request?.(op, data).catch(()=>null);
   }
 
-  function buildProgramOptions(){
+  function buildProgramOptions(currentPath = ""){
     const list = (global.sampleDirectory && typeof global.sampleDirectory.listPrograms === "function") ? global.sampleDirectory.listPrograms() : [];
     const options = [{ value: "", label: "(aucun programme)", group: "Programmes" }];
+    const seen = new Set();
     for (const p of list){
       const programPath = String(p?.filePath || p?.path || "").trim();
       if (!programPath) continue;
+      seen.add(programPath);
       options.push({ value: programPath, label: String(p?.name || programPath.split(/[\/]/).pop() || programPath), group: String(p?.category || "Programmes") });
+    }
+    const current = String(currentPath || "").trim();
+    if (current && !seen.has(current)) {
+      options.push({ value: current, label: `${current.split(/[\/]/).pop() || current} (actuel)`, group: "Programmes" });
     }
     return options;
   }
@@ -21,12 +27,12 @@
     color: "#8fd3ff",
     type: "sampler",
     defaultParams(){ return { programPath: "", gain: 1, pan: 0 }; },
-    uiSchema(){
+    uiSchema(params = {}){
       return {
         title: "Sample Touski",
         sections: [
           { title: "Programme", controls: [
-            { type: "select", key: "programPath", label: "Programme", options: buildProgramOptions(), default: "" }
+            { type: "select", key: "programPath", label: "Programme", options: buildProgramOptions(params?.programPath || ""), default: "" }
           ]},
           { title: "Mix", controls: [
             { type: "slider", key: "gain", label: "Gain", min: 0, max: 2, step: 0.01 },

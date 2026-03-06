@@ -85,6 +85,18 @@ struct SampleVoice {
 
   int fadeOutTotal = 256;
   int fadeOutRemaining = 0;
+
+  bool loopEnabled = false;
+  int loopStart = 0;
+  int loopEnd = 0;
+  int releaseEnd = 0;
+};
+
+struct TouskiRuntimeParams {
+  float posAction = 0.0f;
+  float posLoopStart = 0.15f;
+  float posLoopEnd = 0.9f;
+  float posRelease = 1.0f;
 };
 
 struct InstrumentState {
@@ -175,7 +187,7 @@ struct RtCommand {
 
 // ------------------------------ Helpers ------------------------------
 
-static int _parseDivision(const juce::String& div) {
+static [[maybe_unused]] int _parseDivision(const juce::String& div) {
   const auto s = div.trim();
   int denom = 0;
   // quick parse for "1:8"
@@ -185,19 +197,19 @@ static int _parseDivision(const juce::String& div) {
   switch (denom) { case 2: case 3: case 4: case 6: case 8: case 16: return denom; default: return 8; }
 }
 
-static float _delayTimeFromDivision(float bpm, int denom) {
+static [[maybe_unused]] float _delayTimeFromDivision(float bpm, int denom) {
   const float beat = 60.0f / juce::jmax(1.0f, bpm);
   const float whole = beat * 4.0f;
   return whole / (float)juce::jmax(1, denom);
 }
 
-static float _computeFeedbackFromRepeats(float repeats, float endGain) {
+static [[maybe_unused]] float _computeFeedbackFromRepeats(float repeats, float endGain) {
   repeats = juce::jmax(1.0f, repeats);
   endGain = juce::jlimit(0.01f, 0.9f, endGain);
   return juce::jlimit(0.0f, 0.95f, std::pow(endGain, 1.0f / repeats));
 }
 
-static float _onePoleAlphaFromCutoff(float cutoffHz, float sr) {
+static [[maybe_unused]] float _onePoleAlphaFromCutoff(float cutoffHz, float sr) {
   cutoffHz = juce::jlimit(20.0f, 20000.0f, cutoffHz);
   sr = juce::jmax(1.0f, sr);
   const float x = -2.0f * juce::MathConstants<float>::pi * cutoffHz / sr;
@@ -371,7 +383,7 @@ public:
 
     // Touski (sample instrument)
     if (op == "touski.program.load") return handleTouskiProgramLoad(op, id, d);
-    if (op == "touski.param.set")    return resOk(op, id, juce::var()); // stub ok
+    if (op == "touski.param.set")    return handleTouskiParamSet(op, id, d);
     if (op == "touski.note.on")      return handleTouskiNoteOn(op, id, d);
     if (op == "touski.note.off")     return handleTouskiNoteOff(op, id, d);
 
@@ -510,6 +522,10 @@ public:
 
         const auto& b = sv.sample->buffer;
         const int ip = (int)sv.pos;
+
+        if (!sv.releasing && sv.loopEnabled && sv.loopEnd > sv.loopStart && ip >= sv.loopEnd) {
+          sv.pos = (double)sv.loopStart;
+        }
 
         if (ip >= sv.end || ip >= b.getNumSamples() - 1) {
           sv.active = false;
@@ -733,6 +749,7 @@ private:
 
   // Touski mapping: instId -> (note -> sample)
   std::unordered_map<juce::String, std::unordered_map<int, std::shared_ptr<SampleData>>> touskiNoteSamples;
+  std::unordered_map<juce::String, TouskiRuntimeParams> touskiParams;
 
   // ------------------------------ Mixer & FX ------------------------------
 
@@ -1139,7 +1156,10 @@ void refreshMasterEq() {
     if (p.isEmpty() || !f.existsAsFile()) return {};
 
     auto r = std::unique_ptr<juce::AudioFormatReader>(formatManager.createReaderFor(f));
-    if (!r) return {};
+    if (!r) {
+      std::cerr << "[SLS][sample.load.fail] no reader for: " << p << std::endl;
+      return {};
+    }
 
     auto sd = std::make_shared<SampleData>();
     sd->sampleRate = r->sampleRate;
@@ -1321,9 +1341,15 @@ void refreshMasterEq() {
       sv.note = ev.note;
 
       sv.sample = chosen;
-      sv.start = 0;
-      sv.end = chosen->buffer.getNumSamples();
-      sv.pos = 0.0;
+      const int total = chosen->buffer.getNumSamples();
+      const auto p = (touskiParams.count(ev.instId) ? touskiParams[ev.instId] : TouskiRuntimeParams{});
+      sv.start = juce::jlimit(0, std::max(0, total - 1), (int)std::floor((double)p.posAction * total));
+      sv.loopStart = juce::jlimit(0, std::max(0, total - 1), (int)std::floor((double)p.posLoopStart * total));
+      sv.loopEnd = juce::jlimit(sv.loopStart + 1, std::max(sv.loopStart + 1, total), (int)std::ceil((double)p.posLoopEnd * total));
+      sv.releaseEnd = juce::jlimit(sv.loopEnd, std::max(sv.loopEnd, total), (int)std::ceil((double)p.posRelease * total));
+      sv.end = std::max(sv.loopEnd, sv.releaseEnd);
+      sv.pos = (double)sv.start;
+      sv.loopEnabled = true;
 
       const double pitchRatio = std::pow(2.0, (double)(ev.note - root) / 12.0);
       sv.rate = pitchRatio * (chosen->sampleRate / std::max(1.0, sampleRate));
@@ -1338,7 +1364,14 @@ void refreshMasterEq() {
     }
 
     if (t == "touski.note.off") {
-      stopSampleVoicesMatching(ev.instId, ev.mixCh, ev.note);
+      for (auto& sv : sampleVoices) {
+        if (!sv.active) continue;
+        if (sv.instId == ev.instId && sv.mixCh == ev.mixCh && sv.note == ev.note) {
+          sv.releasing = true;
+          sv.loopEnabled = false;
+          sv.end = std::max(1, sv.releaseEnd > 0 ? sv.releaseEnd : sv.end);
+        }
+      }
       return;
     }
 
@@ -1582,6 +1615,26 @@ void refreshMasterEq() {
     resOk(op, id, juce::var());
   }
 
+  void handleTouskiParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
+    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
+    const auto instId = getStringProp(d, "instId", "touski");
+    auto p = touskiParams[instId];
+    if (d->hasProperty("params")) {
+      if (auto* pp = d->getProperty("params").getDynamicObject()) {
+        auto clamp01 = [](double v){ return (float)juce::jlimit(0.0, 1.0, v); };
+        p.posAction = clamp01(getDoubleProp(pp, "posAction", getDoubleProp(pp, "keyActionPct", p.posAction * 100.0) / 100.0));
+        p.posLoopStart = clamp01(getDoubleProp(pp, "posLoopStart", getDoubleProp(pp, "loopStartPct", p.posLoopStart * 100.0) / 100.0));
+        p.posLoopEnd = clamp01(getDoubleProp(pp, "posLoopEnd", getDoubleProp(pp, "loopEndPct", p.posLoopEnd * 100.0) / 100.0));
+        p.posRelease = clamp01(getDoubleProp(pp, "posRelease", getDoubleProp(pp, "releasePct", p.posRelease * 100.0) / 100.0));
+      }
+    }
+    p.posLoopStart = std::max(p.posAction + 0.001f, p.posLoopStart);
+    p.posLoopEnd = std::max(p.posLoopStart + 0.001f, p.posLoopEnd);
+    p.posRelease = std::max(p.posLoopEnd, p.posRelease);
+    touskiParams[instId] = p;
+    resOk(op, id, juce::var());
+  }
+
   void handleTouskiNoteOn(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
     if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
 
@@ -1612,9 +1665,15 @@ void refreshMasterEq() {
     sv.note = note;
 
     sv.sample = chosen;
-    sv.start = 0;
-    sv.end = chosen->buffer.getNumSamples();
-    sv.pos = 0.0;
+    const int total = chosen->buffer.getNumSamples();
+    const auto p = (touskiParams.count(instId) ? touskiParams[instId] : TouskiRuntimeParams{});
+    sv.start = juce::jlimit(0, std::max(0, total - 1), (int)std::floor((double)p.posAction * total));
+    sv.loopStart = juce::jlimit(0, std::max(0, total - 1), (int)std::floor((double)p.posLoopStart * total));
+    sv.loopEnd = juce::jlimit(sv.loopStart + 1, std::max(sv.loopStart + 1, total), (int)std::ceil((double)p.posLoopEnd * total));
+    sv.releaseEnd = juce::jlimit(sv.loopEnd, std::max(sv.loopEnd, total), (int)std::ceil((double)p.posRelease * total));
+    sv.end = std::max(sv.loopEnd, sv.releaseEnd);
+    sv.pos = (double)sv.start;
+    sv.loopEnabled = true;
 
     const double pitchRatio = std::pow(2.0, (double)(note - root) / 12.0);
     sv.rate = pitchRatio * (chosen->sampleRate / std::max(1.0, sampleRate));
@@ -1636,7 +1695,14 @@ void refreshMasterEq() {
     const auto instId = getStringProp(d, "instId", "touski");
     const int note = getIntProp(d, "note", 60);
     const int mixCh = juce::jmax(1, getIntProp(d, "mixCh", 1));
-    stopSampleVoicesMatching(instId, mixCh, note);
+    for (auto& sv : sampleVoices) {
+      if (!sv.active) continue;
+      if (sv.instId == instId && sv.mixCh == mixCh && sv.note == note) {
+        sv.releasing = true;
+        sv.loopEnabled = false;
+        sv.end = std::max(1, sv.releaseEnd > 0 ? sv.releaseEnd : sv.end);
+      }
+    }
     resOk(op, id, juce::var());
   }
 

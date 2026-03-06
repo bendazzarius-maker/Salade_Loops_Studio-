@@ -53,7 +53,10 @@ class JuceInstrumentRuntime {
     }
     if (this.type === "touski") {
       const programPath = String(this.paramsRef?.programPath || "").trim();
-      if (programPath) await this._req("touski.program.load", { instId: this.instId, ch: 0, programPath });
+      const samples = Array.isArray(this.paramsRef?.samples) ? this.paramsRef.samples : [];
+      if (programPath || samples.length) {
+        await this._req("touski.program.load", { instId: this.instId, ch: 0, programPath, samples });
+      }
       await this._req("touski.param.set", { instId: this.instId, params: this.paramsRef || {} });
       return;
     }
