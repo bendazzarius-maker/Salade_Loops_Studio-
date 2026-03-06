@@ -116,6 +116,21 @@
     if (programStatusEl) programStatusEl.textContent = message;
   }
 
+  function assignProgramToActiveTouski(program) {
+    try {
+      const ch = (typeof activeChannel === "function") ? activeChannel() : null;
+      if (!ch) return;
+      const preset = String(ch.preset || "").toLowerCase();
+      if (!preset.includes("touski")) return;
+      ch.params = (ch.params && typeof ch.params === "object") ? ch.params : {};
+      const path = String(program?.filePath || program?.path || "").trim();
+      if (!path) return;
+      ch.params.programPath = path;
+      if (program?.rootMidi != null) ch.params.rootMidi = Number(program.rootMidi) || ch.params.rootMidi;
+      if (typeof window.renderInstrumentPanel === "function") window.renderInstrumentPanel();
+    } catch (_error) {}
+  }
+
   async function autoplaySelectedSample(url, force = false) {
     if (!previewEl || !url) return;
     try {
@@ -845,7 +860,12 @@
       renderPianoMap([], null);
       return;
     }
-    setStatus(`Import prêt: ${imported.relativePath || imported.name} (analyse root note en cours).`);
+    const importedLabel = imported.relativePath || imported.name;
+    const ext = String(imported.ext || imported.name || "").toLowerCase();
+    const mp3Hint = ext.endsWith(".mp3") || ext === ".mp3"
+      ? " ⚠ mp3: selon build JUCE, préférez .wav si un programme ne se charge pas."
+      : "";
+    setStatus(`Import prêt: ${importedLabel} (analyse root note en cours).${mp3Hint}`);
     if (String(imported.path || "") !== lastImportedPath) {
       lastImportedPath = String(imported.path || "");
       analyzeImportedSample(imported);
@@ -872,16 +892,26 @@
       ? extrapolatePianoMap(resolvedRootMidi).map((row) => ({ midi: row.midi, ratio: row.ratio }))
       : [];
 
+    const keyActionPct = Math.round(positions.pos_action * 100);
+    const loopStartPct = Math.round(positions.pos_loop_start * 100);
+    const loopEndPct = Math.round(positions.pos_loop_end * 100);
+    const releasePct = Math.round(positions.pos_release * 100);
+    const samplePath = String(sample?.path || sample?.filePath || "");
+
     return {
+      version: 2,
       id: mode === "update" ? (sourceProgram?.id || undefined) : undefined,
       filePath: sourceProgram?.filePath || null,
       relativeFilePath: sourceProgram?.relativeFilePath || null,
       category: programCategoryEl?.value || sourceProgram?.category || "",
       name: rawName || suggestedName,
       sample: sample || null,
+      samplePath,
       rootMidi: resolvedRootMidi,
+      rootNote: resolvedRootMidi,
       rootHz: Number.isFinite(analysisState?.freq) ? analysisState.freq : (Number.isFinite(rootHzFromUI) ? rootHzFromUI : null),
       noteMap: professionalNoteMap,
+      mapping: professionalNoteMap,
       pitchInterpolation: {
         engine: "phase-vocoder",
         fftSize: 2048,
@@ -891,9 +921,18 @@
       posLoopStart: positions.pos_loop_start,
       posLoopEnd: positions.pos_loop_end,
       posRelease: positions.pos_release,
-      loopStartPct: Math.round(positions.pos_loop_start * 100),
-      loopEndPct: Math.round(positions.pos_loop_end * 100),
-      sustainPct: Math.round(positions.pos_loop_end * 100),
+      keyActionPct,
+      loopStartPct,
+      loopEndPct,
+      sustainPct: loopEndPct,
+      releasePct,
+      smartPlayback: {
+        keyActionPct,
+        loopStartPct,
+        loopEndPct,
+        releasePct,
+        mode: "hold_loop_then_release",
+      },
     };
   }
 
@@ -1165,8 +1204,10 @@
       setProgramStatus(`Erreur sauvegarde programme: ${result?.error || "inconnue"}`);
       return;
     }
-    setProgramStatus(`Programme sauvegardé: ${result.program?.name || payload.name}`);
-    global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: result.program || payload }));
+    const savedProgram = result.program || payload;
+    setProgramStatus(`Programme sauvegardé: ${savedProgram?.name || payload.name}`);
+    assignProgramToActiveTouski(savedProgram);
+    global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: savedProgram }));
   }
 
   programUpdateBtn?.addEventListener("click", () => saveProgramWithMode("update"));
@@ -1214,6 +1255,7 @@
     updateLoopStatus();
     drawWaveform(analysisState?.buffer || null);
     setProgramStatus(`Programme chargé: ${program.name}`);
+    assignProgramToActiveTouski(program);
     global.dispatchEvent(new CustomEvent("sampler-programs:changed", { detail: program }));
   });
 
