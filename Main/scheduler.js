@@ -542,7 +542,17 @@ function _collectEngineEventsForRange(startStep, endStep){
               const samples = Array.isArray(effectiveParams.samples)
                 ? effectiveParams.samples
                 : (effectiveParams.samplePath ? [{ note: Number(effectiveParams.rootMidi ?? 60), samplePath: String(effectiveParams.samplePath) }] : []);
-              events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath, samples });
+              const touskiParams = {
+                posAction: Number.isFinite(+effectiveParams.posAction) ? +effectiveParams.posAction : undefined,
+                posLoopStart: Number.isFinite(+effectiveParams.posLoopStart) ? +effectiveParams.posLoopStart : undefined,
+                posLoopEnd: Number.isFinite(+effectiveParams.posLoopEnd) ? +effectiveParams.posLoopEnd : undefined,
+                posRelease: Number.isFinite(+effectiveParams.posRelease) ? +effectiveParams.posRelease : undefined,
+                keyActionPct: Number.isFinite(+effectiveParams.keyActionPct) ? +effectiveParams.keyActionPct : undefined,
+                loopStartPct: Number.isFinite(+effectiveParams.loopStartPct) ? +effectiveParams.loopStartPct : undefined,
+                loopEndPct: Number.isFinite(+effectiveParams.loopEndPct) ? +effectiveParams.loopEndPct : undefined,
+                releasePct: Number.isFinite(+effectiveParams.releasePct) ? +effectiveParams.releasePct : undefined,
+              };
+              events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath, samples, touskiParams });
               events.push({ atPpq: atPpq + durPpq, type: "touski.note.off", instId, mixCh, note, vel: 0 });
               continue;
             }
@@ -594,14 +604,19 @@ async function _preloadEngineAssets(events, juce){
     if (ev.type === "touski.note.on") {
       const pth = String(ev.programPath || "").trim();
       const sam = Array.isArray(ev.samples) ? ev.samples : [];
-      const key = `${ev.instId}::${pth}::${sam.length}`;
+      const tp = (ev.touskiParams && typeof ev.touskiParams === "object") ? ev.touskiParams : {};
+      const sig = JSON.stringify(tp);
+      const key = `${ev.instId}::${pth}::${sam.length}::${sig}`;
       if (!touskiLoads.has(key)) {
         const res = await juce.touskiProgramLoad({ instId: ev.instId, programPath: pth, samples: sam });
         if (!res?.ok) console.warn("[SLS][touski.preload.fail]", { instId: ev.instId, programPath: pth, samples: sam.length, res });
+        const pset = await juce._request("touski.param.set", { instId: ev.instId, params: tp });
+        if (!pset?.ok) console.warn("[SLS][touski.param.set.fail]", { instId: ev.instId, params: tp, pset });
         touskiLoads.add(key);
       }
       delete ev.programPath;
       if (!sam.length) delete ev.samples;
+      delete ev.touskiParams;
     }
   }
 }
