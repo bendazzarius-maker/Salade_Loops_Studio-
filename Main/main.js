@@ -536,14 +536,6 @@ function normalizeSamplerProgramShape(program = {}) {
   const releasePct = Math.round(Math.max(0, Math.min(1, posRelease)) * 100);
   const samplePath = String(program.samplePath || program.sample?.path || "").trim();
   const noteMap = Array.isArray(program.noteMap) ? program.noteMap : (Array.isArray(program.mapping) ? program.mapping : []);
-  const samples = Array.isArray(program.samples) ? program.samples : [];
-  const zones = Array.isArray(program.zones) ? program.zones : [];
-  if (!samples.length && samplePath) {
-    samples.push({ note: Number(program.rootMidi ?? 60) || 60, samplePath });
-  }
-  if (!zones.length && samplePath) {
-    zones.push({ rootMidi: Number(program.rootMidi ?? 60) || 60, samplePath, keyActionPct, loopStartPct, loopEndPct, releasePct });
-  }
 
   return {
     ...program,
