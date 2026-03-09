@@ -18,7 +18,7 @@ static float signedTune(float v) { return juce::jlimit(-1.0f, 1.0f, (v - 50.0f) 
 static float safeLevel(float v) { return juce::jlimit(0.0f, 1.0f, v); }
 static int algorithmFromPiece(const DrumPieceSpec& piece, int fallback) {
     if (piece.algorithm <= 0) return fallback;
-    return std::max(0, piece.algorithm) % 3;
+    return std::max(0, piece.algorithm) % 8;
 }
 static juce::String styleId(const DrumPieceSpec& piece) {
     if (piece.kitId.isNotEmpty()) return piece.kitId;
@@ -73,35 +73,49 @@ static void applyGlobalLiveControls(FmPatch& p, const DrumPieceSpec& piece) {
     const float mixX = juce::jlimit(0.0f, 1.0f, piece.operatorMixX);
     const float mixY = juce::jlimit(0.0f, 1.0f, piece.operatorMixY);
 
-    p.voice.masterGain = juce::jlimit(0.05f, 1.10f, p.voice.masterGain * (0.9f + drive * 0.35f));
+    p.voice.masterGain = juce::jlimit(0.04f, 1.60f, p.voice.masterGain * (0.70f + drive * 1.05f));
 
     // Tune mostly affects carriers / body operators.
-    p.operators[0].ratio = std::max(0.1, p.operators[0].ratio * (1.0 + tune * 0.20));
-    p.operators[2].ratio = std::max(0.1, p.operators[2].ratio * (1.0 + tune * 0.15));
-    p.operators[3].ratio = std::max(0.1, p.operators[3].ratio * (1.0 + tune * 0.10));
+    p.operators[0].ratio = std::max(0.08, p.operators[0].ratio * (1.0 + tune * 0.45));
+    p.operators[2].ratio = std::max(0.08, p.operators[2].ratio * (1.0 + tune * 0.35));
+    p.operators[3].ratio = std::max(0.08, p.operators[3].ratio * (1.0 + tune * 0.28));
 
     // Feedback/noise live controls.
-    p.operators[1].feedback = juce::jlimit(0.0f, 1.0f, p.operators[1].feedback * (0.5f + fb * 1.3f));
-    p.operators[3].feedback = juce::jlimit(0.0f, 1.0f, p.operators[3].feedback * (0.5f + fb * 1.1f));
-    p.operators[4].feedback = juce::jlimit(0.0f, 1.0f, p.operators[4].feedback * (0.5f + fb * 1.0f));
+    p.operators[1].feedback = juce::jlimit(0.0f, 1.0f, p.operators[1].feedback * (0.2f + fb * 2.2f));
+    p.operators[3].feedback = juce::jlimit(0.0f, 1.0f, p.operators[3].feedback * (0.2f + fb * 2.0f));
+    p.operators[4].feedback = juce::jlimit(0.0f, 1.0f, p.operators[4].feedback * (0.2f + fb * 1.8f));
 
-    p.operators[4].outputLevel = juce::jlimit(0.0f, 1.25f, p.operators[4].outputLevel * (0.4f + noiseMix * 1.4f));
-    p.operators[5].outputLevel = juce::jlimit(0.0f, 1.25f, p.operators[5].outputLevel * (0.4f + noiseMix * 1.5f));
+    p.operators[4].outputLevel = juce::jlimit(0.0f, 1.50f, p.operators[4].outputLevel * (0.2f + noiseMix * 2.3f));
+    p.operators[5].outputLevel = juce::jlimit(0.0f, 1.50f, p.operators[5].outputLevel * (0.2f + noiseMix * 2.5f));
+
+    // Drive/noise push richer FM grain (detune + fixed-frequency shimmer).
+    for (std::size_t i = 0; i < p.operators.size(); ++i) {
+        auto& op = p.operators[i];
+        op.outputLevel = juce::jlimit(0.0f, 1.8f, op.outputLevel * (0.78f + drive * 0.85f));
+        op.detuneHz += (static_cast<double>(i) - 2.5) * (0.25 + drive * 2.2 + noiseMix * 1.2);
+        if (op.fixedFrequency) {
+            op.fixedFrequencyHz = std::max(80.0, op.fixedFrequencyHz * (1.0 + noiseMix * 0.22 + drive * 0.08));
+        }
+    }
 
     // XY pad drives carrier/modulator balance.
-    p.operators[0].outputLevel = juce::jlimit(0.0f, 1.4f, p.operators[0].outputLevel * (0.75f + mixY * 0.5f));
-    p.operators[2].outputLevel = juce::jlimit(0.0f, 1.4f, p.operators[2].outputLevel * (0.6f + mixX * 0.8f));
-    p.operators[3].outputLevel = juce::jlimit(0.0f, 1.4f, p.operators[3].outputLevel * (0.6f + (1.0f - mixX) * 0.8f));
-    p.operators[1].outputLevel = juce::jlimit(0.0f, 1.4f, p.operators[1].outputLevel * (0.7f + (1.0f - mixY) * 0.6f));
+    p.operators[0].outputLevel = juce::jlimit(0.0f, 1.6f, p.operators[0].outputLevel * (0.45f + mixY * 1.2f));
+    p.operators[2].outputLevel = juce::jlimit(0.0f, 1.6f, p.operators[2].outputLevel * (0.35f + mixX * 1.4f));
+    p.operators[3].outputLevel = juce::jlimit(0.0f, 1.6f, p.operators[3].outputLevel * (0.35f + (1.0f - mixX) * 1.4f));
+    p.operators[1].outputLevel = juce::jlimit(0.0f, 1.6f, p.operators[1].outputLevel * (0.35f + (1.0f - mixY) * 1.2f));
 
     if (piece.operatorsEdited) {
-        for (std::size_t i = 0; i < 4 && i < piece.operators.size(); ++i) {
+        for (std::size_t i = 0; i < piece.operators.size() && i < p.operators.size(); ++i) {
             const auto& src = piece.operators[i];
             auto& dst = p.operators[i];
-            dst.outputLevel = juce::jlimit(0.0f, 1.4f, norm100(src.level) * 1.2f);
-            dst.ratio = std::max(0.1, static_cast<double>(src.ratio));
-            dst.detuneHz = (static_cast<double>(src.detune) - 50.0) * 0.08;
-            setEnv(p, static_cast<int>(i), 0.0008 + norm100(src.attack) * 0.02, 0.02 + norm100(src.release) * 0.45, 0.0f, 0.01 + norm100(src.release) * 0.22);
+            if (!src.enabled) {
+                dst.outputLevel = 0.0f;
+                continue;
+            }
+            dst.outputLevel = juce::jlimit(0.0f, 1.6f, norm100(src.level) * 1.5f);
+            dst.ratio = std::max(0.08, static_cast<double>(src.ratio));
+            dst.detuneHz = (static_cast<double>(src.detune) - 50.0) * 0.18;
+            setEnv(p, static_cast<int>(i), 0.0004 + norm100(src.attack) * 0.08, 0.01 + norm100(src.release) * 0.75, 0.0f, 0.004 + norm100(src.release) * 0.45);
         }
     }
 }
@@ -204,16 +218,16 @@ static FmPatch buildSnareMain(const DrumPieceSpec& piece, const juce::String& st
     p.operators[0] = makeOp(1.8, 0.0, 0.62f, 0.18f, 0.04f);
     p.operators[1] = makeOp(2.5, 0.0, 0.66f + crack * 0.18f, 0.15f, 0.72f);
     p.operators[2] = makeOp(2.7, 0.0, 0.26f + wires * 0.12f, 0.12f, 0.10f);
-    p.operators[3] = makeOp(10.5, 0.0, 0.48f + noise * 0.40f + wires * 0.12f, 0.28f, 0.56f, true, 3600.0);
-    p.operators[4] = makeOp(16.0, 0.0, 0.24f + metalSnap * 0.20f, 0.28f, 0.20f, true, 6600.0);
-    p.operators[5] = makeOp(22.0, 0.0, 0.18f + metalSnap * 0.12f, 0.35f, 0.0f, true, 9200.0);
+    p.operators[3] = makeOp(10.5, 0.0, 0.52f + noise * 0.56f + wires * 0.16f, 0.28f, 0.70f, true, 3400.0);
+    p.operators[4] = makeOp(16.0, 0.0, 0.32f + metalSnap * 0.28f, 0.28f, 0.36f, true, 6200.0);
+    p.operators[5] = makeOp(22.0, 0.0, 0.24f + metalSnap * 0.20f + noise * 0.14f, 0.35f, 0.18f, true, 8800.0);
 
-    setEnv(p, 0, 0.0007, 0.08 + jazzSoft * 0.03, 0.0f, 0.020);
+    setEnv(p, 0, 0.0007, 0.10 + jazzSoft * 0.04, 0.0f, 0.028);
     setEnv(p, 1, 0.0004, 0.022 + crack * 0.020, 0.0f, 0.006);
     setEnv(p, 2, 0.0005, 0.10 + jazzSoft * 0.05, 0.0f, 0.020);
-    setEnv(p, 3, 0.0002, 0.16 + wires * 0.08, 0.0f, 0.028);
-    setEnv(p, 4, 0.0002, 0.05 + metalSnap * 0.05, 0.0f, 0.010);
-    setEnv(p, 5, 0.0002, 0.018, 0.0f, 0.004);
+    setEnv(p, 3, 0.0002, 0.22 + wires * 0.12, 0.0f, 0.050);
+    setEnv(p, 4, 0.0002, 0.09 + metalSnap * 0.09, 0.0f, 0.022);
+    setEnv(p, 5, 0.0002, 0.05 + noise * 0.04, 0.0f, 0.014);
 
     if (style == "jazzStudio") {
         p.voice.masterGain *= 0.80f;
@@ -320,13 +334,13 @@ static FmPatch buildHat(const DrumPieceSpec& piece, const juce::String& style, b
     p.operators[3] = makeOp(34.0, 0.0, 0.56f + norm100(piece.feedback) * 0.18f, 0.16f, 0.88f, true, f2 * 1.13);
     p.operators[4] = makeOp(29.0, 0.0, 0.22f + air * 0.20f, 0.16f, 0.10f, true, f3);
     p.operators[5] = makeOp(41.0, 0.0, 0.42f + norm100(piece.noiseMix) * 0.28f, 0.18f, 0.72f, true, f3 * 1.09);
-    const double baseDecay = pedal ? 0.020 : (open ? 0.15 + openness * 0.10 : 0.045 + openness * 0.02);
+    const double baseDecay = pedal ? 0.045 : (open ? 0.30 + openness * 0.42 : 0.085 + openness * 0.10);
     setEnv(p, 0, 0.0002, baseDecay * 0.35, 0.0f, 0.003);
     setEnv(p, 1, 0.0002, baseDecay * 0.45, 0.0f, 0.004);
     setEnv(p, 2, 0.0002, baseDecay * 0.60, 0.0f, 0.005);
     setEnv(p, 3, 0.0002, baseDecay * 0.70, 0.0f, 0.006);
     setEnv(p, 4, 0.0002, baseDecay * 0.80, 0.0f, 0.007);
-    setEnv(p, 5, 0.0002, baseDecay, 0.0f, 0.008);
+    setEnv(p, 5, 0.0002, baseDecay, 0.0f, pedal ? 0.022 : (open ? 0.080 : 0.030));
     if (style == "jazzStudio") {
         p.voice.masterGain *= 0.82f;
         p.operators[5].outputLevel *= 0.8f;
@@ -376,13 +390,13 @@ static FmPatch buildRideMain(const DrumPieceSpec& piece, const juce::String& sty
     p.operators[3] = makeOp(31.0, 0.0, 0.56f + wash * 0.18f, 0.16f, 0.80f, true, 7200.0);
     p.operators[4] = makeOp(27.0, 0.0, 0.16f + wash * 0.18f, 0.16f, 0.06f, true, 9800.0);
     p.operators[5] = makeOp(39.0, 0.0, 0.40f + norm100(piece.noiseMix) * 0.22f, 0.16f, 0.68f, true, 12400.0);
-    const double d = bellOnly ? 0.38 : 0.62 + wash * 0.30;
+    const double d = bellOnly ? 0.62 : 1.05 + wash * 0.75;
     setEnv(p, 0, 0.0002, d * 0.25, 0.0f, 0.010);
     setEnv(p, 1, 0.0002, d * 0.34, 0.0f, 0.012);
     setEnv(p, 2, 0.0002, d * 0.60, 0.0f, 0.016);
     setEnv(p, 3, 0.0002, d * 0.78, 0.0f, 0.020);
     setEnv(p, 4, 0.0002, d * 0.92, 0.0f, 0.026);
-    setEnv(p, 5, 0.0002, d, 0.0f, 0.030);
+    setEnv(p, 5, 0.0002, d, 0.0f, bellOnly ? 0.080 : 0.180);
     if (style == "jazzStudio") { p.voice.masterGain *= 0.82f; p.operators[5].outputLevel *= 0.8f; }
     if (style == "rockMetalKit") { p.voice.masterGain *= 1.08f; p.operators[1].outputLevel += 0.10f; p.operators[3].outputLevel += 0.08f; }
     applyGlobalLiveControls(p, piece);
@@ -398,13 +412,13 @@ static FmPatch buildCrashLike(const DrumPieceSpec& piece, const juce::String& st
     p.operators[3] = makeOp(37.0, 0.0, 0.60f + aggression * 0.16f, 0.16f, 0.86f, true, 8800.0);
     p.operators[4] = makeOp(34.0, 0.0, 0.24f + norm100(piece.noiseMix) * 0.24f, 0.16f, 0.08f, true, 11200.0);
     p.operators[5] = makeOp(49.0, 0.0, 0.52f + norm100(piece.noiseMix) * 0.20f, 0.16f, 0.76f, true, 13800.0);
-    const double d = (0.42 + lengthMul * 0.80);
+    const double d = (0.95 + lengthMul * 1.45);
     setEnv(p, 0, 0.0002, d * 0.25, 0.0f, 0.012);
     setEnv(p, 1, 0.0002, d * 0.40, 0.0f, 0.016);
     setEnv(p, 2, 0.0002, d * 0.55, 0.0f, 0.020);
     setEnv(p, 3, 0.0002, d * 0.74, 0.0f, 0.026);
     setEnv(p, 4, 0.0002, d * 0.88, 0.0f, 0.032);
-    setEnv(p, 5, 0.0002, d, 0.0f, 0.036);
+    setEnv(p, 5, 0.0002, d, 0.0f, 0.260);
     if (style == "jazzStudio") { p.voice.masterGain *= 0.78f; p.operators[5].outputLevel *= 0.75f; }
     if (style == "rockMetalKit") { p.voice.masterGain *= 1.10f; p.operators[1].outputLevel += 0.12f; p.operators[3].outputLevel += 0.12f; }
     if (style == "electroFmLab") { p.operators[0].fixedFrequencyHz *= 1.10; p.operators[2].fixedFrequencyHz *= 1.08; }
