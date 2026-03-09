@@ -18,7 +18,7 @@ static float signedTune(float v) { return juce::jlimit(-1.0f, 1.0f, (v - 50.0f) 
 static float safeLevel(float v) { return juce::jlimit(0.0f, 1.0f, v); }
 static int algorithmFromPiece(const DrumPieceSpec& piece, int fallback) {
     if (piece.algorithm <= 0) return fallback;
-    return std::max(0, piece.algorithm) % 3;
+    return std::max(0, piece.algorithm) % 8;
 }
 static juce::String styleId(const DrumPieceSpec& piece) {
     if (piece.kitId.isNotEmpty()) return piece.kitId;
@@ -73,35 +73,39 @@ static void applyGlobalLiveControls(FmPatch& p, const DrumPieceSpec& piece) {
     const float mixX = juce::jlimit(0.0f, 1.0f, piece.operatorMixX);
     const float mixY = juce::jlimit(0.0f, 1.0f, piece.operatorMixY);
 
-    p.voice.masterGain = juce::jlimit(0.05f, 1.10f, p.voice.masterGain * (0.9f + drive * 0.35f));
+    p.voice.masterGain = juce::jlimit(0.04f, 1.60f, p.voice.masterGain * (0.70f + drive * 1.05f));
 
     // Tune mostly affects carriers / body operators.
-    p.operators[0].ratio = std::max(0.1, p.operators[0].ratio * (1.0 + tune * 0.20));
-    p.operators[2].ratio = std::max(0.1, p.operators[2].ratio * (1.0 + tune * 0.15));
-    p.operators[3].ratio = std::max(0.1, p.operators[3].ratio * (1.0 + tune * 0.10));
+    p.operators[0].ratio = std::max(0.08, p.operators[0].ratio * (1.0 + tune * 0.45));
+    p.operators[2].ratio = std::max(0.08, p.operators[2].ratio * (1.0 + tune * 0.35));
+    p.operators[3].ratio = std::max(0.08, p.operators[3].ratio * (1.0 + tune * 0.28));
 
     // Feedback/noise live controls.
-    p.operators[1].feedback = juce::jlimit(0.0f, 1.0f, p.operators[1].feedback * (0.5f + fb * 1.3f));
-    p.operators[3].feedback = juce::jlimit(0.0f, 1.0f, p.operators[3].feedback * (0.5f + fb * 1.1f));
-    p.operators[4].feedback = juce::jlimit(0.0f, 1.0f, p.operators[4].feedback * (0.5f + fb * 1.0f));
+    p.operators[1].feedback = juce::jlimit(0.0f, 1.0f, p.operators[1].feedback * (0.2f + fb * 2.2f));
+    p.operators[3].feedback = juce::jlimit(0.0f, 1.0f, p.operators[3].feedback * (0.2f + fb * 2.0f));
+    p.operators[4].feedback = juce::jlimit(0.0f, 1.0f, p.operators[4].feedback * (0.2f + fb * 1.8f));
 
-    p.operators[4].outputLevel = juce::jlimit(0.0f, 1.25f, p.operators[4].outputLevel * (0.4f + noiseMix * 1.4f));
-    p.operators[5].outputLevel = juce::jlimit(0.0f, 1.25f, p.operators[5].outputLevel * (0.4f + noiseMix * 1.5f));
+    p.operators[4].outputLevel = juce::jlimit(0.0f, 1.50f, p.operators[4].outputLevel * (0.2f + noiseMix * 2.3f));
+    p.operators[5].outputLevel = juce::jlimit(0.0f, 1.50f, p.operators[5].outputLevel * (0.2f + noiseMix * 2.5f));
 
     // XY pad drives carrier/modulator balance.
-    p.operators[0].outputLevel = juce::jlimit(0.0f, 1.4f, p.operators[0].outputLevel * (0.75f + mixY * 0.5f));
-    p.operators[2].outputLevel = juce::jlimit(0.0f, 1.4f, p.operators[2].outputLevel * (0.6f + mixX * 0.8f));
-    p.operators[3].outputLevel = juce::jlimit(0.0f, 1.4f, p.operators[3].outputLevel * (0.6f + (1.0f - mixX) * 0.8f));
-    p.operators[1].outputLevel = juce::jlimit(0.0f, 1.4f, p.operators[1].outputLevel * (0.7f + (1.0f - mixY) * 0.6f));
+    p.operators[0].outputLevel = juce::jlimit(0.0f, 1.6f, p.operators[0].outputLevel * (0.45f + mixY * 1.2f));
+    p.operators[2].outputLevel = juce::jlimit(0.0f, 1.6f, p.operators[2].outputLevel * (0.35f + mixX * 1.4f));
+    p.operators[3].outputLevel = juce::jlimit(0.0f, 1.6f, p.operators[3].outputLevel * (0.35f + (1.0f - mixX) * 1.4f));
+    p.operators[1].outputLevel = juce::jlimit(0.0f, 1.6f, p.operators[1].outputLevel * (0.35f + (1.0f - mixY) * 1.2f));
 
     if (piece.operatorsEdited) {
-        for (std::size_t i = 0; i < 4 && i < piece.operators.size(); ++i) {
+        for (std::size_t i = 0; i < piece.operators.size() && i < p.operators.size(); ++i) {
             const auto& src = piece.operators[i];
             auto& dst = p.operators[i];
-            dst.outputLevel = juce::jlimit(0.0f, 1.4f, norm100(src.level) * 1.2f);
-            dst.ratio = std::max(0.1, static_cast<double>(src.ratio));
-            dst.detuneHz = (static_cast<double>(src.detune) - 50.0) * 0.08;
-            setEnv(p, static_cast<int>(i), 0.0008 + norm100(src.attack) * 0.02, 0.02 + norm100(src.release) * 0.45, 0.0f, 0.01 + norm100(src.release) * 0.22);
+            if (!src.enabled) {
+                dst.outputLevel = 0.0f;
+                continue;
+            }
+            dst.outputLevel = juce::jlimit(0.0f, 1.6f, norm100(src.level) * 1.5f);
+            dst.ratio = std::max(0.08, static_cast<double>(src.ratio));
+            dst.detuneHz = (static_cast<double>(src.detune) - 50.0) * 0.18;
+            setEnv(p, static_cast<int>(i), 0.0004 + norm100(src.attack) * 0.08, 0.01 + norm100(src.release) * 0.75, 0.0f, 0.004 + norm100(src.release) * 0.45);
         }
     }
 }
