@@ -1532,6 +1532,16 @@
           } catch (_) {}
         }
         appendEventLog(detail);
+      },
+      async loadKit(kitId) {
+        if (window.electronAPI && typeof window.electronAPI.drumKitLoadKit === 'function') {
+          const res = await window.electronAPI.drumKitLoadKit(kitId);
+          if (!res?.ok) throw new Error(res?.err || 'drumKitLoadKit failed');
+          return res.data;
+        }
+        const response = await fetch(`./drum_kits/${encodeURIComponent(kitId)}.json`);
+        if (!response.ok) throw new Error(`Unable to load kit ${kitId}`);
+        return response.json();
       }
     };
 
@@ -1666,6 +1676,42 @@
         mappingRows
       }
     };
+
+    function ensureSelectionConsistency() {
+      const selectedVoice = state.project.voices[state.ui.navigation.selectedVoiceId];
+      if (!selectedVoice) {
+        const firstVoiceId = Object.keys(state.project.voices)[0] || 'kickSub';
+        state.ui.navigation.selectedVoiceId = firstVoiceId;
+      }
+      const selectedRow = state.project.mappingRows.find((r) => r.id === state.ui.navigation.selectedMappingRowId);
+      if (!selectedRow) {
+        state.ui.navigation.selectedMappingRowId = state.project.mappingRows[0]?.id || null;
+      }
+    }
+
+    function applyLoadedKit(kitData, kitIdOverride = '') {
+      if (!kitData || typeof kitData !== 'object') return;
+      const incomingVoices = kitData.voices && typeof kitData.voices === 'object' ? kitData.voices : null;
+      const incomingRows = Array.isArray(kitData.mappingRows) ? kitData.mappingRows : null;
+      if (incomingVoices) state.project.voices = JSON.parse(JSON.stringify(incomingVoices));
+      if (incomingRows) state.project.mappingRows = JSON.parse(JSON.stringify(incomingRows));
+      state.project.kitId = String(kitData.kitId || kitIdOverride || state.project.kitId);
+      ensureSelectionConsistency();
+    }
+
+    async function loadKitById(kitId, { emitChange = true } = {}) {
+      try {
+        const kitData = await DrumKitBridge.loadKit(kitId);
+        applyLoadedKit(kitData, kitId);
+        if (dom.kitSelect) dom.kitSelect.value = state.project.kitId;
+        if (emitChange) emit('project:drumkit/load-kit', { kitId: state.project.kitId });
+      } catch (error) {
+        console.warn('[drumkit] failed to load kit', kitId, error);
+        state.project.kitId = kitId;
+        if (emitChange) emit('project:drumkit/load-kit', { kitId: state.project.kitId, failed: true, reason: String(error?.message || error) });
+      }
+      render();
+    }
 
 
     function deepMergeInto(target, source) {
@@ -2126,12 +2172,8 @@
         </div>
       `).join('');
       document.querySelectorAll('[data-style-id]').forEach(node => {
-        node.addEventListener('click', () => {
-          state.project.kitId = node.dataset.styleId;
-          dom.kitSelect.value = node.dataset.styleId;
-          emit('project:drumkit/load-kit', { kitId: state.project.kitId });
-          renderHeader();
-          renderStyles();
+        node.addEventListener('click', async () => {
+          await loadKitById(node.dataset.styleId, { emitChange: true });
         });
       });
     }
@@ -2592,11 +2634,8 @@
     }
 
     function bindKitSelectors() {
-      dom.kitSelect.addEventListener('change', () => {
-        state.project.kitId = dom.kitSelect.value;
-        emit('project:drumkit/load-kit', { kitId: state.project.kitId });
-        renderHeader();
-        renderStyles();
+      dom.kitSelect.addEventListener('change', async () => {
+        await loadKitById(dom.kitSelect.value, { emitChange: true });
       });
       dom.windowTitleInput.addEventListener('change', () => {
         emit('ui:drumkit/window-title-change', { title: dom.windowTitleInput.value });
@@ -2632,14 +2671,18 @@
       return `<svg viewBox="0 0 112 84" aria-hidden="true">${lines}${rects}</svg>`;
     }
 
-    bindTabButtons();
-    bindXYPad();
-    bindWindowControls();
-    bindEnvModalButtons();
-    bindKitSelectors();
-    setTab(state.ui.navigation.selectedTab);
-    render();
-    emit('ui:drumkit/window-ready', { version: 'production-front-v1', selectedVoiceId: state.ui.navigation.selectedVoiceId, selectedMappingRowId: state.ui.navigation.selectedMappingRowId });
+    async function initDrumKitUi() {
+      bindTabButtons();
+      bindXYPad();
+      bindWindowControls();
+      bindEnvModalButtons();
+      bindKitSelectors();
+      setTab(state.ui.navigation.selectedTab);
+      await loadKitById(state.project.kitId, { emitChange: false });
+      emit('ui:drumkit/window-ready', { version: 'production-front-v1', selectedVoiceId: state.ui.navigation.selectedVoiceId, selectedMappingRowId: state.ui.navigation.selectedMappingRowId });
+    }
+
+    initDrumKitUi();
   </script>
 </body>
 </html>

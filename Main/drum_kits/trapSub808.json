@@ -1,0 +1,4387 @@
+{
+  "kitId": "trapSub808",
+  "voices": {
+    "kickSub": {
+      "id": "kickSub",
+      "name": "Kick Sub",
+      "description": "Kick Sub voice for trapSub808",
+      "color": "#50d5ff",
+      "algorithm": 4,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 42,
+        "feedback": 60,
+        "noiseMix": 4,
+        "drive": 26,
+        "macro1": 0,
+        "macro2": 0,
+        "macro3": 5,
+        "macro4": 15
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Sub Sustain",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Pitch Glide",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Body Morph",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Transient",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "kickSub_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "kickSub_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "kickSub_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 74,
+          "ratio": 0.5,
+          "detune": 36.0,
+          "attack": 26,
+          "release": 30,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "kickSub_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 65,
+          "ratio": 2.0,
+          "detune": 44.0,
+          "attack": 38,
+          "release": 40,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "kickSub_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 56,
+          "ratio": 3.5,
+          "detune": 52.0,
+          "attack": 50,
+          "release": 50,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "kickSub_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 47,
+          "ratio": 5.0,
+          "detune": 60.0,
+          "attack": 62,
+          "release": 60,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "kickAcoustic": {
+      "id": "kickAcoustic",
+      "name": "Kick Acoustic",
+      "description": "Kick Acoustic voice for trapSub808",
+      "color": "#8be9fd",
+      "algorithm": 5,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 44,
+        "feedback": 61,
+        "noiseMix": 5,
+        "drive": 27,
+        "macro1": 0,
+        "macro2": 6,
+        "macro3": 16,
+        "macro4": 26
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Beater",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Shell",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Acoustic Depth",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Punch",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "kickAcoustic_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "kickAcoustic_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "kickAcoustic_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 78,
+          "ratio": 0.58,
+          "detune": 37.0,
+          "attack": 27,
+          "release": 31,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "kickAcoustic_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 69,
+          "ratio": 2.08,
+          "detune": 45.0,
+          "attack": 39,
+          "release": 41,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "kickAcoustic_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 60,
+          "ratio": 3.58,
+          "detune": 53.0,
+          "attack": 51,
+          "release": 51,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "kickAcoustic_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 51,
+          "ratio": 5.08,
+          "detune": 61.0,
+          "attack": 63,
+          "release": 61,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "snareMain": {
+      "id": "snareMain",
+      "name": "Snare Main",
+      "description": "Snare Main voice for trapSub808",
+      "color": "#ff7b72",
+      "algorithm": 7,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 46,
+        "feedback": 62,
+        "noiseMix": 6,
+        "drive": 28,
+        "macro1": 2,
+        "macro2": 17,
+        "macro3": 27,
+        "macro4": 37
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Crack",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Wire Buzz",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Jazz Soft",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Metal Snap",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "snareMain_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "snareMain_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "snareMain_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 82,
+          "ratio": 0.66,
+          "detune": 38.0,
+          "attack": 28,
+          "release": 32,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "snareMain_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 73,
+          "ratio": 2.16,
+          "detune": 46.0,
+          "attack": 40,
+          "release": 42,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "snareMain_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 64,
+          "ratio": 3.66,
+          "detune": 54.0,
+          "attack": 52,
+          "release": 52,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "snareMain_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 55,
+          "ratio": 5.16,
+          "detune": 62.0,
+          "attack": 64,
+          "release": 62,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sideSnare": {
+      "id": "sideSnare",
+      "name": "Side Stick",
+      "description": "Side Stick voice for trapSub808",
+      "color": "#f6ad55",
+      "algorithm": 2,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 48,
+        "feedback": 63,
+        "noiseMix": 7,
+        "drive": 29,
+        "macro1": 13,
+        "macro2": 28,
+        "macro3": 38,
+        "macro4": 48
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Wood Tone",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Soft Tap",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Body Cut",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Jazz Tight",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "sideSnare_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "sideSnare_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "sideSnare_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 86,
+          "ratio": 0.74,
+          "detune": 39.0,
+          "attack": 29,
+          "release": 33,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "sideSnare_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 77,
+          "ratio": 2.24,
+          "detune": 47.0,
+          "attack": 41,
+          "release": 43,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "sideSnare_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 68,
+          "ratio": 3.74,
+          "detune": 55.0,
+          "attack": 53,
+          "release": 53,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "sideSnare_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 59,
+          "ratio": 5.24,
+          "detune": 63.0,
+          "attack": 65,
+          "release": 63,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clapLayer": {
+      "id": "clapLayer",
+      "name": "Clap Layer",
+      "description": "Clap Layer voice for trapSub808",
+      "color": "#c084fc",
+      "algorithm": 6,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 50,
+        "feedback": 64,
+        "noiseMix": 8,
+        "drive": 30,
+        "macro1": 24,
+        "macro2": 39,
+        "macro3": 49,
+        "macro4": 59
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Layer Width",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Burst Count",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Room Tail",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Electro Edge",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "clapLayer_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "clapLayer_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "clapLayer_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 90,
+          "ratio": 0.82,
+          "detune": 40.0,
+          "attack": 30,
+          "release": 34,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "clapLayer_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 81,
+          "ratio": 2.32,
+          "detune": 48.0,
+          "attack": 42,
+          "release": 44,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "clapLayer_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 72,
+          "ratio": 3.82,
+          "detune": 56.0,
+          "attack": 54,
+          "release": 54,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "clapLayer_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 63,
+          "ratio": 5.32,
+          "detune": 64.0,
+          "attack": 66,
+          "release": 64,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "rimshotVar": {
+      "id": "rimshotVar",
+      "name": "Rimshot Morph",
+      "description": "Rimshot Morph voice for trapSub808",
+      "color": "#f59e0b",
+      "algorithm": 3,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 42,
+        "feedback": 65,
+        "noiseMix": 9,
+        "drive": 31,
+        "macro1": 35,
+        "macro2": 50,
+        "macro3": 60,
+        "macro4": 70
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Stick Position",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Rim Harshness",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Body Tone",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Snap",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "rimshotVar_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rimshotVar_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "rimshotVar_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 74,
+          "ratio": 0.9,
+          "detune": 41.0,
+          "attack": 31,
+          "release": 35,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rimshotVar_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 65,
+          "ratio": 2.4,
+          "detune": 49.0,
+          "attack": 43,
+          "release": 45,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rimshotVar_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 56,
+          "ratio": 3.9,
+          "detune": 57.0,
+          "attack": 55,
+          "release": 55,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rimshotVar_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 47,
+          "ratio": 5.4,
+          "detune": 65.0,
+          "attack": 67,
+          "release": 65,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "openCloseHat": {
+      "id": "openCloseHat",
+      "name": "Variable Hi-Hat",
+      "description": "Variable Hi-Hat voice for trapSub808",
+      "color": "#ffd84d",
+      "algorithm": 3,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 44,
+        "feedback": 66,
+        "noiseMix": 10,
+        "drive": 26,
+        "macro1": 46,
+        "macro2": 61,
+        "macro3": 71,
+        "macro4": 81
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Openness",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Brightness",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Choke",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Air Tail",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "openCloseHat_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "openCloseHat_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "openCloseHat_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 78,
+          "ratio": 0.98,
+          "detune": 42.0,
+          "attack": 32,
+          "release": 36,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "openCloseHat_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 69,
+          "ratio": 2.48,
+          "detune": 50.0,
+          "attack": 44,
+          "release": 46,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "openCloseHat_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 60,
+          "ratio": 3.98,
+          "detune": 58.0,
+          "attack": 56,
+          "release": 56,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "openCloseHat_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 51,
+          "ratio": 5.48,
+          "detune": 66.0,
+          "attack": 68,
+          "release": 66,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "pedalHat": {
+      "id": "pedalHat",
+      "name": "Pedal Hat",
+      "description": "Pedal Hat voice for trapSub808",
+      "color": "#d1b94d",
+      "algorithm": 2,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 46,
+        "feedback": 60,
+        "noiseMix": 11,
+        "drive": 27,
+        "macro1": 57,
+        "macro2": 72,
+        "macro3": 82,
+        "macro4": 92
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Pedal Pressure",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Tick Sharpness",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Short Tail",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Foot Noise",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "pedalHat_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "pedalHat_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "pedalHat_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 82,
+          "ratio": 1.06,
+          "detune": 43.0,
+          "attack": 33,
+          "release": 37,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "pedalHat_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 73,
+          "ratio": 2.56,
+          "detune": 51.0,
+          "attack": 45,
+          "release": 47,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "pedalHat_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 64,
+          "ratio": 4.06,
+          "detune": 59.0,
+          "attack": 57,
+          "release": 57,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "pedalHat_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 55,
+          "ratio": 5.56,
+          "detune": 67.0,
+          "attack": 69,
+          "release": 67,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "highTom": {
+      "id": "highTom",
+      "name": "High Tom",
+      "description": "High Tom voice for trapSub808",
+      "color": "#f97316",
+      "algorithm": 5,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 48,
+        "feedback": 61,
+        "noiseMix": 12,
+        "drive": 28,
+        "macro1": 68,
+        "macro2": 83,
+        "macro3": 93,
+        "macro4": 100
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "High Tone",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Attack Focus",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Shell Ring",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Tight Fill",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "highTom_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "highTom_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "highTom_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 86,
+          "ratio": 1.14,
+          "detune": 44.0,
+          "attack": 34,
+          "release": 38,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "highTom_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 77,
+          "ratio": 2.64,
+          "detune": 52.0,
+          "attack": 46,
+          "release": 48,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "highTom_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 68,
+          "ratio": 4.14,
+          "detune": 60.0,
+          "attack": 58,
+          "release": 58,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "highTom_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 59,
+          "ratio": 5.64,
+          "detune": 68.0,
+          "attack": 70,
+          "release": 68,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "midTom": {
+      "id": "midTom",
+      "name": "Mid Tom",
+      "description": "Mid Tom voice for trapSub808",
+      "color": "#fb923c",
+      "algorithm": 5,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 50,
+        "feedback": 62,
+        "noiseMix": 4,
+        "drive": 29,
+        "macro1": 79,
+        "macro2": 94,
+        "macro3": 100,
+        "macro4": 100
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Mid Tone",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Attack Focus",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Shell Ring",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Balance",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "midTom_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "midTom_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "midTom_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 90,
+          "ratio": 1.22,
+          "detune": 45.0,
+          "attack": 35,
+          "release": 39,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "midTom_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 81,
+          "ratio": 2.72,
+          "detune": 53.0,
+          "attack": 47,
+          "release": 49,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "midTom_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 72,
+          "ratio": 4.22,
+          "detune": 61.0,
+          "attack": 59,
+          "release": 59,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "midTom_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 63,
+          "ratio": 5.72,
+          "detune": 69.0,
+          "attack": 71,
+          "release": 69,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "lowTom": {
+      "id": "lowTom",
+      "name": "Low Tom",
+      "description": "Low Tom voice for trapSub808",
+      "color": "#ff9d42",
+      "algorithm": 5,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 42,
+        "feedback": 63,
+        "noiseMix": 5,
+        "drive": 30,
+        "macro1": 0,
+        "macro2": 5,
+        "macro3": 15,
+        "macro4": 25
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Shell Size",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Low Resonance",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Stick Attack",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Metal Body",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "lowTom_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "lowTom_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "lowTom_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 74,
+          "ratio": 1.3,
+          "detune": 46.0,
+          "attack": 36,
+          "release": 40,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "lowTom_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 65,
+          "ratio": 2.8,
+          "detune": 54.0,
+          "attack": 48,
+          "release": 50,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "lowTom_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 56,
+          "ratio": 4.3,
+          "detune": 62.0,
+          "attack": 60,
+          "release": 60,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "lowTom_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 47,
+          "ratio": 5.8,
+          "detune": 70.0,
+          "attack": 72,
+          "release": 70,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "crash1": {
+      "id": "crash1",
+      "name": "Crash 1",
+      "description": "Crash 1 voice for trapSub808",
+      "color": "#ff86d0",
+      "algorithm": 8,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 44,
+        "feedback": 64,
+        "noiseMix": 6,
+        "drive": 31,
+        "macro1": 1,
+        "macro2": 16,
+        "macro3": 26,
+        "macro4": 36
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Crash Width",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Metal Wash",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Attack Glass",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Aggression",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "crash1_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "crash1_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "crash1_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 78,
+          "ratio": 1.38,
+          "detune": 47.0,
+          "attack": 37,
+          "release": 41,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "crash1_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 69,
+          "ratio": 2.88,
+          "detune": 55.0,
+          "attack": 49,
+          "release": 51,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "crash1_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 60,
+          "ratio": 4.38,
+          "detune": 63.0,
+          "attack": 61,
+          "release": 61,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "crash1_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 51,
+          "ratio": 5.88,
+          "detune": 71.0,
+          "attack": 73,
+          "release": 71,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "crash2": {
+      "id": "crash2",
+      "name": "Crash 2",
+      "description": "Crash 2 voice for trapSub808",
+      "color": "#f472b6",
+      "algorithm": 8,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 46,
+        "feedback": 65,
+        "noiseMix": 7,
+        "drive": 26,
+        "macro1": 12,
+        "macro2": 27,
+        "macro3": 37,
+        "macro4": 47
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Darkness",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Wide Tail",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Air Bloom",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Heavy Hit",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "crash2_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "crash2_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "crash2_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 82,
+          "ratio": 1.46,
+          "detune": 48.0,
+          "attack": 38,
+          "release": 42,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "crash2_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 73,
+          "ratio": 2.96,
+          "detune": 56.0,
+          "attack": 50,
+          "release": 52,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "crash2_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 64,
+          "ratio": 4.46,
+          "detune": 64.0,
+          "attack": 62,
+          "release": 62,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "crash2_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 55,
+          "ratio": 5.96,
+          "detune": 72.0,
+          "attack": 74,
+          "release": 72,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "rideMain": {
+      "id": "rideMain",
+      "name": "Ride Main",
+      "description": "Ride Main voice for trapSub808",
+      "color": "#5eead4",
+      "algorithm": 8,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 48,
+        "feedback": 66,
+        "noiseMix": 8,
+        "drive": 27,
+        "macro1": 23,
+        "macro2": 38,
+        "macro3": 48,
+        "macro4": 58
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Ping Focus",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Bow Wash",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Jazz Soft",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Rock Cut",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "rideMain_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rideMain_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "rideMain_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 86,
+          "ratio": 1.54,
+          "detune": 49.0,
+          "attack": 39,
+          "release": 43,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rideMain_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 77,
+          "ratio": 3.04,
+          "detune": 57.0,
+          "attack": 51,
+          "release": 53,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rideMain_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 68,
+          "ratio": 4.54,
+          "detune": 65.0,
+          "attack": 63,
+          "release": 63,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rideMain_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 59,
+          "ratio": 6.04,
+          "detune": 73.0,
+          "attack": 75,
+          "release": 73,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "rideBell": {
+      "id": "rideBell",
+      "name": "Ride Bell",
+      "description": "Ride Bell voice for trapSub808",
+      "color": "#67e8f9",
+      "algorithm": 8,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 50,
+        "feedback": 60,
+        "noiseMix": 9,
+        "drive": 28,
+        "macro1": 34,
+        "macro2": 49,
+        "macro3": 59,
+        "macro4": 69
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Bell Intensity",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Metal Ring",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Stick Focus",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Cut Through",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "rideBell_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rideBell_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "rideBell_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 90,
+          "ratio": 1.62,
+          "detune": 50.0,
+          "attack": 40,
+          "release": 44,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rideBell_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 81,
+          "ratio": 3.12,
+          "detune": 58.0,
+          "attack": 52,
+          "release": 54,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rideBell_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 72,
+          "ratio": 4.62,
+          "detune": 66.0,
+          "attack": 64,
+          "release": 64,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "rideBell_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 63,
+          "ratio": 6.12,
+          "detune": 74.0,
+          "attack": 76,
+          "release": 74,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "splash": {
+      "id": "splash",
+      "name": "Splash",
+      "description": "Splash voice for trapSub808",
+      "color": "#a78bfa",
+      "algorithm": 8,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 42,
+        "feedback": 61,
+        "noiseMix": 10,
+        "drive": 29,
+        "macro1": 45,
+        "macro2": 60,
+        "macro3": 70,
+        "macro4": 80
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Shortness",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Bright Ping",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Fast Bloom",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Accent Cut",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "splash_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "splash_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "splash_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 74,
+          "ratio": 1.7,
+          "detune": 51.0,
+          "attack": 41,
+          "release": 45,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "splash_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 65,
+          "ratio": 3.2,
+          "detune": 59.0,
+          "attack": 53,
+          "release": 55,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "splash_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 56,
+          "ratio": 4.7,
+          "detune": 67.0,
+          "attack": 65,
+          "release": 65,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "splash_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 47,
+          "ratio": 6.2,
+          "detune": 75.0,
+          "attack": 77,
+          "release": 75,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "china": {
+      "id": "china",
+      "name": "China",
+      "description": "China voice for trapSub808",
+      "color": "#fb7185",
+      "algorithm": 8,
+      "mode": "Drum Voice",
+      "quickParams": {
+        "tune": 44,
+        "feedback": 62,
+        "noiseMix": 11,
+        "drive": 30,
+        "macro1": 56,
+        "macro2": 71,
+        "macro3": 81,
+        "macro4": 91
+      },
+      "quickMeta": [
+        {
+          "key": "tune",
+          "label": "Tune",
+          "color": "var(--cyan)",
+          "format": "signed"
+        },
+        {
+          "key": "feedback",
+          "label": "Feedback",
+          "color": "var(--yellow)",
+          "format": "int"
+        },
+        {
+          "key": "noiseMix",
+          "label": "Noise Mix",
+          "color": "var(--green)",
+          "format": "percent"
+        },
+        {
+          "key": "drive",
+          "label": "Drive",
+          "color": "var(--red)",
+          "format": "percent"
+        },
+        {
+          "key": "macro1",
+          "label": "Edge Harshness",
+          "color": "var(--pink)",
+          "format": "percent"
+        },
+        {
+          "key": "macro2",
+          "label": "Metal Trash",
+          "color": "var(--yellow)",
+          "format": "percent"
+        },
+        {
+          "key": "macro3",
+          "label": "Air Spread",
+          "color": "var(--cyan)",
+          "format": "percent"
+        },
+        {
+          "key": "macro4",
+          "label": "Heavy Accent",
+          "color": "var(--orange)",
+          "format": "percent"
+        }
+      ],
+      "xy": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "globalEnvelopes": [
+        {
+          "id": "china_global_amp",
+          "title": "Envelope Amp",
+          "tag": "Global amp contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "china_global_pitch",
+          "title": "Envelope Pitch",
+          "tag": "Global pitch contour",
+          "env": {
+            "points": [
+              {
+                "x": 0.13,
+                "y": 0.11
+              },
+              {
+                "x": 0.35,
+                "y": 0.45
+              },
+              {
+                "x": 0.69,
+                "y": 0.53
+              },
+              {
+                "x": 0.93,
+                "y": 0.88
+              }
+            ]
+          }
+        }
+      ],
+      "operators": [
+        {
+          "id": "china_op1",
+          "name": "OP1",
+          "role": "Carrier",
+          "level": 78,
+          "ratio": 1.78,
+          "detune": 52.0,
+          "attack": 42,
+          "release": 46,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "china_op2",
+          "name": "OP2",
+          "role": "Mod",
+          "level": 69,
+          "ratio": 3.28,
+          "detune": 60.0,
+          "attack": 54,
+          "release": 56,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "china_op3",
+          "name": "OP3",
+          "role": "Mod",
+          "level": 60,
+          "ratio": 4.78,
+          "detune": 68.0,
+          "attack": 66,
+          "release": 66,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        },
+        {
+          "id": "china_op4",
+          "name": "OP4",
+          "role": "Feedback",
+          "level": 51,
+          "ratio": 6.28,
+          "detune": 76.0,
+          "attack": 78,
+          "release": 76,
+          "env": {
+            "points": [
+              {
+                "x": 0.12,
+                "y": 0.1
+              },
+              {
+                "x": 0.34,
+                "y": 0.44
+              },
+              {
+                "x": 0.68,
+                "y": 0.54
+              },
+              {
+                "x": 0.92,
+                "y": 0.9
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "mappingRows": [
+    {
+      "id": "row_b2_bell",
+      "note": "B2",
+      "midi": 47,
+      "black": false,
+      "voiceId": "rideBell",
+      "articulation": "bell",
+      "channel": 13,
+      "start": 72,
+      "length": 78
+    },
+    {
+      "id": "row_as2_hat_open",
+      "note": "A#2",
+      "midi": 46,
+      "black": true,
+      "voiceId": "openCloseHat",
+      "articulation": "open",
+      "channel": 11,
+      "start": 28,
+      "length": 54
+    },
+    {
+      "id": "row_a2_low_tom",
+      "note": "A2",
+      "midi": 45,
+      "black": false,
+      "voiceId": "lowTom",
+      "articulation": "low",
+      "channel": 12,
+      "start": 90,
+      "length": 48
+    },
+    {
+      "id": "row_gs2_pedal_hat",
+      "note": "G#2",
+      "midi": 44,
+      "black": true,
+      "voiceId": "pedalHat",
+      "articulation": "pedal",
+      "channel": 11,
+      "start": 46,
+      "length": 34
+    },
+    {
+      "id": "row_g2_mid_tom",
+      "note": "G2",
+      "midi": 43,
+      "black": false,
+      "voiceId": "midTom",
+      "articulation": "medium",
+      "channel": 12,
+      "start": 122,
+      "length": 42
+    },
+    {
+      "id": "row_fs2_hat_closed",
+      "note": "F#2",
+      "midi": 42,
+      "black": true,
+      "voiceId": "openCloseHat",
+      "articulation": "closed",
+      "channel": 11,
+      "start": 18,
+      "length": 30
+    },
+    {
+      "id": "row_f2_high_tom",
+      "note": "F2",
+      "midi": 41,
+      "black": false,
+      "voiceId": "highTom",
+      "articulation": "high",
+      "channel": 12,
+      "start": 56,
+      "length": 58
+    },
+    {
+      "id": "row_e2_snare_main",
+      "note": "E2",
+      "midi": 40,
+      "black": false,
+      "voiceId": "snareMain",
+      "articulation": "main",
+      "channel": 10,
+      "start": 84,
+      "length": 46
+    },
+    {
+      "id": "row_ds2_clap",
+      "note": "D#2",
+      "midi": 39,
+      "black": true,
+      "voiceId": "clapLayer",
+      "articulation": "layer",
+      "channel": 10,
+      "start": 140,
+      "length": 38
+    },
+    {
+      "id": "row_d2_rim",
+      "note": "D2",
+      "midi": 38,
+      "black": false,
+      "voiceId": "rimshotVar",
+      "articulation": "stickPosition",
+      "channel": 10,
+      "start": 36,
+      "length": 26
+    },
+    {
+      "id": "row_cs2_side",
+      "note": "C#2",
+      "midi": 37,
+      "black": true,
+      "voiceId": "sideSnare",
+      "articulation": "side",
+      "channel": 10,
+      "start": 160,
+      "length": 28
+    },
+    {
+      "id": "row_c2_kick_sub",
+      "note": "C2",
+      "midi": 36,
+      "black": false,
+      "voiceId": "kickSub",
+      "articulation": "mainKick",
+      "channel": 10,
+      "start": 12,
+      "length": 94
+    },
+    {
+      "id": "row_b1_kick_ac",
+      "note": "B1",
+      "midi": 35,
+      "black": false,
+      "voiceId": "kickAcoustic",
+      "articulation": "acousticAlt",
+      "channel": 10,
+      "start": 108,
+      "length": 40
+    },
+    {
+      "id": "row_as1_crash2",
+      "note": "A#1",
+      "midi": 34,
+      "black": true,
+      "voiceId": "crash2",
+      "articulation": "wide",
+      "channel": 13,
+      "start": 186,
+      "length": 74
+    },
+    {
+      "id": "row_a1_ride",
+      "note": "A1",
+      "midi": 33,
+      "black": false,
+      "voiceId": "rideMain",
+      "articulation": "bow",
+      "channel": 13,
+      "start": 216,
+      "length": 66
+    },
+    {
+      "id": "row_gs1_splash",
+      "note": "G#1",
+      "midi": 32,
+      "black": true,
+      "voiceId": "splash",
+      "articulation": "accent",
+      "channel": 13,
+      "start": 248,
+      "length": 24
+    },
+    {
+      "id": "row_g1_china",
+      "note": "G1",
+      "midi": 31,
+      "black": false,
+      "voiceId": "china",
+      "articulation": "main",
+      "channel": 13,
+      "start": 276,
+      "length": 70
+    },
+    {
+      "id": "row_fs1_crash1",
+      "note": "F#1",
+      "midi": 30,
+      "black": true,
+      "voiceId": "crash1",
+      "articulation": "main",
+      "channel": 13,
+      "start": 310,
+      "length": 80
+    }
+  ]
+}

@@ -268,6 +268,25 @@ ipcMain.handle("audio:native:isAvailable", async () => {
   return { ok: !!audioProc };
 });
 
+ipcMain.handle("drumkit:emit", async (_evt, payload = {}) => {
+  const type = String(payload?.type || "").trim();
+  if (!type) return { ok: false, err: "Missing drumkit event type" };
+  return { ok: true, data: { type, payload: payload?.payload ?? null } };
+});
+
+ipcMain.handle("drumkit:loadKit", async (_evt, payload = {}) => {
+  const kitId = String(payload?.kitId || "").trim();
+  if (!kitId) return { ok: false, err: "Missing kitId" };
+  const safeKitId = kitId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const filePath = path.join(__dirname, "drum_kits", `${safeKitId}.json`);
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    return { ok: true, data: JSON.parse(raw) };
+  } catch (error) {
+    return { ok: false, err: `Unable to load drum kit '${safeKitId}'`, details: String(error?.message || error) };
+  }
+});
+
 // -----------------------------------------------------------------------------
 // WINDOW
 // -----------------------------------------------------------------------------

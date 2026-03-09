@@ -235,6 +235,17 @@
     }
   }
 
+  function pushSnapshotToEngine(ch, snapshot){
+    if (!ch || !snapshot || !window.audioBackend?.setInstrumentParams) return;
+    const params = buildLegacyDrumParams(ch, snapshot);
+    window.audioBackend.setInstrumentParams({
+      trackId: 'drum-machine-live',
+      instId: String(ch.id || 'drums-live'),
+      instType: String(ch.preset || 'drums'),
+      params
+    }).catch?.(()=>{});
+  }
+
   function onUiMessage(event){
     const msg = event?.data;
     if (!msg || msg.source !== UI_SOURCE) return;
@@ -273,7 +284,10 @@
         showWrap();
         break;
       case 'ui:drumkit/state-sync':
-        if (ch && snapshot) persistSnapshotToChannel(ch, snapshot);
+        if (ch && snapshot) {
+          persistSnapshotToChannel(ch, snapshot);
+          pushSnapshotToEngine(ch, snapshot);
+        }
         break;
       case 'engine:drumkit/preview-note':
         if (ch && snapshot) triggerPreview(ch, detail.payload || {}, snapshot);
@@ -281,13 +295,21 @@
       case 'project:drumkit/load-kit':
       case 'project:drumkit/mapping-row-update':
       case 'project:drumkit/operator-set-envelope':
+      case 'project:drumkit/voice-set-algorithm':
       case 'project:drumkit/voice-set-xy':
-      case 'project:drumkit/voice-quick-param':
-      case 'project:drumkit/operator-param':
-        if (ch && snapshot) persistSnapshotToChannel(ch, normalizeSnapshot(snapshot, { isOpen: true }));
+      case 'project:drumkit/voice-set-quick-param':
+      case 'project:drumkit/operator-set-param':
+        if (ch && snapshot) {
+          const normalized = normalizeSnapshot(snapshot, { isOpen: true });
+          persistSnapshotToChannel(ch, normalized);
+          pushSnapshotToEngine(ch, normalized);
+        }
         break;
       default:
-        if (ch && snapshot) persistSnapshotToChannel(ch, normalizeSnapshot(snapshot, { isOpen: true }));
+        if (ch && snapshot) {
+          const normalized = normalizeSnapshot(snapshot, { isOpen: true });
+          persistSnapshotToChannel(ch, normalized);
+        }
         break;
     }
 
