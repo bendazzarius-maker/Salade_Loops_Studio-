@@ -1050,7 +1050,7 @@ function _autoScrollFollow() {
   // Piano Roll follow
   try {
     const stepW = cssNum("--roll-step-w");
-    const x = _pianoTimeOriginX() + (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * stepW;
+    const x = (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * stepW;
     const vw = gridScroll.clientWidth;
     const marginL = vw * 0.30, marginR = vw * 0.70;
     const left = gridScroll.scrollLeft;
@@ -1079,9 +1079,8 @@ let _uiRAF = 0;
 function _uiLoop() {
   if (state.playing) {
     try {
-      const rollOrigin = _pianoTimeOriginX();
-      const xRoll = rollOrigin + (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * cssNum("--roll-step-w");
-      playhead.style.left = `${Math.max(rollOrigin, xRoll)}px`;
+      const xRoll = (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * cssNum("--roll-step-w");
+      playhead.style.left = `${Math.max(0, xRoll)}px`;
 
       const trackCol = _playlistTimeOriginX();
       const xPl = trackCol + (pb.uiSongStep != null ? pb.uiSongStep : pb.uiStep) * cssNum("--plist-step-w");
@@ -1200,7 +1199,7 @@ async function pause() {
 async function stop() {
   await pause();
   pb.uiAbsStep = 0; pb.uiSongStep = 0; pb.uiRollStep = 0; pb.uiStep = 0;
-  try { const k = _pianoTimeOriginX(); playhead.style.left = `${k}px`; } catch (_) {}
+  try { playhead.style.left = `0px`; } catch (_) {}
   try { if (plistPlayhead) { const x = _playlistTimeOriginX(); plistPlayhead.style.left = `${x}px`; } } catch (_) {}
 }
 
