@@ -25,3 +25,8 @@ contextBridge.exposeInMainWorld("samplePattern", {
   listPrograms: () => ipcRenderer.invoke("samplePattern:listPrograms"),
   loadProgram: (programPath) => ipcRenderer.invoke("samplePattern:loadProgram", { programPath }),
 });
+
+contextBridge.exposeInMainWorld("electronAPI", {
+  drumKitEmit: (type, payload) => ipcRenderer.invoke("drumkit:emit", { type, payload }),
+  drumKitLoadKit: (kitId) => ipcRenderer.invoke("drumkit:loadKit", { kitId }),
+});

@@ -468,6 +468,31 @@
 
       return startReq;
     }
+
+    async setInstrumentParams({ trackId = "live", instId = "global", instType = "piano", params = {} } = {}) {
+      const safeInstId = String(instId || "global");
+      const safeType = String(instType || "piano");
+      const safeParams = (params && typeof params === "object") ? params : {};
+      const juceSpec = window.JuceInstructionLibrary?.buildInstrumentSpec?.({ name: safeType, params: safeParams, instId: safeInstId, trackId }) || null;
+
+      if (!this._instCreated.has(safeInstId)) {
+        const createRes = await this._request("inst.create", { instId: safeInstId, type: safeType, ch: 0 });
+        if (!createRes?.ok) return createRes;
+        this._instCreated.add(safeInstId);
+      }
+
+      const paramKey = hashObject({ type: safeType, params: safeParams, juceSpec });
+      if (this._instParamHash.get(safeInstId) === paramKey) return { ok: true, data: { skipped: true } };
+
+      const setRes = await this._request("inst.param.set", {
+        instId: safeInstId,
+        type: safeType,
+        params: safeParams,
+        juceSpec
+      });
+      if (setRes?.ok) this._instParamHash.set(safeInstId, paramKey);
+      return setRes;
+    }
   }
 
   class AudioBackendController {
@@ -559,6 +584,13 @@
       if (this.active !== "juce") return;
       const res = await this.backends.juce.triggerSample(payload);
       if (!res?.ok) return;
+    }
+
+    async setInstrumentParams(payload) {
+      if (this.active !== "juce") return;
+      const res = await this.backends.juce.setInstrumentParams(payload);
+      if (!res?.ok) return;
+      return res;
     }
   }
 
