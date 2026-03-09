@@ -1472,8 +1472,10 @@ void refreshMasterEq() {
     auto [it, inserted] = fmRuntimes.try_emplace(key);
     auto& rt = it->second;
 
-    const auto desiredPoly = std::max(1, st.polyphony);
+    const auto desiredPolyRaw = std::max(1, st.polyphony);
+    const auto desiredPoly = juce::jlimit(1, 64, desiredPolyRaw);
     const bool desiredDrums = st.type.trim().toLowerCase().contains("drum");
+    const auto drumPreparedVoices = juce::jlimit(8, 32, desiredPoly);
 
     if (inserted || rt.type != st.type || rt.polyphony != desiredPoly || rt.drums != desiredDrums) {
       rt = FmRuntime{};
@@ -1485,6 +1487,7 @@ void refreshMasterEq() {
 
       if (rt.drums) {
         rt.drumRuntime = std::make_unique<sls::engine::DrumRuntime>();
+        rt.drumRuntime->prepare(sampleRate, drumPreparedVoices);
         rt.drumRuntime->prepare(sampleRate, std::max(12, desiredPoly));
         rt.drumRuntime->syncFromInstrumentState(st);
       } else {
@@ -1500,6 +1503,7 @@ void refreshMasterEq() {
       if (rt.drums) {
         if (!rt.drumRuntime) {
           rt.drumRuntime = std::make_unique<sls::engine::DrumRuntime>();
+          rt.drumRuntime->prepare(sampleRate, drumPreparedVoices);
           rt.drumRuntime->prepare(sampleRate, std::max(12, desiredPoly));
         }
         rt.drumRuntime->syncFromInstrumentState(st);
