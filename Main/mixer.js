@@ -11,6 +11,14 @@ const __mixUi = {
   pongBound: false
 };
 
+function __xAssignFromAny(v){
+  if (v === "A" || v === "B" || v === "OFF") return v;
+  const n = Number(v);
+  if (n === 0) return "A";
+  if (n === 1) return "B";
+  return "OFF";
+}
+
 function __bindIpcPongSync(){
   if (__mixUi.pongBound) return;
   __mixUi.pongBound = true;
@@ -26,7 +34,7 @@ function __bindIpcPongSync(){
       } else {
         const ch = Number(req.ch);
         if (Number.isFinite(ch) && project.mixer.channels?.[ch] && typeof req.param === "string") {
-          project.mixer.channels[ch][req.param] = req.value;
+          project.mixer.channels[ch][req.param] = (req.param === "xAssign") ? __xAssignFromAny(req.value) : req.value;
         }
       }
       return;
@@ -40,7 +48,11 @@ function __bindIpcPongSync(){
     if (op === "mixer.channel.set") {
       const ch = Number(req.ch);
       if (Number.isFinite(ch) && project.mixer.channels?.[ch]) {
-        Object.assign(project.mixer.channels[ch], req || {});
+        const payload = { ...(req || {}) };
+        if (Object.prototype.hasOwnProperty.call(payload, "xAssign")) {
+          payload.xAssign = __xAssignFromAny(payload.xAssign);
+        }
+        Object.assign(project.mixer.channels[ch], payload);
       }
     }
   });

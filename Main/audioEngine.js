@@ -51,9 +51,10 @@ class AudioEngine{
   }
 
   _xAssignToNumber(xAssign){
-    if (xAssign === "A") return 1;
-    if (xAssign === "B") return 2;
-    return 0;
+    // Engine enum: 0=A, 1=B, 2=OFF
+    if (xAssign === "A") return 0;
+    if (xAssign === "B") return 1;
+    return 2;
   }
 
   _flushMixerModel(){
