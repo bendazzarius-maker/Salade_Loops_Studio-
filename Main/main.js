@@ -157,7 +157,7 @@ async function requestAudio(message, timeoutMs = 1200) {
       });
     }, timeoutMs);
 
-    audioPending.set(id, { resolve, timer, op: message.op });
+    audioPending.set(id, { resolve, timer, op: message.op, data: message.data || {}, sentAt: Date.now() });
     const sent = sendRawToAudio({ ...message, id });
     if (!sent) {
       clearTimeout(timer);
@@ -185,11 +185,27 @@ function hashString(value = "") {
   return (h >>> 0).toString(16);
 }
 
+function shouldEmitIpcPong(op) {
+  const k = String(op || "");
+  return (
+    k === "mixer.param.set" ||
+    k === "mixer.master.set" ||
+    k === "mixer.channel.set" ||
+    k === "fx.param.set" ||
+    k === "fx.chain.set" ||
+    k === "fx.bypass.set" ||
+    k === "inst.param.set"
+  );
+}
+
 let _lastAudioEvtSentAt = 0;
-function safeSendAudioEvent(channel, payload) {
+function safeSendAudioEvent(channel, payload, opts = {}) {
+  const highPriority = !!opts.highPriority;
   const now = Date.now();
-  if (now - _lastAudioEvtSentAt < 8) return;
-  _lastAudioEvtSentAt = now;
+  if (!highPriority) {
+    if (now - _lastAudioEvtSentAt < 8) return;
+    _lastAudioEvtSentAt = now;
+  }
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const wc = mainWindow.webContents;
   if (!wc || wc.isDestroyed() || wc.isCrashed()) return;
@@ -246,10 +262,32 @@ function startAudioEngine() {
       try {
         const msg = JSON.parse(line);
         if (msg?.type === "res" && msg.id && audioPending.has(String(msg.id))) {
-          const pending = audioPending.get(String(msg.id));
+          const pendingId = String(msg.id);
+          const pending = audioPending.get(pendingId);
           clearTimeout(pending.timer);
-          audioPending.delete(String(msg.id));
+          audioPending.delete(pendingId);
           pending.resolve(msg);
+
+          const pongOp = pending?.op || msg?.op || "unknown";
+          if (shouldEmitIpcPong(pongOp)) {
+            const pongEvt = {
+              v: 1,
+              type: "evt",
+              op: "ipc.pong",
+              ts: Date.now(),
+              data: {
+                id: pendingId,
+                op: pongOp,
+                ok: !!msg?.ok,
+                sentAt: Number(pending?.sentAt || 0),
+                ackAt: Date.now(),
+                rttMs: Math.max(0, Date.now() - Number(pending?.sentAt || Date.now())),
+                requestData: pending?.data || {},
+                err: msg?.err || null
+              }
+            };
+            safeSendAudioEvent("audio:native:event", pongEvt, { highPriority: true });
+          }
           continue;
         }
         if (mainWindow && !mainWindow.isDestroyed() && msg?.type === "evt") {
