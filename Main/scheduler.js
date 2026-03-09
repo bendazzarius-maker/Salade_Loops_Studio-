@@ -1157,14 +1157,20 @@ async function start() {
 
     const ppqPerStep = _ppqPerStep();
     const fromPpq = Math.max(0, engineStartStep * ppqPerStep);
-    const toPpq = Math.max(fromPpq + ENGINE_WINDOW_MIN_PPQ, engineEndStep * ppqPerStep);
-    await juce._request("schedule.setWindow", { fromPpq, toPpq });
+
+    // IMPORTANT: keep a larger scheduler window for preloading, but keep the
+    // musical transport range strictly on the real loop boundaries.
+    // Otherwise the loop length is extended by the preload pad.
+    const scheduleToPpq = Math.max(fromPpq + ENGINE_WINDOW_MIN_PPQ, engineEndStep * ppqPerStep);
+    const loopToPpq = Math.max(fromPpq + ppqPerStep, rawEndStep * ppqPerStep);
+
+    await juce._request("schedule.setWindow", { fromPpq, toPpq: scheduleToPpq });
     try{
       if (typeof juce.setTransportRange === "function") {
         await juce.setTransportRange({
           mode: pb.forceSongFromSelection ? "selection" : String(state.mode || "song"),
           fromPpq,
-          toPpq,
+          toPpq: loopToPpq,
           loop: !!state.loop,
           stopAtEnd: !state.loop,
           returnToStartOnStop: !state.loop
