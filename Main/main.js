@@ -6,6 +6,7 @@ const { spawn } = require("child_process");
 const os = require("os");
 
 let mainWindow = null;
+let drumWindow = null;
 
 // -----------------------------------------------------------------------------
 // SINGLE INSTANCE LOCK
@@ -22,6 +23,44 @@ if (!gotLock) {
   });
 }
 
+
+function sendToMainWindow(channel, payload) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  } catch (_) {}
+}
+
+function ensureDrumWindow(bounds = {}) {
+  if (drumWindow && !drumWindow.isDestroyed()) {
+    if (drumWindow.isMinimized()) drumWindow.restore();
+    drumWindow.show();
+    drumWindow.focus();
+    return drumWindow;
+  }
+
+  drumWindow = new BrowserWindow({
+    width: Math.max(900, Number(bounds.width) || 1180),
+    height: Math.max(620, Number(bounds.height) || 800),
+    x: Number.isFinite(Number(bounds.x)) ? Number(bounds.x) : undefined,
+    y: Number.isFinite(Number(bounds.y)) ? Number(bounds.y) : undefined,
+    title: 'Drum Machine FM',
+    backgroundColor: '#0b1020',
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+
+  drumWindow.loadFile(path.join(__dirname, 'drum_machine_fm.html'), { query: { detached: '1' } });
+  drumWindow.on('closed', () => {
+    drumWindow = null;
+    sendToMainWindow('drum-window:closed', {});
+  });
+  return drumWindow;
+}
 // -----------------------------------------------------------------------------
 // JUCE AUDIO ENGINE HOST (spawn in MAIN process)
 // -----------------------------------------------------------------------------
@@ -287,6 +326,50 @@ ipcMain.handle("drumkit:loadKit", async (_evt, payload = {}) => {
   }
 });
 
+
+ipcMain.handle("drum-window:open", async (_evt, payload = {}) => {
+  const win = ensureDrumWindow(payload?.bounds || {});
+  const snapshot = payload?.snapshot ?? null;
+  win.webContents.once('did-finish-load', () => {
+    try {
+      win.webContents.send('drum-window:host-message', {
+        source: 'sls-drumkit-host',
+        type: 'drumkit:set-state',
+        payload: snapshot || {},
+      });
+    } catch (_) {}
+  });
+  if (snapshot && !win.webContents.isLoading()) {
+    try {
+      win.webContents.send('drum-window:host-message', {
+        source: 'sls-drumkit-host',
+        type: 'drumkit:set-state',
+        payload: snapshot,
+      });
+    } catch (_) {}
+  }
+  return { ok: true };
+});
+
+ipcMain.handle("drum-window:host-message", async (_evt, payload = {}) => {
+  if (!drumWindow || drumWindow.isDestroyed()) return { ok: false, err: 'drum window not open' };
+  try {
+    drumWindow.webContents.send('drum-window:host-message', payload);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, err: String(error?.message || error) };
+  }
+});
+
+ipcMain.handle("drum-window:ui-message", async (_evt, payload = {}) => {
+  sendToMainWindow('drum-window:ui-message', payload);
+  return { ok: true };
+});
+
+ipcMain.handle("drum-window:close", async () => {
+  try { if (drumWindow && !drumWindow.isDestroyed()) drumWindow.close(); } catch (_) {}
+  return { ok: true };
+});
 // -----------------------------------------------------------------------------
 // WINDOW
 // -----------------------------------------------------------------------------

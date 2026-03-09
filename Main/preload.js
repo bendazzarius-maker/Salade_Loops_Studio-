@@ -29,4 +29,23 @@ contextBridge.exposeInMainWorld("samplePattern", {
 contextBridge.exposeInMainWorld("electronAPI", {
   drumKitEmit: (type, payload) => ipcRenderer.invoke("drumkit:emit", { type, payload }),
   drumKitLoadKit: (kitId) => ipcRenderer.invoke("drumkit:loadKit", { kitId }),
+  drumWindowOpen: (payload) => ipcRenderer.invoke("drum-window:open", payload || {}),
+  drumWindowClose: () => ipcRenderer.invoke("drum-window:close"),
+  drumWindowHostMessage: (payload) => ipcRenderer.invoke("drum-window:host-message", payload || {}),
+  drumWindowUiMessage: (payload) => ipcRenderer.invoke("drum-window:ui-message", payload || {}),
+  onDrumWindowUiMessage: (cb) => {
+    const handler = (_e, msg) => cb(msg);
+    ipcRenderer.on("drum-window:ui-message", handler);
+    return () => ipcRenderer.removeListener("drum-window:ui-message", handler);
+  },
+  onDrumWindowHostMessage: (cb) => {
+    const handler = (_e, msg) => cb(msg);
+    ipcRenderer.on("drum-window:host-message", handler);
+    return () => ipcRenderer.removeListener("drum-window:host-message", handler);
+  },
+  onDrumWindowClosed: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on("drum-window:closed", handler);
+    return () => ipcRenderer.removeListener("drum-window:closed", handler);
+  },
 });

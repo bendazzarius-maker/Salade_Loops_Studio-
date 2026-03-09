@@ -1512,7 +1512,9 @@
     const round = (v, d = 2) => Number(v.toFixed(d));
     const HOST_SOURCE = 'sls-drumkit-host';
     const UI_SOURCE = 'sls-drumkit-ui';
-    const EMBEDDED = new URLSearchParams(window.location.search).get('embedded') === '1' || (window.parent && window.parent !== window);
+    const query = new URLSearchParams(window.location.search);
+    const DETACHED = query.get('detached') === '1';
+    const EMBEDDED = query.get('embedded') === '1' || (!DETACHED && (window.parent && window.parent !== window));
     if (EMBEDDED) document.body.classList.add('embedded-host');
 
     const DrumKitBridge = {
@@ -1530,6 +1532,9 @@
               snapshot: JSON.parse(JSON.stringify(state))
             }, '*');
           } catch (_) {}
+        }
+        if (DETACHED && window.electronAPI && typeof window.electronAPI.drumWindowUiMessage === 'function') {
+          try { window.electronAPI.drumWindowUiMessage({ source: UI_SOURCE, detail, snapshot: JSON.parse(JSON.stringify(state)) }); } catch (_) {}
         }
         appendEventLog(detail);
       },
@@ -1745,21 +1750,28 @@
       applyEmbeddedMode();
     }
 
-    window.addEventListener('message', (event) => {
-      const msg = event && event.data;
+    function handleHostMessage(msg) {
       if (!msg || msg.source !== HOST_SOURCE) return;
       if (msg.type === 'drumkit:set-state') {
         hydrateState(msg.payload || {});
       } else if (msg.type === 'drumkit:request-state') {
-        try {
-          window.parent.postMessage({
-            source: UI_SOURCE,
-            detail: { type: 'ui:drumkit/state-sync', payload: {} , at: Date.now() },
-            snapshot: JSON.parse(JSON.stringify(state))
-          }, '*');
-        } catch (_) {}
+        const payload = {
+          source: UI_SOURCE,
+          detail: { type: 'ui:drumkit/state-sync', payload: {} , at: Date.now() },
+          snapshot: JSON.parse(JSON.stringify(state))
+        };
+        try { if (EMBEDDED) window.parent.postMessage(payload, '*'); } catch (_) {}
+        try { if (DETACHED && window.electronAPI?.drumWindowUiMessage) window.electronAPI.drumWindowUiMessage(payload); } catch (_) {}
       }
+    }
+
+    window.addEventListener('message', (event) => {
+      handleHostMessage(event && event.data);
     });
+
+    if (DETACHED && window.electronAPI && typeof window.electronAPI.onDrumWindowHostMessage === 'function') {
+      window.electronAPI.onDrumWindowHostMessage((msg) => handleHostMessage(msg));
+    }
 
     const dom = {
       pluginWindow: document.getElementById('pluginWindow'),

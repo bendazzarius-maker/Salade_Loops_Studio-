@@ -5,6 +5,7 @@
   const HOST_SOURCE = 'sls-drumkit-host';
   const UI_SOURCE = 'sls-drumkit-ui';
   const HTML_PATH = './drum_machine_fm.html?embedded=1';
+  const USE_DETACHED_WINDOW = !!(window.electronAPI && typeof window.electronAPI.drumWindowOpen === 'function');
   let frame = null;
   let wrap = null;
   let frameLoaded = false;
@@ -72,9 +73,14 @@
     return deepClone(ch?.params?.__drumMachineUiState || null);
   }
 
-  function postToFrame(type, payload){
+  function postToUI(type, payload){
+    const msg = { source: HOST_SOURCE, type, payload };
+    if (USE_DETACHED_WINDOW) {
+      window.electronAPI?.drumWindowHostMessage?.(msg).catch?.(()=>{});
+      return;
+    }
     if (!frame || !frame.contentWindow) return;
-    frame.contentWindow.postMessage({ source: HOST_SOURCE, type, payload }, '*');
+    frame.contentWindow.postMessage(msg, '*');
   }
 
   function norm100(v, fallback=50){
@@ -200,18 +206,25 @@
   function syncActiveChannelToUI(forceOpen){
     const ch = activeDrumChannel();
     if (!ch) return;
-    ensureWrap();
     const snapshot = getStoredSnapshot(ch);
+    const st = getWindowBounds();
     if (forceOpen) {
       window.DrumWindowStateStore?.open?.();
-      showWrap();
+      if (USE_DETACHED_WINDOW) {
+        window.electronAPI?.drumWindowOpen?.({
+          bounds: { x: st.x, y: st.y, width: st.width, height: st.height },
+          snapshot: normalizeSnapshot(snapshot, { isOpen: true, isMinimized: st.minimized, x: st.x, y: st.y, w: st.width, h: st.height })
+        }).catch?.(()=>{});
+      } else {
+        ensureWrap();
+        showWrap();
+      }
     }
-    if (!frameLoaded) return;
-    const st = getWindowBounds();
+    if (!USE_DETACHED_WINDOW && !frameLoaded) return;
     if (snapshot) {
-      postToFrame('drumkit:set-state', normalizeSnapshot(snapshot, { isOpen: true, isMinimized: st.minimized, x: st.x, y: st.y, w: st.width, h: st.height }));
+      postToUI('drumkit:set-state', normalizeSnapshot(snapshot, { isOpen: true, isMinimized: st.minimized, x: st.x, y: st.y, w: st.width, h: st.height }));
     } else {
-      postToFrame('drumkit:request-state', {});
+      postToUI('drumkit:request-state', {});
     }
   }
 
@@ -246,8 +259,7 @@
     }).catch?.(()=>{});
   }
 
-  function onUiMessage(event){
-    const msg = event?.data;
+  function onUiMessage(msg){
     if (!msg || msg.source !== UI_SOURCE) return;
     const detail = msg.detail || {};
     const snapshot = msg.snapshot || null;
@@ -256,32 +268,29 @@
     switch (detail.type) {
       case 'ui:drumkit/window-close':
         if (ch && snapshot) persistSnapshotToChannel(ch, normalizeSnapshot(snapshot, { isOpen: false }));
-        hideWrap();
+        if (USE_DETACHED_WINDOW) window.electronAPI?.drumWindowClose?.().catch?.(()=>{});
+        else hideWrap();
         window.DrumWindowStateStore?.close?.();
         break;
       case 'ui:drumkit/window-minimize':
         if (ch && snapshot) persistSnapshotToChannel(ch, normalizeSnapshot(snapshot, { isOpen: true, isMinimized: !!detail.payload?.isMinimized }));
         window.DrumWindowStateStore?.setMinimized?.(!!detail.payload?.isMinimized);
-        applyFrameBounds();
-        showWrap();
+        if (!USE_DETACHED_WINDOW) { applyFrameBounds(); showWrap(); }
         break;
       case 'ui:drumkit/window-focus':
         if (ch && snapshot) persistSnapshotToChannel(ch, normalizeSnapshot(snapshot, { isOpen: true, isMinimized: false }));
         window.DrumWindowStateStore?.open?.();
-        applyFrameBounds();
-        showWrap();
+        if (!USE_DETACHED_WINDOW) { applyFrameBounds(); showWrap(); }
         break;
       case 'ui:drumkit/window-move':
         window.DrumWindowStateStore?.setPosition?.(Number(detail.payload?.x) || 0, Number(detail.payload?.y) || 0);
         if (ch && snapshot) persistSnapshotToChannel(ch, normalizeSnapshot(snapshot, { isOpen: true }));
-        applyFrameBounds();
-        showWrap();
+        if (!USE_DETACHED_WINDOW) { applyFrameBounds(); showWrap(); }
         break;
       case 'ui:drumkit/window-resize':
         window.DrumWindowStateStore?.setSize?.(Number(detail.payload?.w) || 980, Number(detail.payload?.h) || 720);
         if (ch && snapshot) persistSnapshotToChannel(ch, normalizeSnapshot(snapshot, { isOpen: true }));
-        applyFrameBounds();
-        showWrap();
+        if (!USE_DETACHED_WINDOW) { applyFrameBounds(); showWrap(); }
         break;
       case 'ui:drumkit/state-sync':
         if (ch && snapshot) {
@@ -320,8 +329,13 @@
     try { if (typeof renderInstrumentPanel === 'function') renderInstrumentPanel(); } catch (_) {}
   }
 
-  window.addEventListener('message', onUiMessage);
+  window.addEventListener('message', (event) => onUiMessage(event?.data));
+  window.electronAPI?.onDrumWindowUiMessage?.((msg) => onUiMessage(msg));
+  window.electronAPI?.onDrumWindowClosed?.(() => {
+    window.DrumWindowStateStore?.close?.();
+  });
   window.DrumWindowStateStore?.subscribe?.((st) => {
+    if (USE_DETACHED_WINDOW) return;
     applyFrameBounds();
     if (st?.open) showWrap();
     else hideWrap();
@@ -332,7 +346,7 @@
       const ch = activeDrumChannel();
       if (!ch) return false;
       window.DrumWindowStateStore?.open?.();
-      showWrap();
+      if (!USE_DETACHED_WINDOW) showWrap();
       syncActiveChannelToUI(true);
       return true;
     },
@@ -340,8 +354,8 @@
       if (this.isOpen()) { this.close(); return false; }
       return this.openForActiveChannel();
     },
-    close(){ hideWrap(); window.DrumWindowStateStore?.close?.(); },
+    close(){ if (USE_DETACHED_WINDOW) window.electronAPI?.drumWindowClose?.().catch?.(()=>{}); else hideWrap(); window.DrumWindowStateStore?.close?.(); },
     syncActiveChannelToUI,
-    isOpen(){ return !!wrap && wrap.style.display !== 'none'; }
+    isOpen(){ return USE_DETACHED_WINDOW ? !!window.DrumWindowStateStore?.getState?.()?.open : (!!wrap && wrap.style.display !== 'none'); }
   };
 })();

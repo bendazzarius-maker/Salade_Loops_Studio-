@@ -1467,13 +1467,15 @@ void refreshMasterEq() {
   // ------------------------------ Synth voice management ------------------------------
 
 
-  FmRuntime& ensureFmRuntime(const juce::String& instId, int mixCh, const InstrumentState& st) {
+  FmRuntime& ensureFmRuntime(const juce::String& instId, int mixCh, const InstrumentState& st, bool syncState) {
     const auto key = instId.toStdString();
     auto [it, inserted] = fmRuntimes.try_emplace(key);
     auto& rt = it->second;
 
-    const auto desiredPoly = std::max(1, st.polyphony);
+    const auto desiredPolyRaw = std::max(1, st.polyphony);
+    const auto desiredPoly = juce::jlimit(1, 64, desiredPolyRaw);
     const bool desiredDrums = st.type.trim().toLowerCase().contains("drum");
+    const auto drumPreparedVoices = juce::jlimit(8, 32, desiredPoly);
 
     if (inserted || rt.type != st.type || rt.polyphony != desiredPoly || rt.drums != desiredDrums) {
       rt = FmRuntime{};
@@ -1485,7 +1487,7 @@ void refreshMasterEq() {
 
       if (rt.drums) {
         rt.drumRuntime = std::make_unique<sls::engine::DrumRuntime>();
-        rt.drumRuntime->prepare(sampleRate, std::max(4, desiredPoly));
+        rt.drumRuntime->prepare(sampleRate, drumPreparedVoices);
         rt.drumRuntime->syncFromInstrumentState(st);
       } else {
         rt.engine.prepare(sampleRate, desiredPoly);
@@ -1496,15 +1498,17 @@ void refreshMasterEq() {
 
     rt.mixCh = juce::jmax(1, mixCh);
 
-    if (rt.drums) {
-      if (!rt.drumRuntime) {
-        rt.drumRuntime = std::make_unique<sls::engine::DrumRuntime>();
-        rt.drumRuntime->prepare(sampleRate, std::max(4, desiredPoly));
+    if (syncState) {
+      if (rt.drums) {
+        if (!rt.drumRuntime) {
+          rt.drumRuntime = std::make_unique<sls::engine::DrumRuntime>();
+          rt.drumRuntime->prepare(sampleRate, drumPreparedVoices);
+        }
+        rt.drumRuntime->syncFromInstrumentState(st);
+      } else {
+        rt.patch = makeFmPatchForState(st);
+        rt.engine.setPatch(rt.patch);
       }
-      rt.drumRuntime->syncFromInstrumentState(st);
-    } else {
-      rt.patch = makeFmPatchForState(st);
-      rt.engine.setPatch(rt.patch);
     }
 
     return rt;
@@ -1517,7 +1521,7 @@ void refreshMasterEq() {
 
     auto& st = it->second;
     if (isFmManagedType(st.type)) {
-      auto& rt = ensureFmRuntime(instId, mixCh, st);
+      auto& rt = ensureFmRuntime(instId, mixCh, st, false);
       const float vel = juce::jlimit(0.0f, 1.0f, velocity);
       if (rt.drums) {
         if (rt.drumRuntime) rt.drumRuntime->noteOn(instId, note, vel, mixCh);
@@ -1856,7 +1860,7 @@ void refreshMasterEq() {
     if (isFmManagedType(st.type)) {
       int mixCh = 1;
       if (auto itRt = fmRuntimes.find(instId.toStdString()); itRt != fmRuntimes.end()) mixCh = itRt->second.mixCh;
-      ensureFmRuntime(instId, mixCh, st);
+      ensureFmRuntime(instId, mixCh, st, true);
     }
 
     resOk(op, id, juce::var());
