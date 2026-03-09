@@ -1488,6 +1488,7 @@ void refreshMasterEq() {
       if (rt.drums) {
         rt.drumRuntime = std::make_unique<sls::engine::DrumRuntime>();
         rt.drumRuntime->prepare(sampleRate, drumPreparedVoices);
+        rt.drumRuntime->prepare(sampleRate, std::max(12, desiredPoly));
         rt.drumRuntime->syncFromInstrumentState(st);
       } else {
         rt.engine.prepare(sampleRate, desiredPoly);
@@ -1503,6 +1504,7 @@ void refreshMasterEq() {
         if (!rt.drumRuntime) {
           rt.drumRuntime = std::make_unique<sls::engine::DrumRuntime>();
           rt.drumRuntime->prepare(sampleRate, drumPreparedVoices);
+          rt.drumRuntime->prepare(sampleRate, std::max(12, desiredPoly));
         }
         rt.drumRuntime->syncFromInstrumentState(st);
       } else {
