@@ -7,10 +7,47 @@ const __mixUi = {
   meterEntries: [],
   controlSync: [],
   debug: false,
-  lastDebugTs: 0
+  lastDebugTs: 0,
+  pongBound: false
 };
 
+function __bindIpcPongSync(){
+  if (__mixUi.pongBound) return;
+  __mixUi.pongBound = true;
+  window.addEventListener("sls:ipc-pong", (ev)=>{
+    const d = ev?.detail || {};
+    const op = String(d.op || "");
+    const req = d.requestData || {};
+    if (!project?.mixer || !op) return;
+
+    if (op === "mixer.param.set") {
+      if (req.scope === "master") {
+        if (typeof req.param === "string") project.mixer.master[req.param] = req.value;
+      } else {
+        const ch = Number(req.ch);
+        if (Number.isFinite(ch) && project.mixer.channels?.[ch] && typeof req.param === "string") {
+          project.mixer.channels[ch][req.param] = req.value;
+        }
+      }
+      return;
+    }
+
+    if (op === "mixer.master.set") {
+      Object.assign(project.mixer.master, req || {});
+      return;
+    }
+
+    if (op === "mixer.channel.set") {
+      const ch = Number(req.ch);
+      if (Number.isFinite(ch) && project.mixer.channels?.[ch]) {
+        Object.assign(project.mixer.channels[ch], req || {});
+      }
+    }
+  });
+}
+
 function renderMixerUI(){
+  __bindIpcPongSync();
   if(typeof mixerMaster==="undefined" || !mixerMaster) return;
   if(typeof project==="undefined" || !project.mixer) return;
 
