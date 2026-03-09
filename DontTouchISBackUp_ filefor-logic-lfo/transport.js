@@ -43,6 +43,15 @@ function _updateModeBtn(){
   }catch(_){}
 }
 
+function _markModeEventHandled(e){
+  try{
+    if(!e) return false;
+    if(e.__slsModeHandled) return true;
+    e.__slsModeHandled = true;
+  }catch(_){ }
+  return false;
+}
+
 function setMode(m){
   try{
     if(!window.state) return;
@@ -60,7 +69,7 @@ async function toggleMode(){
     const wasPlaying = !!state.playing;
     // Strict mode: if playing, restart in the new mode so scheduler boundaries match.
     if(wasPlaying){
-      try{ stop(); }catch(_){}
+      try{ await stop(); }catch(_){}
       setMode(next);
       try{ await start(); }catch(_){}
     }else{
@@ -98,7 +107,9 @@ function toggleMax(){
       if(modeBtn && !modeBtn.__bound_mode_v17__){
         modeBtn.__bound_mode_v17__ = true;
         modeBtn.addEventListener("click", (e)=>{
+          if(_markModeEventHandled(e)) return;
           e.preventDefault();
+          e.stopPropagation();
           toggleMode();
         });
       }
@@ -111,7 +122,9 @@ function toggleMax(){
         document.addEventListener("click", (e)=>{
           const btn = e.target && e.target.closest ? e.target.closest("#modeBtn") : null;
           if(!btn) return;
+          if(_markModeEventHandled(e)) return;
           e.preventDefault();
+          e.stopPropagation();
           toggleMode();
         }, true);
       }

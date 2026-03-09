@@ -257,8 +257,8 @@ function clearPlaylist(){ project.playlist.tracks.forEach(t=>t.clips=[]); render
 
 /* ---------------- pattern length inference (in bars) ---------------- */
 function patternLengthBars(p){
-  // Fixed time-cycle length (preferred): p.lenBars
-  if(p && typeof p.lenBars === "number" && p.lenBars > 0) return Math.max(1, Math.floor(p.lenBars));
+  // Fixed time-cycle length (preferred): p.lenBars (supports fractional bars for sample patterns)
+  if(p && typeof p.lenBars === "number" && p.lenBars > 0) return Math.max(0.25, Number(p.lenBars));
   // Fallback: default to 4 bars (strict time cycle)
   return 4;
 }

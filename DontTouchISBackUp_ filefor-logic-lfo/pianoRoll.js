@@ -1,5 +1,118 @@
 /* ================= Electro DAW | pianoRoll.js ================= */
+function resolveSamplePatternParamsForPreview(pattern, channel){
+  const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
+  if (chParams && chParams.samplePath) return chParams;
+  const patCfg = (pattern && typeof pattern.samplePatternConfig === "object" && pattern.samplePatternConfig) ? pattern.samplePatternConfig : null;
+  if (patCfg && patCfg.samplePath) {
+    channel.params = Object.assign({}, patCfg, chParams || {});
+    return channel.params;
+  }
+  return chParams;
+}
+
+
+async function triggerNativeInstrumentPreview(channel, midi, velocity = 0.85, durationSec = 0.25){
+  try{
+    const ab = window.audioBackend;
+    if(!ab || typeof ab.triggerNote !== "function") return false;
+
+    const ch = channel || null;
+    if(!ch) return false;
+
+    const presetRaw = String(ch.preset || "").trim();
+    const presetLower = presetRaw.toLowerCase();
+    const isTouski = presetLower.includes("touski") || presetLower.includes("sample touski");
+    if(!isTouski) return false;
+
+    const params = (ch.params && typeof ch.params === "object") ? ch.params : {};
+    const instId = String(ch.id || ch.name || "touski-preview");
+    const mixCh = Math.max(1, Math.floor(Number(ch.mixOut || 1)));
+
+    const res = await ab.triggerNote({
+      note: Math.floor(Number(midi || 60)),
+      velocity: Number.isFinite(+velocity) ? +velocity : 0.85,
+      durationSec: Number.isFinite(+durationSec) ? +durationSec : 0.25,
+      instId,
+      instType: presetRaw || "sample touski",
+      params,
+      mixCh,
+      trackId: "preview"
+    });
+
+    return !!(res && res.ok);
+  }catch(err){
+    console.warn("[Preview][Touski] native trigger failed", err);
+    return false;
+  }
+}
+
+async function previewHeldNoteOn(channel, midi, velocity = 0.85){
+  try{
+    const ab = window.audioBackend;
+    if(!ab || typeof ab.previewNoteOn !== "function") return false;
+    const ch = channel || null;
+    if(!ch) return false;
+
+    const presetRaw = String(ch.preset || "").trim();
+    const params = (ch.params && typeof ch.params === "object") ? ch.params : {};
+    const instId = String(ch.id || ch.name || "piano-preview");
+    const mixCh = Math.max(1, Math.floor(Number(ch.mixOut || 1)));
+
+    const res = await ab.previewNoteOn({
+      note: Math.floor(Number(midi || 60)),
+      velocity: Number.isFinite(+velocity) ? +velocity : 0.85,
+      instId,
+      instType: presetRaw || "piano",
+      params,
+      mixCh,
+      trackId: "preview-held"
+    });
+    return !!(res && res.ok);
+  }catch(err){
+    console.warn("[Preview][Held][NOTE.ON] failed", err);
+    return false;
+  }
+}
+
+async function previewHeldNoteOff(channel, midi){
+  try{
+    const ab = window.audioBackend;
+    if(!ab || typeof ab.previewNoteOff !== "function") return false;
+    const ch = channel || null;
+    if(!ch) return false;
+
+    const presetRaw = String(ch.preset || "").trim();
+    const instId = String(ch.id || ch.name || "piano-preview");
+    const mixCh = Math.max(1, Math.floor(Number(ch.mixOut || 1)));
+
+    const res = await ab.previewNoteOff({
+      note: Math.floor(Number(midi || 60)),
+      instId,
+      instType: presetRaw || "piano",
+      mixCh,
+      trackId: "preview-held"
+    });
+    return !!(res && res.ok);
+  }catch(err){
+    console.warn("[Preview][Held][NOTE.OFF] failed", err);
+    return false;
+  }
+}
+
 /* ---------------- piano keys ---------------- */
+const heldPianoPreview = { channelId: null, midi: null, active: false };
+
+async function stopHeldPianoPreview(){
+  if(!heldPianoPreview.active) return;
+  const ch = activeChannel();
+  if(ch && heldPianoPreview.channelId === String(ch.id || ch.name || "")) {
+    await previewHeldNoteOff(ch, heldPianoPreview.midi);
+  }
+  heldPianoPreview.channelId = null;
+  heldPianoPreview.midi = null;
+  heldPianoPreview.active = false;
+}
+
 function buildPianoColumn(){
   pianoKeys.innerHTML="";
   for(let m=midiMax(); m>=state.baseMidi; m--){
@@ -13,14 +126,31 @@ function buildPianoColumn(){
     row.addEventListener("mousedown", async (e)=>{
       if(e.button!==0) return;
       if(!state.preview) return;
+      e.preventDefault();
       await ae.ensure();
-      const ch=activeChannel(); if(!ch) return;
-      const presetName = presetOverride.value || ch.preset;
-      const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-      const inst = presets.get(presetName, ch.params, outBus);
+      const p=activePattern();
+      const ch=activeChannel(); if(!p || !ch) return;
+      await stopHeldPianoPreview();
       const velv=(parseInt(vel.value,10)||100)/127;
-      inst.trigger(ae.ctx.currentTime, m, velv, 0.25);
+      if (await previewHeldNoteOn(ch, m, velv)) {
+        heldPianoPreview.channelId = String(ch.id || ch.name || "");
+        heldPianoPreview.midi = m;
+        heldPianoPreview.active = true;
+        return;
+      }
+      const channelPreset = String(ch.preset || "");
+      const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
+      const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
+      const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
+      if (await triggerNativeInstrumentPreview(ch, m, velv, 0.25)) {
+      } else if (!triggerSamplePatternPreviewNative(p, ch, m, velv)) {
+        inst.trigger(ae.ctx.currentTime, m, velv, 0.25);
+      }
     });
+
+    row.addEventListener("mouseup", async ()=>{ await stopHeldPianoPreview(); });
+    row.addEventListener("mouseleave", async ()=>{ if(mouseDown) await stopHeldPianoPreview(); });
 
     pianoKeys.appendChild(row);
   }
@@ -85,11 +215,16 @@ function renderNotes(){
 
       if(state.preview){
         await ae.ensure();
-        const presetName = presetOverride.value || ch.preset;
+        const channelPreset = String(ch.preset || "");
+        const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-      const inst = presets.get(presetName, ch.params, outBus);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
+      const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
         const vv=(n.vel||100)/127;
-        inst.trigger(ae.ctx.currentTime, n.midi, vv, 0.25);
+        if (await triggerNativeInstrumentPreview(ch, n.midi, vv, 0.25)) {
+        } else if (!triggerSamplePatternPreviewNative(p, ch, n.midi, vv)) {
+          inst.trigger(ae.ctx.currentTime, n.midi, vv, 0.25);
+        }
       }
 
       if(e.target.classList.contains("handle")){
@@ -196,11 +331,16 @@ async function applyPaintAt(cell){
 
     if(state.preview){
       await ae.ensure();
-      const presetName = presetOverride.value || ch.preset;
+      const channelPreset = String(ch.preset || "");
+      const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
       const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-      const inst = presets.get(presetName, ch.params, outBus);
+      const effectiveParams = resolveSamplePatternParamsForPreview(activePattern(), ch);
+      const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
       const vv=(parseInt(vel.value,10)||100)/127;
-      inst.trigger(ae.ctx.currentTime, cell.midi, vv, 0.25);
+      if (await triggerNativeInstrumentPreview(ch, cell.midi, vv, 0.25)) {
+      } else if (!triggerSamplePatternPreviewNative(p, ch, cell.midi, vv)) {
+        inst.trigger(ae.ctx.currentTime, cell.midi, vv, 0.25);
+      }
     }
   }
 }
@@ -234,7 +374,7 @@ grid.addEventListener("mousemove", async (e)=>{
   await applyPaintAt(cell);
 });
 
-window.addEventListener("mouseup", ()=>{ mouseDown=false; paintMode=null; });
+window.addEventListener("mouseup", async ()=>{ mouseDown=false; paintMode=null; await stopHeldPianoPreview(); });
 
 /* ---------------- resize handler ---------------- */
 let resize={active:false,id:null,startX:0,startLen:0};

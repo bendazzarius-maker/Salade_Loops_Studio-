@@ -26,7 +26,7 @@
     id: "Sample Touski",
     color: "#8fd3ff",
     type: "sampler",
-    defaultParams(){ return { programPath: "", gain: 1, pan: 0 }; },
+    defaultParams(){ return { programPath: "", gain: 1, pan: 0, smoothingMs: 12.0, zeroCrossSearchMs: 3.0, pitchEngine: "granular", grainSizeMs: 70.0, grainOverlap: 0.78, grainJitterMs: 8.0, seamDiffusePct: 35.0 }; },
     uiSchema(params = {}){
       return {
         title: "Sample Touski",
@@ -36,7 +36,19 @@
           ]},
           { title: "Mix", controls: [
             { type: "slider", key: "gain", label: "Gain", min: 0, max: 2, step: 0.01 },
-            { type: "slider", key: "pan", label: "Pan", min: -1, max: 1, step: 0.01 }
+            { type: "slider", key: "pan", label: "Pan", min: -1, max: 1, step: 0.01 },
+            { type: "slider", key: "smoothingMs", label: "Lissage boucle", min: 0, max: 250, step: 0.5, default: 12.0 }
+          ]},
+          { title: "Boucle & maintien", controls: [
+            { type: "select", key: "pitchEngine", label: "Moteur maintien", default: "granular", options: [
+              { value: "granular", label: "Granular Hold" },
+              { value: "resample", label: "Resample Hold" }
+            ]},
+            { type: "slider", key: "zeroCrossSearchMs", label: "Recherche zéro-cross", min: 0, max: 50, step: 0.1, default: 3.0 },
+            { type: "slider", key: "grainSizeMs", label: "Taille grain", min: 8, max: 250, step: 1, default: 70.0 },
+            { type: "slider", key: "grainOverlap", label: "Recouvrement grain", min: 0.1, max: 0.98, step: 0.01, default: 0.78 },
+            { type: "slider", key: "grainJitterMs", label: "Jitter source grain", min: 0, max: 80, step: 0.5, default: 8.0 },
+            { type: "slider", key: "seamDiffusePct", label: "Diffusion maintien", min: 0, max: 100, step: 1, default: 35.0 }
           ]}
         ]
       };

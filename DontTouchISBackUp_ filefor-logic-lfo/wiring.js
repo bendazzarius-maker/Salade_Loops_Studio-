@@ -15,17 +15,65 @@ toolPaint.addEventListener("click",()=>setTool("paint"));
 toolHandle.addEventListener("click",()=>setTool("handler"));
 snapBtn.addEventListener("click",cycleSnap);
 
-bpm.addEventListener("change",()=>{
+bpm.addEventListener("change", async ()=>{
   state.bpm=clamp(parseInt(bpm.value,10)||120,40,240);
   bpm.value=state.bpm;
+  if (window.audioBackend) await window.audioBackend.setBpm(state.bpm);
 });
 
-playBtn.addEventListener("click", async ()=>{ if(!state.playing) await start(); else pause(); });
-stopBtn.addEventListener("click", stop);
+playBtn.addEventListener("click", async ()=>{ if(!state.playing) await start(); else await pause(); });
+stopBtn.addEventListener("click", async ()=>{ await stop(); });
 loopBtn.addEventListener("click",()=>{ state.loop=!state.loop; updateLoopButtonLabel(); });
 window.addEventListener("timeRulerSelectionChanged", updateLoopButtonLabel);
 window.addEventListener("daw:refresh", updateLoopButtonLabel);
 updateLoopButtonLabel();
+
+function resolveSamplePatternParamsForTrigger(pattern, channel){
+  const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
+  if (chParams && chParams.samplePath) return chParams;
+  const patCfg = (pattern && typeof pattern.samplePatternConfig === "object" && pattern.samplePatternConfig) ? pattern.samplePatternConfig : null;
+  if (patCfg && patCfg.samplePath) {
+    channel.params = Object.assign({}, patCfg, chParams || {});
+    return channel.params;
+  }
+  return chParams;
+}
+
+
+async function triggerNativeInstrumentPreview(channel, midi, velocity = 0.85, durationSec = 0.25){
+  try{
+    const ab = window.audioBackend;
+    if(!ab || typeof ab.triggerNote !== "function") return false;
+
+    const ch = channel || null;
+    if(!ch) return false;
+
+    const presetRaw = String(ch.preset || "").trim();
+    const presetLower = presetRaw.toLowerCase();
+    const isTouski = presetLower.includes("touski") || presetLower.includes("sample touski");
+    if(!isTouski) return false;
+
+    const params = (ch.params && typeof ch.params === "object") ? ch.params : {};
+    const instId = String(ch.id || ch.name || "touski-preview");
+    const mixCh = Math.max(1, Math.floor(Number(ch.mixOut || 1)));
+
+    const res = await ab.triggerNote({
+      note: Math.floor(Number(midi || 60)),
+      velocity: Number.isFinite(+velocity) ? +velocity : 0.85,
+      durationSec: Number.isFinite(+durationSec) ? +durationSec : 0.25,
+      instId,
+      instType: presetRaw || "sample touski",
+      params,
+      mixCh,
+      trackId: "preview"
+    });
+
+    return !!(res && res.ok);
+  }catch(err){
+    console.warn("[Preview][Touski] native trigger failed", err);
+    return false;
+  }
+}
 
 vel.addEventListener("input",()=> velVal.textContent=vel.value);
 
@@ -81,13 +129,19 @@ $("#clearPlaylist").addEventListener("click",clearPlaylist);
 
 $("#testC4").addEventListener("click", async ()=>{
   await ae.ensure();
-  const ch=activeChannel(); if(!ch) return;
-  const presetName = presetOverride.value || ch.preset;
+  const p=activePattern();
+  const ch=activeChannel(); if(!p || !ch) return;
+  const channelPreset = String(ch.preset || "");
+  const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
   const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut||1) : ae.master);
-  const inst=presets.get(presetName, ch.params, outBus);
+  const effectiveParams = resolveSamplePatternParamsForTrigger(activePattern(), ch);
+  const inst=presets.get(presetName, effectiveParams || ch.params, outBus);
   const m = (inst.type==="drums") ? 48 : 60; // Drum hit / C4
   const vv=(parseInt(vel.value,10)||100)/127;
-  inst.trigger(ae.ctx.currentTime,m,vv,0.35);
+  if (await triggerNativeInstrumentPreview(ch, m, vv, 0.35)) {
+  } else if (!triggerSamplePatternTestNative(p, ch, m, vv)) {
+    inst.trigger(ae.ctx.currentTime,m,vv,0.35);
+  }
 });
 
 $("#export").addEventListener("click",()=>{ console.log("EXPORT", exportProject()); alert("Export JSON -> console (F12)."); });

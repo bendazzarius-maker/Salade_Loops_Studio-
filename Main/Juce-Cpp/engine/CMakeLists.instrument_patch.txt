@@ -1,0 +1,11 @@
+# Add these files to target_sources(sls-audio-engine PRIVATE ...)
+    src/instruments/InstrumentBase.cpp
+    src/instruments/InstrumentFactory.cpp
+    src/instruments/InstrumentRegistry.cpp
+    src/instruments/PianoInstrument.cpp
+    src/instruments/BassInstrument.cpp
+    src/instruments/LeadInstrument.cpp
+    src/instruments/PadInstrument.cpp
+    src/instruments/SubBassInstrument.cpp
+    src/instruments/ViolinInstrument.cpp
+    src/instruments/DrumInstrument.cpp

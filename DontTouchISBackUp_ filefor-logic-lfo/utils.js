@@ -5,6 +5,18 @@ const cssNum = v => parseFloat(getComputedStyle(document.documentElement).getPro
 const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
 const gid = (p="id") => `${p}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
 
+function triggerSamplePatternPreviewNative(pattern, channel, midi, velocity = 0.85){
+  const isSamplePattern = String(channel?.preset || "") === "Sample Paterne"
+    || String(pattern?.type || pattern?.kind || "").toLowerCase() === "sample_pattern";
+  if (!isSamplePattern) return false;
+  return false;
+}
+
+function triggerSamplePatternTestNative(pattern, channel, midi, velocity = 0.85){
+  return triggerSamplePatternPreviewNative(pattern, channel, midi, velocity);
+}
+
+
 const state = {
   autoScroll: true,
   bpm: 120,
@@ -21,7 +33,10 @@ const state = {
   bars: parseInt(getComputedStyle(document.documentElement).getPropertyValue("--bars")) || 64,
   stepsPerBar: parseInt(getComputedStyle(document.documentElement).getPropertyValue("--steps-per-bar")) || 16,
   mode: "pattern", // "pattern" | "song"
-  maximized: false
+  maximized: false,
+  audioBackend: "juce",
+  audioBufferSize: 512,
+  audioSampleRate: 48000
 };
 function applyOctaves(){
   state.baseMidi = 12 * (state.octaveMin + 1);     // C0=12

@@ -26,6 +26,23 @@ if (!gotLock) {
 // JUCE AUDIO ENGINE HOST (spawn in MAIN process)
 // -----------------------------------------------------------------------------
 let audioProc = null;
+const audioPending = new Map();
+let audioEventSeq = 0;
+
+function nowMs() {
+  return Date.now();
+}
+
+function buildEngineRequest(op, data = {}, id = `main-${nowMs()}-${Math.random().toString(36).slice(2, 8)}`) {
+  return {
+    v: 1,
+    type: "req",
+    op,
+    id,
+    ts: nowMs(),
+    data: data || {},
+  };
+}
 
 function resolveAudioEnginePath() {
   // DEV: binaire copié dans ./native
@@ -46,12 +63,101 @@ function resolveAudioEnginePath() {
   return pkgBin;
 }
 
-function sendToAudio(op, data = {}) {
-  if (!audioProc?.stdin) return;
+function sendRawToAudio(message) {
+  if (!audioProc?.stdin) return false;
   try {
-    audioProc.stdin.write(JSON.stringify({ op, data }) + "\n");
+    audioProc.stdin.write(JSON.stringify(message) + "\n");
+    return true;
   } catch (e) {
     console.warn("[JUCE] send failed:", e);
+    return false;
+  }
+}
+
+function failAllPending(code, message) {
+  for (const [id, pending] of audioPending.entries()) {
+    clearTimeout(pending.timer);
+    pending.resolve({
+      v: 1,
+      type: "res",
+      op: pending.op,
+      id,
+      ts: nowMs(),
+      ok: false,
+      err: { code, message, details: {} },
+    });
+  }
+  audioPending.clear();
+}
+
+async function requestAudio(message, timeoutMs = 1200) {
+  if (!audioProc) {
+    return {
+      v: 1,
+      type: "res",
+      op: message?.op || "unknown",
+      id: message?.id || "0",
+      ts: nowMs(),
+      ok: false,
+      err: { code: "E_NOT_READY", message: "Audio engine not running.", details: {} },
+    };
+  }
+
+  return new Promise((resolve) => {
+    const id = String(message.id || `main-${nowMs()}`);
+    const timer = setTimeout(() => {
+      audioPending.delete(id);
+      resolve({
+        v: 1,
+        type: "res",
+        op: message.op,
+        id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_TIMEOUT", message: "Audio engine request timed out.", details: {} },
+      });
+    }, timeoutMs);
+
+    audioPending.set(id, { resolve, timer, op: message.op });
+    const sent = sendRawToAudio({ ...message, id });
+    if (!sent) {
+      clearTimeout(timer);
+      audioPending.delete(id);
+      resolve({
+        v: 1,
+        type: "res",
+        op: message.op,
+        id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_NOT_READY", message: "Audio engine stdin unavailable.", details: {} },
+      });
+    }
+  });
+}
+
+function hashString(value = "") {
+  let h = 2166136261;
+  const str = String(value || "");
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16);
+}
+
+let _lastAudioEvtSentAt = 0;
+function safeSendAudioEvent(channel, payload) {
+  const now = Date.now();
+  if (now - _lastAudioEvtSentAt < 8) return;
+  _lastAudioEvtSentAt = now;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const wc = mainWindow.webContents;
+  if (!wc || wc.isDestroyed() || wc.isCrashed()) return;
+  try {
+    wc.send(channel, payload);
+  } catch (err) {
+    console.warn("[JUCE] safeSendAudioEvent failed", err?.message || err);
   }
 }
 
@@ -60,13 +166,33 @@ function startAudioEngine() {
 
   if (!fsSync.existsSync(bin)) {
     console.warn("[JUCE] Engine binary not found:", bin);
-    console.warn(
-      "[JUCE] Put it in ./native (dev) or in resources/native (packaged)."
-    );
+    console.warn("[JUCE] Put it in ./native (dev) or in resources/native (packaged).");
     return;
   }
 
-  audioProc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+  // Linux: ensure executable bit
+  if (process.platform !== "win32") {
+    try {
+      const st = fsSync.statSync(bin);
+      // if no execute bits, add u+x
+      if ((st.mode & 0o111) === 0) {
+        fsSync.chmodSync(bin, st.mode | 0o755);
+        console.log("[JUCE] chmod +x applied:", bin);
+      }
+    } catch (e) {
+      console.warn("[JUCE] chmod/stat failed:", e?.message || e);
+    }
+  }
+
+  try {
+    audioProc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+  } catch (e) {
+    console.warn("[JUCE] spawn failed:", e?.message || e);
+    audioProc = null;
+    return;
+  }
+
+  console.log("[JUCE] spawned:", bin, "pid=", audioProc?.pid);
 
   let buf = "";
 
@@ -80,8 +206,15 @@ function startAudioEngine() {
 
       try {
         const msg = JSON.parse(line);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("audio:native:event", msg);
+        if (msg?.type === "res" && msg.id && audioPending.has(String(msg.id))) {
+          const pending = audioPending.get(String(msg.id));
+          clearTimeout(pending.timer);
+          audioPending.delete(String(msg.id));
+          pending.resolve(msg);
+          continue;
+        }
+        if (mainWindow && !mainWindow.isDestroyed() && msg?.type === "evt") {
+          safeSendAudioEvent("audio:native:event", msg);
         }
       } catch {
         console.warn("[JUCE] stdout non-JSON:", line);
@@ -89,23 +222,25 @@ function startAudioEngine() {
     }
   });
 
-  audioProc.stderr.on("data", (d) =>
-    console.warn("[JUCE][stderr]", d.toString("utf8"))
-  );
+  audioProc.stderr.on("data", (d) => console.warn("[JUCE][stderr]", d.toString("utf8")));
 
-  audioProc.on("exit", (code) => {
-    console.warn("[JUCE] engine exited with code:", code);
+  audioProc.on("error", (err) => {
+    console.warn("[JUCE] process error:", err?.message || err);
+    failAllPending("E_NOT_READY", "Audio engine process error.");
     audioProc = null;
   });
 
-  // sanity-check
-  sendToAudio("ping", {});
+  audioProc.on("exit", (code, signal) => {
+    console.warn("[JUCE] engine exited with:", { code, signal });
+    failAllPending("E_NOT_READY", "Audio engine exited.");
+    audioProc = null;
+  });
 }
 
 function stopAudioEngine() {
   if (!audioProc) return;
   try {
-    sendToAudio("quit", {});
+    sendRawToAudio(buildEngineRequest("engine.shutdown", {}, "main-shutdown"));
   } catch (_) {}
   try {
     audioProc.kill();
@@ -114,10 +249,23 @@ function stopAudioEngine() {
 }
 
 // Renderer -> Engine
-ipcMain.handle("audio:native:send", async (_evt, payload) => {
-  if (!payload || typeof payload.op !== "string") return { ok: false };
-  sendToAudio(payload.op, payload.data || {});
-  return { ok: true };
+ipcMain.handle("audio:native:req", async (_evt, message) => {
+  if (!message || message.v !== 1 || message.type !== "req" || typeof message.op !== "string") {
+    return {
+      v: 1,
+      type: "res",
+      op: message?.op || "unknown",
+      id: message?.id || "0",
+      ts: nowMs(),
+      ok: false,
+      err: { code: "E_BAD_ENVELOPE", message: "Invalid SLS-IPC request envelope.", details: {} },
+    };
+  }
+  return requestAudio(message, 5000);
+});
+
+ipcMain.handle("audio:native:isAvailable", async () => {
+  return { ok: !!audioProc };
 });
 
 // -----------------------------------------------------------------------------
@@ -208,6 +356,7 @@ ipcMain.handle("project:load", async () => {
 // -----------------------------------------------------------------------------
 const SUPPORTED_SAMPLE_EXTENSIONS = new Set([".wav", ".mp3", ".ogg"]);
 const PROGRAM_FILE_EXT = ".slsprog.json";
+const SAMPLE_PATTERN_PROGRAM_EXT = ".spp.json";
 
 const SAMPLER_CONFIG_FILE = path.join(app.getPath("userData"), "sampler-programs-config.json");
 let samplerProgramsRootOverride = null;
@@ -233,6 +382,56 @@ async function writeSamplerConfig() {
 function samplerProgramsRoot() {
   if (samplerProgramsRootOverride) return samplerProgramsRootOverride;
   return path.join(app.getPath("documents"), "SL-Studio", "samplerTouski");
+}
+
+function getSLStudioRoot() {
+  return path.join(app.getPath("documents"), "SL-Studio");
+}
+
+function samplePatternRoot() {
+  return path.join(getSLStudioRoot(), "samplePattern");
+}
+
+function samplePatternProgramsDir() {
+  return path.join(samplePatternRoot(), "programs");
+}
+
+function samplePatternSamplesDir() {
+  return path.join(samplePatternRoot(), "samples");
+}
+
+function samplePatternIndexPath() {
+  return path.join(samplePatternRoot(), "index.json");
+}
+
+async function ensureSamplePatternDirs() {
+  await fs.mkdir(samplePatternProgramsDir(), { recursive: true });
+  await fs.mkdir(samplePatternSamplesDir(), { recursive: true });
+}
+
+function sanitizeProgramName(rawName = "") {
+  return String(rawName || "Sample Pattern Program")
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") || "Sample Pattern Program";
+}
+
+async function readSamplePatternIndex() {
+  try {
+    const raw = await fs.readFile(samplePatternIndexPath(), "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed?.programs) ? parsed.programs : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+async function writeSamplePatternIndex(programs) {
+  const payload = {
+    version: 1,
+    updatedAt: Date.now(),
+    programs: Array.isArray(programs) ? programs : [],
+  };
+  await fs.writeFile(samplePatternIndexPath(), JSON.stringify(payload, null, 2), "utf-8");
 }
 
 async function scanSamplerDirectory(rootDir) {
@@ -305,6 +504,74 @@ ipcMain.handle("sampler:scanDirectories", async (_evt, payload = {}) => {
 
   return { ok: true, roots: indexed };
 });
+
+async function resolveNonCollidingFilePath(basePath) {
+  let candidate = basePath;
+  let i = 2;
+  const ext = path.extname(basePath);
+  const dir = path.dirname(basePath);
+  const stem = path.basename(basePath, ext);
+  while (true) {
+    try {
+      await fs.access(candidate);
+      candidate = path.join(dir, `${stem}_${i}${ext}`);
+      i += 1;
+    } catch (_missing) {
+      return candidate;
+    }
+  }
+}
+
+function normalizeSamplerProgramShape(program = {}) {
+  const posAction = Number.isFinite(+program.posAction) ? +program.posAction : ((Number(program.keyActionPct) || 0) / 100);
+  const posLoopStartRaw = Number.isFinite(+program.posLoopStart) ? +program.posLoopStart : ((Number(program.loopStartPct) || 15) / 100);
+  const posLoopEndRaw = Number.isFinite(+program.posLoopEnd) ? +program.posLoopEnd : ((Number(program.loopEndPct) || 90) / 100);
+  const posReleaseRaw = Number.isFinite(+program.posRelease) ? +program.posRelease : ((Number(program.releasePct) || 100) / 100);
+  const posLoopStart = Math.max(posAction + 0.001, posLoopStartRaw);
+  const posLoopEnd = Math.max(posLoopStart + 0.001, posLoopEndRaw);
+  const posRelease = Math.max(posLoopEnd, posReleaseRaw);
+  const keyActionPct = Math.round(Math.max(0, Math.min(1, posAction)) * 100);
+  const loopStartPct = Math.round(Math.max(0, Math.min(1, posLoopStart)) * 100);
+  const loopEndPct = Math.round(Math.max(0, Math.min(1, posLoopEnd)) * 100);
+  const releasePct = Math.round(Math.max(0, Math.min(1, posRelease)) * 100);
+  const samplePath = String(program.samplePath || program.sample?.path || "").trim();
+  const noteMap = Array.isArray(program.noteMap) ? program.noteMap : (Array.isArray(program.mapping) ? program.mapping : []);
+  const samples = Array.isArray(program.samples) ? program.samples : [];
+  const zones = Array.isArray(program.zones) ? program.zones : [];
+  if (!samples.length && samplePath) {
+    samples.push({ note: Number(program.rootMidi ?? 60) || 60, samplePath });
+  }
+  if (!zones.length && samplePath) {
+    zones.push({ rootMidi: Number(program.rootMidi ?? 60) || 60, samplePath, keyActionPct, loopStartPct, loopEndPct, releasePct });
+  }
+
+  return {
+    ...program,
+    version: Number(program.version || 2),
+    samplePath,
+    posAction,
+    posLoopStart,
+    posLoopEnd,
+    posRelease,
+    keyActionPct,
+    loopStartPct,
+    loopEndPct,
+    releasePct,
+    sustainPct: loopEndPct,
+    noteMap,
+    mapping: noteMap,
+    samples,
+    zones,
+    smartPlayback: {
+      keyActionPct,
+      loopStartPct,
+      loopEndPct,
+      releasePct,
+      mode: "hold_loop_then_release",
+      ...(program.smartPlayback && typeof program.smartPlayback === "object" ? program.smartPlayback : {}),
+    },
+  };
+}
 
 async function ensureSamplerProgramsRoot() {
   const root = samplerProgramsRoot();
@@ -414,12 +681,13 @@ ipcMain.handle("sampler:saveProgram", async (_evt, payload = {}) => {
     if (!dir.startsWith(path.resolve(root))) return { ok: false, error: "Dossier invalide" };
     await fs.mkdir(dir, { recursive: true });
     outFile = path.join(dir, fileName);
+    if (mode === "saveAs") outFile = await resolveNonCollidingFilePath(outFile);
   }
 
   const relativeFilePath = path.relative(root, outFile).replace(/\\/g, "/");
 
   const toWrite = {
-    ...program,
+    ...normalizeSamplerProgramShape(program),
     id: relativeFilePath,
     updatedAt: new Date().toISOString(),
     category: path.dirname(relativeFilePath).replace(/\\/g, "/") || "",
@@ -432,4 +700,94 @@ ipcMain.handle("sampler:saveProgram", async (_evt, payload = {}) => {
     relativeFilePath,
     program: toWrite,
   };
+});
+
+ipcMain.handle("samplePattern:saveProgram", async (_evt, payload = {}) => {
+  await ensureSamplePatternDirs();
+
+  const now = Date.now();
+  const cleanName = sanitizeProgramName(payload.name || "SamplePattern");
+  const inputSamplePath = String(payload.samplePath || "").trim();
+  if (!inputSamplePath) return { ok: false, error: "samplePath requis" };
+
+  let resolvedSamplePath = path.resolve(inputSamplePath);
+  const importMode = String(payload.importMode || "reference").toLowerCase();
+
+  if (importMode === "import") {
+    const ext = path.extname(resolvedSamplePath) || ".wav";
+    const copiedName = `${cleanName}_${hashString(`${resolvedSamplePath}-${now}`)}${ext}`;
+    const dst = path.join(samplePatternSamplesDir(), copiedName);
+    await fs.copyFile(resolvedSamplePath, dst);
+    resolvedSamplePath = dst;
+  }
+
+  const program = {
+    version: 1,
+    name: cleanName,
+    createdAt: now,
+    updatedAt: now,
+    sample: {
+      mode: importMode === "import" ? "import" : "reference",
+      path: resolvedSamplePath,
+      originalPath: inputSamplePath,
+      sha1: "",
+    },
+    slice: {
+      startNorm: Math.max(0, Math.min(1, Number(payload.startNorm ?? 0))),
+      endNorm: Math.max(0, Math.min(1, Number(payload.endNorm ?? 1))),
+    },
+    playback: {
+      rootMidi: Math.max(0, Math.min(127, Math.floor(Number(payload.rootMidi ?? 60)))),
+      pitchMode: String(payload.pitchMode || "chromatic"),
+      gain: Math.max(0, Math.min(2, Number(payload.gain ?? 1))),
+      pan: Math.max(-1, Math.min(1, Number(payload.pan ?? 0))),
+    },
+  };
+  if (program.slice.endNorm <= program.slice.startNorm) {
+    program.slice.endNorm = Math.min(1, program.slice.startNorm + 0.001);
+  }
+
+  const programFile = path.join(samplePatternProgramsDir(), `${cleanName}${SAMPLE_PATTERN_PROGRAM_EXT}`);
+  await fs.writeFile(programFile, JSON.stringify(program, null, 2), "utf-8");
+
+  const sampleId = `sp_${hashString(resolvedSamplePath.toLowerCase())}`;
+  const entry = {
+    name: cleanName,
+    programPath: programFile,
+    updatedAt: now,
+    samplePath: resolvedSamplePath,
+    sampleId,
+  };
+
+  const existing = await readSamplePatternIndex();
+  const filtered = existing.filter((it) => String(it.programPath) !== programFile);
+  filtered.push(entry);
+  filtered.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  await writeSamplePatternIndex(filtered);
+
+  return {
+    ok: true,
+    programPath: programFile,
+    programName: cleanName,
+    resolvedSamplePath,
+    sampleId,
+  };
+});
+
+ipcMain.handle("samplePattern:listPrograms", async () => {
+  await ensureSamplePatternDirs();
+  const programs = await readSamplePatternIndex();
+  return { ok: true, rootPath: samplePatternProgramsDir(), programs };
+});
+
+ipcMain.handle("samplePattern:loadProgram", async (_evt, payload = {}) => {
+  await ensureSamplePatternDirs();
+  const programPath = String(payload.programPath || "").trim();
+  if (!programPath) return { ok: false, error: "programPath requis" };
+  const resolved = path.resolve(programPath);
+  const root = path.resolve(samplePatternProgramsDir());
+  if (!resolved.startsWith(root)) return { ok: false, error: "Chemin invalide" };
+  const raw = await fs.readFile(resolved, "utf-8");
+  const program = JSON.parse(raw);
+  return { ok: true, programPath: resolved, program };
 });

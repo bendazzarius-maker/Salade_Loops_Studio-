@@ -1,0 +1,9 @@
+# Add these sources to target_sources(sls-audio-engine PRIVATE ...)
+    src/instruments/fm/FmEnvelope.cpp
+    src/instruments/fm/FmOperator.cpp
+    src/instruments/fm/FmAlgorithm.cpp
+    src/instruments/fm/FmVoice.cpp
+    src/instruments/fm/FmEngine.cpp
+    src/instruments/DxPianoInstrument.cpp
+    src/instruments/RhodesFmInstrument.cpp
+    src/instruments/FmInstrumentFactory.cpp

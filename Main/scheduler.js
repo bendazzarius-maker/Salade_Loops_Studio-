@@ -18,6 +18,49 @@ const pb = {
   forceSongFromSelection: false
 };
 
+
+function _setTransportUiPlaying(isPlaying){
+  const playingNow = !!isPlaying;
+  state.playing = playingNow;
+  try{ if (playBtn) playBtn.textContent = playingNow ? "⏸ Pause" : "▶ Play"; }catch(_){ }
+}
+
+function _syncUiFromTransportState(ts){
+  const s = ts || window.audioBackend?.backends?.juce?.transportState || null;
+  if(!s) return;
+
+  const ppq = Math.max(0, Number(s.ppq || 0));
+  const absStep = Math.floor(ppq * (state.stepsPerBar / 4));
+  const rangeStart = Math.max(0, Math.floor(pb.rangeStartStep || 0));
+  const rangeEnd = Math.max(rangeStart + 1, Math.floor(pb.rangeEndStep || (pb.endStep || 1)));
+  const rangeLen = Math.max(1, rangeEnd - rangeStart);
+  const songStep = Math.min(rangeEnd - 1, Math.max(rangeStart, absStep));
+  const relStep = Math.max(0, songStep - rangeStart);
+
+  pb.uiAbsStep = absStep;
+  pb.uiSongStep = songStep;
+  pb.uiStep = songStep;
+
+  try{
+    const p = activePattern();
+    const patSteps = Math.max(1, Math.round(patternLengthBars(p) * state.stepsPerBar));
+    pb.uiRollStep = Math.max(0, songStep - rangeStart) % patSteps;
+  }catch(_){
+    pb.uiRollStep = state.loop ? (relStep % rangeLen) : relStep;
+  }
+
+  _setTransportUiPlaying(!!s.playing);
+}
+
+try{
+  if(!window.__slsTransportStateBoundV2){
+    window.__slsTransportStateBoundV2 = true;
+    window.addEventListener("sls:transport-state", (ev)=>{
+      try{ _syncUiFromTransportState(ev?.detail || null); }catch(_){ }
+    });
+  }
+}catch(_){ }
+
 // Sample Pattern convention (audio steps): 16 steps = 1 beat
 const STEPS_PER_BEAT_SP = 16;
 
@@ -484,84 +527,97 @@ function _collectEngineEventsForRange(startStep, endStep){
   const ppqPerStep = _ppqPerStep();
   const start = Math.max(0, Math.floor(startStep || 0));
   const end = Math.max(start + 1, Math.floor(endStep || start + 1));
+  const isPatternMode = !pb.forceSongFromSelection && String(state.mode || "song") === "pattern";
+
+  const emitChannelNoteEvents = ({ pat, ch, songStep, localStep, trackHint }) => {
+    if (!ch || ch.muted) return;
+    const channelPreset = String(ch.preset || "");
+    const effectiveParams = resolveSamplePatternParams(pat, ch) || ch.params || {};
+    const mixCh = Number(ch?.mixOut || 1);
+    const patSteps = Math.max(1, Math.round(patternLengthBars(pat) * state.stepsPerBar));
+
+    for (const n of (ch.notes || [])) {
+      if (Number(n.step || 0) !== localStep) continue;
+      const note = Number(n.midi || 60);
+      const vel = Number((n.vel || 100) / 127);
+      const atPpq = songStep * ppqPerStep;
+      const durSteps = Math.max(1, Number(n.len || 1));
+      const durPpq = durSteps * ppqPerStep;
+
+      if (channelPreset === "Sample Paterne") {
+        const samplePath = effectiveParams.samplePath || effectiveParams.path || effectiveParams.file || (effectiveParams.sample && effectiveParams.sample.path) || effectiveParams.url;
+        if (!samplePath) continue;
+        const resolvedPatternSteps = Math.max(1, Math.floor(Number(effectiveParams.patternSteps || (Number(effectiveParams.patternBeats || 0) * 16) || patSteps || 16) || 0));
+        events.push({
+          atPpq,
+          type: "sampler.trigger",
+          mixCh,
+          samplePath,
+          startNorm: Number(effectiveParams.startNorm ?? 0),
+          endNorm: Number(effectiveParams.endNorm ?? 1),
+          rootMidi: Number(effectiveParams.rootMidi ?? 60),
+          note,
+          velocity: vel,
+          gain: Number(effectiveParams.gain ?? 1),
+          pan: Number(effectiveParams.pan ?? 0),
+          mode: String((effectiveParams.pitchMode === "fixed") ? "vinyl" : (effectiveParams.pitchMode === "stretch") ? "fit_duration" : "fit_duration_vinyl"),
+          patternSteps: resolvedPatternSteps,
+          patternBeats: resolvedPatternSteps / STEPS_PER_BEAT_SP,
+          bpm: Number(state.bpm || 120),
+        });
+        continue;
+      }
+
+      if (channelPreset.toLowerCase().includes("touski")) {
+        const instId = String(ch.id || `touski-${trackHint || 'track'}`);
+        const programPath = effectiveParams.programPath || effectiveParams.path || "";
+        const samples = Array.isArray(effectiveParams.samples)
+          ? effectiveParams.samples
+          : (effectiveParams.samplePath ? [{ note: Number(effectiveParams.rootMidi ?? 60), samplePath: String(effectiveParams.samplePath) }] : []);
+        const touskiParams = {
+          posAction: Number.isFinite(+effectiveParams.posAction) ? +effectiveParams.posAction : undefined,
+          posLoopStart: Number.isFinite(+effectiveParams.posLoopStart) ? +effectiveParams.posLoopStart : undefined,
+          posLoopEnd: Number.isFinite(+effectiveParams.posLoopEnd) ? +effectiveParams.posLoopEnd : undefined,
+          posRelease: Number.isFinite(+effectiveParams.posRelease) ? +effectiveParams.posRelease : undefined,
+          keyActionPct: Number.isFinite(+effectiveParams.keyActionPct) ? +effectiveParams.keyActionPct : undefined,
+          loopStartPct: Number.isFinite(+effectiveParams.loopStartPct) ? +effectiveParams.loopStartPct : undefined,
+          loopEndPct: Number.isFinite(+effectiveParams.loopEndPct) ? +effectiveParams.loopEndPct : undefined,
+          releasePct: Number.isFinite(+effectiveParams.releasePct) ? +effectiveParams.releasePct : undefined,
+        };
+        events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath, samples, touskiParams });
+        events.push({ atPpq: atPpq + durPpq, type: "touski.note.off", instId, mixCh, note, vel: 0 });
+        continue;
+      }
+
+      const instId = String(ch.id || `inst-${trackHint || 'track'}`);
+      events.push({ atPpq, type: "note.on", instId, mixCh, note, vel, durPpq });
+      events.push({ atPpq: atPpq + durPpq, type: "note.off", instId, mixCh, note, vel: 0, durPpq: 0 });
+    }
+  };
+
+  if (isPatternMode) {
+    const pat = activePattern();
+    if (!pat || !Array.isArray(pat.channels)) return events;
+    const patSteps = Math.max(1, Math.round(patternLengthBars(pat) * state.stepsPerBar));
+    for (let songStep = start; songStep < end; songStep += 1) {
+      const local = (songStep - start) % patSteps;
+      for (const ch of pat.channels) emitChannelNoteEvents({ pat, ch, songStep, localStep: local, trackHint: pat.id || 'pattern' });
+    }
+    events.sort((a, b) => Number(a.atPpq || 0) - Number(b.atPpq || 0));
+    return events;
+  }
 
   for (let songStep = start; songStep < end; songStep += 1) {
     for (const tr of (project.playlist?.tracks || [])) {
       for (const clip of (tr.clips || [])) {
         const pat = project.patterns.find((x) => x.id === clip.patternId);
         if (!pat || !Array.isArray(pat.channels)) continue;
-
         const clipStartStep = Number(clip.startBar || 0) * state.stepsPerBar;
         const clipEndStep = (Number(clip.startBar || 0) + Number(clip.lenBars || 1)) * state.stepsPerBar;
         if (songStep < clipStartStep || songStep >= clipEndStep) continue;
-
         const patSteps = Math.max(1, Math.round(patternLengthBars(pat) * state.stepsPerBar));
         const local = (songStep - clipStartStep) % patSteps;
-
-        for (const ch of pat.channels) {
-          if (ch.muted) continue;
-          const channelPreset = String(ch.preset || "");
-          const effectiveParams = resolveSamplePatternParams(pat, ch) || ch.params || {};
-          const mixCh = Number(ch?.mixOut || 1);
-
-          for (const n of (ch.notes || [])) {
-            if (Number(n.step || 0) !== local) continue;
-            const note = Number(n.midi || 60);
-            const vel = Number((n.vel || 100) / 127);
-            const atPpq = songStep * ppqPerStep;
-            const durSteps = Math.max(1, Number(n.len || 1));
-            const durPpq = durSteps * ppqPerStep;
-
-            if (channelPreset === "Sample Paterne") {
-              const samplePath = effectiveParams.samplePath || effectiveParams.path || effectiveParams.file || (effectiveParams.sample && effectiveParams.sample.path) || effectiveParams.url;
-              if (!samplePath) continue;
-              const resolvedPatternSteps = Math.max(1, Math.floor(Number(effectiveParams.patternSteps || (Number(effectiveParams.patternBeats || 0) * 16) || patSteps || 16) || 0));
-              events.push({
-                atPpq,
-                type: "sampler.trigger",
-                mixCh,
-                samplePath,
-                startNorm: Number(effectiveParams.startNorm ?? 0),
-                endNorm: Number(effectiveParams.endNorm ?? 1),
-                rootMidi: Number(effectiveParams.rootMidi ?? 60),
-                note,
-                velocity: vel,
-                gain: Number(effectiveParams.gain ?? 1),
-                pan: Number(effectiveParams.pan ?? 0),
-                mode: String((effectiveParams.pitchMode === "fixed") ? "vinyl" : (effectiveParams.pitchMode === "stretch") ? "fit_duration" : "fit_duration_vinyl"),
-                patternSteps: resolvedPatternSteps,
-                patternBeats: resolvedPatternSteps / STEPS_PER_BEAT_SP,
-                bpm: Number(state.bpm || 120),
-              });
-              continue;
-            }
-
-            if (channelPreset.toLowerCase().includes("touski")) {
-              const instId = String(ch.id || `touski-${tr.id || 'track'}`);
-              const programPath = effectiveParams.programPath || effectiveParams.path || "";
-              const samples = Array.isArray(effectiveParams.samples)
-                ? effectiveParams.samples
-                : (effectiveParams.samplePath ? [{ note: Number(effectiveParams.rootMidi ?? 60), samplePath: String(effectiveParams.samplePath) }] : []);
-              const touskiParams = {
-                posAction: Number.isFinite(+effectiveParams.posAction) ? +effectiveParams.posAction : undefined,
-                posLoopStart: Number.isFinite(+effectiveParams.posLoopStart) ? +effectiveParams.posLoopStart : undefined,
-                posLoopEnd: Number.isFinite(+effectiveParams.posLoopEnd) ? +effectiveParams.posLoopEnd : undefined,
-                posRelease: Number.isFinite(+effectiveParams.posRelease) ? +effectiveParams.posRelease : undefined,
-                keyActionPct: Number.isFinite(+effectiveParams.keyActionPct) ? +effectiveParams.keyActionPct : undefined,
-                loopStartPct: Number.isFinite(+effectiveParams.loopStartPct) ? +effectiveParams.loopStartPct : undefined,
-                loopEndPct: Number.isFinite(+effectiveParams.loopEndPct) ? +effectiveParams.loopEndPct : undefined,
-                releasePct: Number.isFinite(+effectiveParams.releasePct) ? +effectiveParams.releasePct : undefined,
-              };
-              events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath, samples, touskiParams });
-              events.push({ atPpq: atPpq + durPpq, type: "touski.note.off", instId, mixCh, note, vel: 0 });
-              continue;
-            }
-
-            const instId = String(ch.id || `inst-${tr.id || 'track'}`);
-            events.push({ atPpq, type: "note.on", instId, mixCh, note, vel, durPpq });
-            events.push({ atPpq: atPpq + durPpq, type: "note.off", instId, mixCh, note, vel: 0, durPpq: 0 });
-          }
-        }
+        for (const ch of pat.channels) emitChannelNoteEvents({ pat, ch, songStep, localStep: local, trackHint: tr.id || 'track' });
       }
     }
   }
@@ -684,6 +740,8 @@ function buildProjectSnapshotForEngine(){
   }
 
   return {
+    playbackMode: String(state.mode || "song"),
+    activePatternId: String(activePattern()?.id || ""),
     projectId: "main-project",
     tempo: { bpm: state.bpm },
     ppqResolution,
@@ -941,39 +999,8 @@ function tick() {
     if (!state.loop && pb.nextStep >= pb.endStep) break;
   }
 
-  // Backend loop bridge (JUCE scheduler window is finite, so force seek at range boundary when loop is ON)
-  try{
-    if(_isJuceTransportScheduling() && state.loop && pb.endStep > 0){
-      const engineAbsStep = Math.floor(Math.max(0, _enginePpq()) * (state.stepsPerBar/4));
-      const relStep = engineAbsStep - Math.max(0, Math.floor(pb.rangeStartStep||0));
-      if(relStep >= pb.endStep){
-        const juce = window.audioBackend?.backends?.juce;
-        if(juce && !pb.__loopSeekPending){
-          pb.__loopSeekPending = true;
-          const fromPpq = Math.max(0, (pb.rangeStartStep||0) * _ppqPerStep());
-          juce._request("transport.seek", { ppq: fromPpq })
-            .catch(()=>{})
-            .finally(()=>{ pb.__loopSeekPending = false; });
-        }
-      }
-    }
-  }catch(_){ }
-
   // UI readhead
-  const enginePpq = _enginePpq();
-  const absStepFromEngine = Math.floor(Math.max(0, enginePpq) * (state.stepsPerBar/4));
-  const elapsed = Math.max(0, now - pb.startT);
-  const fallbackAbs = Math.floor(elapsed / sp);
-  const rangeStart = Math.max(0, Math.floor(pb.rangeStartStep||0));
-  const absStep = Number.isFinite(absStepFromEngine) && absStepFromEngine >= 0
-    ? Math.max(0, absStepFromEngine - rangeStart)
-    : fallbackAbs;
-  const rangeLen = Math.max(1, pb.rangeEndStep - pb.rangeStartStep);
-  const relUiStep = (state.loop && pb.endStep > 0) ? (absStep % pb.endStep) : absStep;
-  const uiStep = pb.rangeStartStep + relUiStep;
-
-  pb.uiAbsStep = absStep;
-  pb.uiSongStep = uiStep;
+  _syncUiFromTransportState();
 
   __lfoVisualRT.fxByKey.clear();
 
@@ -990,10 +1017,10 @@ function tick() {
     const patSteps = Math.max(1, bars * state.stepsPerBar);
     pb.uiRollStep = Math.max(0, pb.uiSongStep) % patSteps;
   } catch (_) {
-    pb.uiRollStep = uiStep;
+    pb.uiRollStep = pb.uiSongStep;
   }
 
-  pb.uiStep = uiStep;
+  pb.uiStep = pb.uiSongStep;
 }
 
 
@@ -1069,6 +1096,10 @@ function _uiLoop() {
   _uiRAF = requestAnimationFrame(_uiLoop);
 }
 
+const SCHEDULER_MIN_LOOKAHEAD = 1.5;
+const ENGINE_WINDOW_PAD_STEPS = 2;
+const ENGINE_WINDOW_MIN_PPQ = 4;
+
 async function start() {
   await ae.ensure();
   if (window.audioBackend) {
@@ -1078,11 +1109,11 @@ async function start() {
   // CRITICAL: avoid double scheduler
   if (pb.timer) { clearInterval(pb.timer); pb.timer = null; }
 
-  state.playing = true;
-  playBtn.textContent = "⏸ Pause";
+  _setTransportUiPlaying(true);
 
   pb.startT = ae.ctx.currentTime;   // strict start at pattern/song origin
   pb.nextStep = 0;
+  pb.lookahead = Math.max(Number(pb.lookahead || 0), SCHEDULER_MIN_LOOKAHEAD);
 
   const selected = _selectedRangeSteps();
   pb.forceSongFromSelection = !!selected;
@@ -1118,14 +1149,32 @@ async function start() {
     await juce._request("project.sync", snapshot);
     await juce._request("schedule.clear", {});
 
-    const startStep = pb.rangeStartStep || 0;
-    const endStep = pb.rangeEndStep || (pb.endStep || 64);
-    await _pushEngineScheduleRange(juce, startStep, endStep);
+    const startStep = Math.max(0, Math.floor(pb.rangeStartStep || 0));
+    const rawEndStep = Math.max(startStep + 1, Math.floor(pb.rangeEndStep || (pb.endStep || 64)));
+    const engineStartStep = startStep;
+    const engineEndStep = Math.max(engineStartStep + 1, rawEndStep + Math.max(1, ENGINE_WINDOW_PAD_STEPS));
+    await _pushEngineScheduleRange(juce, engineStartStep, engineEndStep);
 
-    const fromPpq = Math.max(0, startStep * _ppqPerStep());
-    const toPpq = Math.max(fromPpq + 4, endStep * _ppqPerStep());
+    const ppqPerStep = _ppqPerStep();
+    const fromPpq = Math.max(0, engineStartStep * ppqPerStep);
+    const toPpq = Math.max(fromPpq + ENGINE_WINDOW_MIN_PPQ, engineEndStep * ppqPerStep);
     await juce._request("schedule.setWindow", { fromPpq, toPpq });
+    try{
+      if (typeof juce.setTransportRange === "function") {
+        await juce.setTransportRange({
+          mode: pb.forceSongFromSelection ? "selection" : String(state.mode || "song"),
+          fromPpq,
+          toPpq,
+          loop: !!state.loop,
+          stopAtEnd: !state.loop,
+          returnToStartOnStop: !state.loop
+        });
+      }
+    }catch(err){
+      console.warn("[transport.range.set] failed", err);
+    }
     await juce._request("transport.seek", { ppq: fromPpq });
+    _syncUiFromTransportState({ ...(window.audioBackend?.backends?.juce?.transportState || {}), ppq: fromPpq, playing: true });
 
     // prewarm guardrail: avoid first-block compression on first play
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -1136,8 +1185,7 @@ async function start() {
 }
 
 async function pause() {
-  state.playing = false;
-  playBtn.textContent = "▶ Play";
+  _setTransportUiPlaying(false);
   clearInterval(pb.timer); pb.timer = null;
   if (window.audioBackend) await window.audioBackend.stop();
   try{ __lfoVisualRT.fxByKey.clear(); __lfoVisualPublish(); }catch(_){ }
@@ -1145,6 +1193,7 @@ async function pause() {
 
 async function stop() {
   await pause();
+  pb.uiAbsStep = 0; pb.uiSongStep = 0; pb.uiRollStep = 0; pb.uiStep = 0;
   try { const k = _pianoTimeOriginX(); playhead.style.left = `${k}px`; } catch (_) {}
   try { if (plistPlayhead) { const x = _playlistTimeOriginX(); plistPlayhead.style.left = `${x}px`; } } catch (_) {}
 }

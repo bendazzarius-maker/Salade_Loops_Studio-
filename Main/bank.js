@@ -27,8 +27,11 @@ class JuceInstrumentRuntime {
     const explicitType = String(instrumentDef?.type || "").toLowerCase();
     if (explicitType === "drums") return "drums";
     if (explicitType === "sampler") return n.includes("touski") ? "touski" : "sample_pattern";
+    if (n.includes("fender rhodes")) return "fender rhodes";
+    if (n.includes("grand piano")) return "grand piano";
+    if (n.includes("e piano")) return "e piano";
     if (n.includes("bass") && !n.includes("sub")) return "bass";
-    if (n.includes("sub")) return "subbass";
+    if (n.includes("sub bass") || n.includes("subbass")) return "sub bass";
     if (n.includes("lead")) return "lead";
     if (n.includes("pad")) return "pad";
     if (n.includes("drum")) return "drums";

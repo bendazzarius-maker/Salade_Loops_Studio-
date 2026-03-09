@@ -30,7 +30,7 @@ function renderMixerUI(){
   });
 
   // Apply to audio engine if ready
-  if(ae && ae.ctx && ae.mixer){
+  if(ae && ae.applyMixerModel){
     ae.applyMixerModel(project.mixer);
   }
   __startMixerMeters();
@@ -80,7 +80,7 @@ function _makeMasterStrip(){
   }));
 
   function _apply(){
-    if(ae && ae.ctx && ae.mixer) ae.applyMixerModel(project.mixer);
+    if(ae && ae.applyMixerModel) ae.applyMixerModel(project.mixer);
   }
   return el;
 }
@@ -129,7 +129,7 @@ function _makeChannelStrip(index1, chModel){
   }));
 
   function _apply(){
-    if(ae && ae.ctx && ae.mixer) ae.applyMixerModel(project.mixer);
+    if(ae && ae.applyMixerModel) ae.applyMixerModel(project.mixer);
   }
 
   return el;
@@ -346,7 +346,7 @@ function _fxBlock(scope, chIndex1, fxList, onUpdate, lfoBadgeEl){
       next[idx] = { ...next[idx], params: nextParams };
       onUpdate(next);
       // apply immediately
-      if(ae && ae.ctx && ae.mixer){ ae.applyMixerModel(project.mixer); }
+      if(ae && ae.applyMixerModel){ ae.applyMixerModel(project.mixer); }
     });
     left.appendChild(paramsBox);
 // enable

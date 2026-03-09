@@ -1,0 +1,2645 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SL-Studio — FM Drum Kit Production UI</title>
+  <style>
+    :root {
+      --bg0: #060912;
+      --bg1: #0a1020;
+      --panel: rgba(17, 24, 37, 0.96);
+      --panel-2: rgba(12, 18, 29, 0.98);
+      --surface: rgba(255,255,255,0.025);
+      --surface-2: rgba(255,255,255,0.04);
+      --stroke: rgba(120, 160, 255, 0.16);
+      --stroke-strong: rgba(120, 185, 255, 0.34);
+      --text: #eef4ff;
+      --muted: #8da5c8;
+      --accent: #4da3ff;
+      --accent-2: #8a6bff;
+      --green: #26db8c;
+      --yellow: #ffd84d;
+      --orange: #ff9d42;
+      --red: #ff5f7a;
+      --cyan: #50d5ff;
+      --pink: #ff86d0;
+      --shadow: 0 20px 50px rgba(0, 0, 0, 0.42);
+      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --scroll-size: 13px;
+      --titlebar-h: 64px;
+    }
+
+    * {
+      box-sizing: border-box;
+      min-width: 0;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%),
+        radial-gradient(circle at top right, rgba(138,107,255,0.10), transparent 22%),
+        linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 100%);
+      color: var(--text);
+      font-family: var(--font);
+      overflow: hidden;
+    }
+
+    body {
+      position: relative;
+      user-select: none;
+    }
+
+    body.embedded-host {
+      background: transparent !important;
+    }
+
+    *::-webkit-scrollbar {
+      width: var(--scroll-size);
+      height: var(--scroll-size);
+    }
+
+    *::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.04);
+      border-radius: 999px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(80,213,255,0.65), rgba(77,163,255,0.34));
+      border-radius: 999px;
+      border: 2px solid rgba(10,15,25,0.9);
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, rgba(80,213,255,0.82), rgba(77,163,255,0.48));
+    }
+
+    .plugin-window {
+      position: absolute;
+      left: 70px;
+      top: 50px;
+      width: min(1500px, calc(100vw - 140px));
+      height: min(920px, calc(100vh - 100px));
+      min-width: 1080px;
+      min-height: 720px;
+      background: linear-gradient(180deg, rgba(13,20,33,0.98), rgba(9,14,24,0.98));
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      backdrop-filter: blur(14px);
+    }
+
+    .plugin-window.hidden {
+      display: none;
+    }
+
+    .plugin-window.minimized {
+      height: var(--titlebar-h);
+      min-height: var(--titlebar-h);
+      resize: none;
+    }
+
+    .plugin-window.minimized .top-strip,
+    .plugin-window.minimized .content,
+    .plugin-window.minimized .resize-handle {
+      display: none;
+    }
+
+    .plugin-window::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(80,213,255,0.08), transparent 22%),
+        radial-gradient(circle at 100% 0%, rgba(138,107,255,0.08), transparent 24%);
+    }
+
+    .window-bar {
+      height: var(--titlebar-h);
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      background: linear-gradient(180deg, rgba(18,27,44,0.96), rgba(11,17,28,0.96));
+      position: relative;
+      z-index: 3;
+      cursor: grab;
+    }
+
+    .window-bar.dragging {
+      cursor: grabbing;
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .window-btn {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .window-btn.red { background: #ff625c; }
+    .window-btn.yellow { background: #ffbd44; }
+    .window-btn.green { background: #00ca4e; }
+
+    .window-title {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--cyan);
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .window-name {
+      font-size: 20px;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status-pill,
+    .section-pill,
+    .voice-tag,
+    .voice-pill,
+    .mod-pill,
+    .pill,
+    .tab-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.07);
+      background: rgba(255,255,255,0.03);
+      white-space: nowrap;
+    }
+
+    .status-pill,
+    .section-pill,
+    .voice-tag,
+    .mod-pill,
+    .tab-badge {
+      color: var(--cyan);
+      font-size: 11px;
+    }
+
+    .pill {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 5px 8px;
+    }
+
+    .window-tools {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      min-width: 320px;
+      cursor: default;
+    }
+
+    .dropdown,
+    .text-input,
+    .row-select,
+    .mini-select,
+    .env-preset-btn,
+    .env-modal-btn,
+    .tool-button {
+      background: #07111f;
+      color: #fff;
+      border: 1px solid rgba(90, 135, 255, 0.35);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      outline: none;
+      max-width: 100%;
+    }
+
+    .dropdown:focus,
+    .text-input:focus,
+    .row-select:focus,
+    .mini-select:focus,
+    .env-preset-btn:focus,
+    .env-modal-btn:focus,
+    .tool-button:focus {
+      border-color: rgba(80, 213, 255, 0.8);
+      box-shadow: 0 0 0 3px rgba(80, 213, 255, 0.12);
+    }
+
+    .top-strip {
+      display: grid;
+      grid-template-columns: minmax(300px, 430px) minmax(280px, 1fr) auto;
+      gap: 14px;
+      align-items: stretch;
+      padding: 12px 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      background: linear-gradient(180deg, rgba(15,23,37,0.96), rgba(10,15,25,0.96));
+      position: relative;
+      z-index: 2;
+    }
+
+    .lcd,
+    .quick-summary,
+    .tab-bar,
+    .panel-card,
+    .env-modal-card,
+    .event-log {
+      background: linear-gradient(180deg, rgba(17,24,37,0.95), rgba(11,17,28,0.95));
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius-lg);
+    }
+
+    .lcd,
+    .quick-summary,
+    .tab-bar {
+      border-radius: 16px;
+    }
+
+    .lcd {
+      padding: 10px 12px;
+      min-height: 72px;
+    }
+
+    .lcd-label {
+      font-size: 11px;
+      color: #7be8ff;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      margin-bottom: 6px;
+    }
+
+    .lcd-value {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #e9ffff;
+      word-break: break-word;
+    }
+
+    .quick-summary {
+      padding: 10px 14px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      min-height: 72px;
+      align-items: center;
+    }
+
+    .metric {
+      border-right: 1px solid rgba(255,255,255,0.05);
+      padding-right: 10px;
+    }
+
+    .metric:last-child {
+      border-right: none;
+      padding-right: 0;
+    }
+
+    .metric span,
+    .mini-card span,
+    .mini span,
+    .xy-metric span,
+    .event-log-title {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 5px;
+    }
+
+    .metric strong,
+    .mini-card strong,
+    .mini strong,
+    .xy-metric strong {
+      display: block;
+      font-size: 16px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tab-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      min-height: 72px;
+    }
+
+    .tab-btn {
+      height: 44px;
+      padding: 0 16px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+      transform: translateY(-1px);
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(180deg, rgba(77,163,255,0.16), rgba(59,118,255,0.10));
+      border-color: rgba(80,213,255,0.24);
+      color: #fff;
+      box-shadow: inset 0 0 0 1px rgba(80,213,255,0.08);
+    }
+
+    .content {
+      min-height: 0;
+      overflow: hidden;
+      padding: 14px 18px 18px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .tab-panel {
+      display: none;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .tab-scroll {
+      height: 100%;
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      scrollbar-gutter: stable both-edges;
+    }
+
+    .panel-card {
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .stack-lg,
+    .stack-md,
+    .voice-grid,
+    .info-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .stack-md {
+      gap: 10px;
+    }
+
+    .sticky-column {
+      position: sticky;
+      top: 0;
+      align-self: start;
+    }
+
+    .independent-scroll {
+      max-height: 430px;
+      overflow: auto;
+      padding-right: 4px;
+      scrollbar-gutter: stable both-edges;
+    }
+
+    .mapping-layout,
+    .voice-layout {
+      display: grid;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .mapping-layout {
+      grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+    }
+
+    .voice-layout {
+      grid-template-columns: minmax(290px, 340px) minmax(0, 1fr);
+    }
+
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .card-head h2,
+    .card-head h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .card-head p,
+    .card-head span {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .voice-tile,
+    .mini-card,
+    .mini,
+    .style-card,
+    .setting-card,
+    .operator,
+    .algo,
+    .control,
+    .xy-card,
+    .event-log-line,
+    .info-item {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.025);
+    }
+
+    .voice-tile {
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+    }
+
+    .voice-tile:hover,
+    .voice-tile.active,
+    .algo:hover,
+    .algo.active,
+    .style-card.active,
+    .mapping-row-active {
+      border-color: rgba(80,213,255,0.4);
+      background: rgba(80,213,255,0.06);
+      transform: translateY(-1px);
+    }
+
+    .voice-tile-head,
+    .operator-top,
+    .style-head,
+    .xy-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .voice-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .voice-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--voice-color, var(--accent));
+      box-shadow: 0 0 12px color-mix(in srgb, var(--voice-color) 70%, transparent);
+      flex: 0 0 auto;
+    }
+
+    .voice-tile p,
+    .info-item p,
+    .style-card p,
+    .setting-card p,
+    .xy-head p,
+    .event-log-line,
+    .env-help {
+      margin: 0;
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .compact-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .mini-card,
+    .mini,
+    .style-card,
+    .setting-card,
+    .operator,
+    .algo,
+    .info-item,
+    .event-log-line {
+      padding: 12px;
+    }
+
+    .mapping-table-wrap {
+      overflow-x: auto;
+      overflow-y: visible;
+      padding-bottom: 4px;
+      scrollbar-gutter: stable both-edges;
+    }
+
+    .mapping-table {
+      min-width: 1080px;
+      display: grid;
+      grid-template-columns: 84px 92px 230px 110px 130px 120px minmax(280px, 1fr);
+      align-items: stretch;
+    }
+
+    .th,
+    .td {
+      min-height: 46px;
+      padding: 8px 10px;
+      border-right: 1px solid rgba(255,255,255,0.05);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      background: linear-gradient(180deg, rgba(21,31,50,0.98), rgba(13,20,33,0.98));
+    }
+
+    .note-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 48px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .note-chip.black {
+      background: rgba(8, 11, 18, 0.92);
+    }
+
+    .mini-roll {
+      width: 100%;
+      height: 28px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.05);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)),
+        repeating-linear-gradient(90deg, transparent, transparent 67px, rgba(255,255,255,0.04) 67px, rgba(255,255,255,0.04) 68px);
+      position: relative;
+      overflow: hidden;
+      min-width: 220px;
+    }
+
+    .mini-roll::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(80,213,255,0.05) 0, rgba(80,213,255,0.05) 25%, transparent 25%, transparent 50%, rgba(80,213,255,0.05) 50%, rgba(80,213,255,0.05) 75%, transparent 75%, transparent 100%);
+      background-size: 272px 100%;
+      pointer-events: none;
+    }
+
+    .note-block {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      border-radius: 8px;
+      background: linear-gradient(180deg, color-mix(in srgb, var(--voice-color) 78%, white 10%), color-mix(in srgb, var(--voice-color) 58%, black 18%));
+      border: 1px solid color-mix(in srgb, var(--voice-color) 78%, white 8%);
+      box-shadow: 0 8px 14px rgba(0,0,0,0.14);
+    }
+
+    .td.clickable,
+    .voice-pill.clickable {
+      cursor: pointer;
+    }
+
+    .main-editor-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .top-morph-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(260px, 340px);
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .quick-controls-grid,
+    .operator-grid,
+    .style-grid,
+    .settings-grid,
+    .algorithm-grid,
+    .operator-tools,
+    .xy-metrics,
+    .env-summary-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .quick-controls-grid {
+      grid-template-columns: repeat(4, minmax(110px, 1fr));
+    }
+
+    .operator-grid,
+    .style-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .settings-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .algorithm-grid {
+      grid-template-columns: repeat(4, minmax(140px, 1fr));
+    }
+
+    .operator-tools {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .env-summary-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .xy-metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .control,
+    .xy-card,
+    .env-modal-card {
+      padding: 12px;
+    }
+
+    .control {
+      min-height: 110px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      justify-content: space-between;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+
+    .control-label strong {
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .knob-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 62px;
+    }
+
+    .knob {
+      --value: 0.5;
+      width: 58px;
+      height: 58px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background:
+        radial-gradient(circle at 35% 28%, rgba(255,255,255,0.18), rgba(255,255,255,0.02) 30%, transparent 31%),
+        linear-gradient(180deg, #27344f, #182238);
+      position: relative;
+      box-shadow: inset 0 1px 4px rgba(255,255,255,0.04), inset 0 -6px 12px rgba(0,0,0,0.2), 0 12px 18px rgba(0,0,0,0.18);
+      cursor: ns-resize;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .knob.small {
+      width: 46px;
+      height: 46px;
+    }
+
+    .knob::before {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.01));
+    }
+
+    .knob::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 8px;
+      width: 4px;
+      height: 16px;
+      margin-left: -2px;
+      border-radius: 999px;
+      background: var(--knob-color, var(--accent));
+      box-shadow: 0 0 10px color-mix(in srgb, var(--knob-color, var(--accent)) 70%, transparent);
+      transform-origin: 50% 21px;
+      transform: rotate(calc(-135deg + (270deg * var(--value))));
+    }
+
+    .xy-card {
+      display: grid;
+      grid-template-rows: auto 1fr auto auto;
+      gap: 10px;
+    }
+
+    .xy-pad {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background:
+        radial-gradient(circle at center, rgba(80,213,255,0.08), transparent 56%),
+        linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)),
+        linear-gradient(90deg, rgba(80,213,255,0.05), transparent 50%, rgba(255,95,122,0.05));
+      overflow: hidden;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .xy-pad::before,
+    .xy-pad::after {
+      content: "";
+      position: absolute;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .xy-pad::before {
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      transform: translateX(-0.5px);
+    }
+
+    .xy-pad::after {
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 1px;
+      transform: translateY(-0.5px);
+    }
+
+    .xy-ring {
+      position: absolute;
+      inset: 18%;
+      border: 1px dashed rgba(255,255,255,0.08);
+      border-radius: 999px;
+      pointer-events: none;
+    }
+
+    .xy-label {
+      position: absolute;
+      padding: 6px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: rgba(8,12,20,0.78);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #fff;
+      pointer-events: none;
+    }
+
+    .xy-label.tl { top: 10px; left: 10px; }
+    .xy-label.tr { top: 10px; right: 10px; }
+    .xy-label.bl { bottom: 10px; left: 10px; }
+    .xy-label.br { bottom: 10px; right: 10px; }
+    .xy-label.center { left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--cyan); }
+
+    .xy-point {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: #fff;
+      border: 3px solid var(--cyan);
+      box-shadow: 0 0 0 6px rgba(80,213,255,0.14), 0 6px 16px rgba(0,0,0,0.28);
+      transform: translate(-50%, -50%);
+      touch-action: none;
+    }
+
+    .xy-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      overflow: hidden;
+    }
+
+    .xy-bar-fill {
+      height: 100%;
+      width: 50%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(80,213,255,0.7), rgba(138,107,255,0.75));
+    }
+
+    .algo {
+      cursor: pointer;
+      transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+      min-width: 140px;
+      padding: 12px;
+    }
+
+    .algo svg {
+      width: 100%;
+      height: 72px;
+      display: block;
+    }
+
+    .algo-name,
+    .op-name,
+    .style-name {
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .env-box {
+      height: 76px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.05);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)),
+        repeating-linear-gradient(90deg, transparent, transparent 16px, rgba(255,255,255,0.03) 16px, rgba(255,255,255,0.03) 17px),
+        repeating-linear-gradient(180deg, transparent, transparent 16px, rgba(255,255,255,0.03) 16px, rgba(255,255,255,0.03) 17px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .env-box.large {
+      height: 320px;
+    }
+
+    .env-svg,
+    .mini-env-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .env-grid-line {
+      stroke: rgba(255,255,255,0.06);
+      stroke-width: 1;
+    }
+
+    .env-line-main {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .env-fill {
+      fill: color-mix(in srgb, var(--accent) 20%, transparent);
+      stroke: none;
+    }
+
+    .env-point {
+      fill: #fff;
+      stroke: var(--accent);
+      stroke-width: 3;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .env-point.dragging {
+      cursor: grabbing;
+    }
+
+    .env-point-label {
+      fill: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    .operator-tools .tool-cell,
+    .env-summary-grid .mini,
+    .xy-metric {
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.02);
+      padding: 8px;
+    }
+
+    .tool-cell {
+      text-align: center;
+    }
+
+    .tool-cell-value {
+      display: block;
+      font-size: 11px;
+      color: #fff;
+      margin-top: 6px;
+    }
+
+    .tool-button,
+    .env-preset-btn,
+    .env-modal-btn {
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+    }
+
+    .tool-button:hover,
+    .env-preset-btn:hover,
+    .env-modal-btn:hover {
+      background: rgba(80,213,255,0.14);
+      border-color: rgba(80,213,255,0.3);
+      transform: translateY(-1px);
+    }
+
+    .tool-button {
+      width: 100%;
+      font-weight: 700;
+      background: rgba(80,213,255,0.08);
+    }
+
+    .event-log {
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      max-height: 180px;
+      overflow: auto;
+    }
+
+    .event-log-line {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      color: #dce8ff;
+      word-break: break-word;
+    }
+
+    .resize-handle {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      width: 18px;
+      height: 18px;
+      cursor: nwse-resize;
+      z-index: 5;
+      background:
+        linear-gradient(135deg, transparent 0 42%, rgba(255,255,255,0.14) 42% 54%, transparent 54% 100%),
+        linear-gradient(135deg, transparent 0 60%, rgba(80,213,255,0.32) 60% 72%, transparent 72% 100%);
+      border-radius: 4px;
+    }
+
+    .env-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 8, 14, 0.72);
+      backdrop-filter: blur(8px);
+      display: none;
+      place-items: center;
+      z-index: 20;
+      padding: 24px;
+    }
+
+    .env-modal-backdrop.open {
+      display: grid;
+    }
+
+    .env-modal-card {
+      width: min(980px, calc(100vw - 80px));
+      max-height: calc(100vh - 80px);
+      overflow: auto;
+      padding: 18px;
+    }
+
+    .env-modal-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .env-modal-actions,
+    .env-modal-presets {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .env-modal-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(260px, 320px);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .env-help {
+      padding: 10px 0 0 0;
+    }
+
+    @media (max-width: 1450px) {
+      .plugin-window {
+        width: calc(100vw - 40px);
+        height: calc(100vh - 40px);
+        left: 20px !important;
+        top: 20px !important;
+      }
+
+      .top-strip,
+      .mapping-layout,
+      .voice-layout,
+      .top-morph-layout,
+      .env-modal-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .sticky-column {
+        position: static;
+      }
+
+      .independent-scroll {
+        max-height: 320px;
+      }
+    }
+
+    @media (max-width: 1150px) {
+      body {
+        overflow: auto;
+      }
+
+      .plugin-window {
+        min-width: 0;
+      }
+
+      .content,
+      .tab-panel,
+      .tab-scroll {
+        overflow: visible;
+      }
+
+      .quick-controls-grid,
+      .operator-grid,
+      .style-grid,
+      .settings-grid,
+      .algorithm-grid,
+      .operator-tools,
+      .xy-metrics,
+      .compact-grid,
+      .env-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .window-bar,
+      .top-strip,
+      .quick-summary,
+      .quick-controls-grid,
+      .operator-grid,
+      .style-grid,
+      .settings-grid,
+      .algorithm-grid,
+      .operator-tools,
+      .xy-metrics,
+      .compact-grid,
+      .env-summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .window-tools {
+        justify-content: flex-start;
+        min-width: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="plugin-window" id="pluginWindow">
+    <header class="window-bar" id="windowBar">
+      <div class="window-controls">
+        <button class="window-btn red" id="btnClose" aria-label="Fermer"></button>
+        <button class="window-btn yellow" id="btnMinimize" aria-label="Réduire"></button>
+        <button class="window-btn green" id="btnRestore" aria-label="Restaurer / focus"></button>
+      </div>
+
+      <div class="window-title">
+        <div class="eyebrow">SL-Studio / Drum Kit Instrument Window</div>
+        <div class="title-row">
+          <div class="window-name">FM Drum Kit Designer</div>
+          <div class="status-pill">Production front • ready for IPC</div>
+        </div>
+      </div>
+
+      <div class="window-tools">
+        <select class="dropdown" id="kitSelect">
+          <option value="globalHybridA">Kit : Global Hybrid A</option>
+          <option value="jazzStudio">Kit : Jazz Studio</option>
+          <option value="trapSub808">Kit : Trap Sub 808</option>
+          <option value="rockMetalKit">Kit : Rock Metal Kit</option>
+        </select>
+        <input class="text-input" id="windowTitleInput" type="text" value="Fenêtre flottante — Drum Kit" />
+      </div>
+    </header>
+
+    <section class="top-strip">
+      <div class="lcd">
+        <div class="lcd-label">Sélection active</div>
+        <div class="lcd-value" id="lcdPatch"></div>
+      </div>
+
+      <div class="quick-summary">
+        <div class="metric"><span>Voix du kit</span><strong id="metricVoices"></strong></div>
+        <div class="metric"><span>Rows de mapping</span><strong id="metricRows"></strong></div>
+        <div class="metric"><span>Famille active</span><strong id="metricStyle"></strong></div>
+        <div class="metric"><span>Sélection</span><strong id="metricSelection"></strong></div>
+      </div>
+
+      <nav class="tab-bar" aria-label="Onglets interface instrument">
+        <button class="tab-btn active" data-tab="mapping">Mapping</button>
+        <button class="tab-btn" data-tab="voice">Voix &amp; FM</button>
+        <button class="tab-btn" data-tab="envelopes">Enveloppes</button>
+        <button class="tab-btn" data-tab="styles">Styles</button>
+        <button class="tab-btn" data-tab="settings">Réglages</button>
+      </nav>
+    </section>
+
+    <main class="content">
+      <section class="tab-panel active" id="tab-mapping">
+        <div class="tab-scroll">
+          <div class="mapping-layout">
+            <aside class="stack-lg sticky-column">
+              <div class="panel-card">
+                <div class="card-head">
+                  <div>
+                    <h3>Voix du kit</h3>
+                    <p>Navigation indépendante. Clique une voix pour l’éditer.</p>
+                  </div>
+                  <span class="section-pill">Voice browser</span>
+                </div>
+                <div class="independent-scroll">
+                  <div class="voice-grid" id="voiceList"></div>
+                </div>
+              </div>
+
+              <div class="panel-card">
+                <div class="card-head">
+                  <div>
+                    <h3>Résumé sélection</h3>
+                    <p>Le résumé privilégie la row réellement sélectionnée.</p>
+                  </div>
+                </div>
+                <div class="compact-grid">
+                  <div class="mini-card"><span>Row</span><strong id="compactRow">—</strong></div>
+                  <div class="mini-card"><span>Canal</span><strong id="compactChannel">—</strong></div>
+                  <div class="mini-card"><span>Voice</span><strong id="compactVoice">—</strong></div>
+                  <div class="mini-card"><span>Algo</span><strong id="compactAlgo">—</strong></div>
+                </div>
+              </div>
+            </aside>
+
+            <section class="panel-card">
+              <div class="card-head">
+                <div>
+                  <h2>Mapping piano-roll</h2>
+                  <p>Le canal appartient à la row. La sélection de row devient la référence pour l’édition contextuelle.</p>
+                </div>
+                <span class="section-pill">row channel source of truth</span>
+              </div>
+              <div class="mapping-table-wrap">
+                <div class="mapping-table" id="mappingTable"></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="tab-voice">
+        <div class="tab-scroll">
+          <div class="voice-layout">
+            <aside class="stack-lg sticky-column">
+              <div class="panel-card">
+                <div class="card-head">
+                  <div>
+                    <h3 id="voiceTitle"></h3>
+                    <p id="voiceSubtitle"></p>
+                  </div>
+                  <span class="section-pill" id="voiceMode"></span>
+                </div>
+                <div class="compact-grid">
+                  <div class="mini-card"><span>Voice</span><strong id="voiceIdLabel"></strong></div>
+                  <div class="mini-card"><span>Algorithm</span><strong id="voiceAlgo"></strong></div>
+                  <div class="mini-card"><span>Row active</span><strong id="voiceRowLabel"></strong></div>
+                  <div class="mini-card"><span>Canal row</span><strong id="voiceRowChannel"></strong></div>
+                </div>
+              </div>
+
+              <div class="panel-card">
+                <div class="card-head">
+                  <div>
+                    <h3>Bibliothèque interne</h3>
+                    <p>Scroll indépendant pour changer d’instrument sans déplacer le reste.</p>
+                  </div>
+                </div>
+                <div class="independent-scroll">
+                  <div class="voice-grid" id="voiceBrowser"></div>
+                </div>
+              </div>
+
+              <div class="panel-card">
+                <div class="card-head">
+                  <div>
+                    <h3>Événements IPC prêts</h3>
+                    <p>Derniers événements émis par l’interface.</p>
+                  </div>
+                  <span class="tab-badge">debug</span>
+                </div>
+                <div class="event-log" id="eventLog"></div>
+              </div>
+            </aside>
+
+            <section class="main-editor-stack">
+              <div class="panel-card">
+                <div class="card-head">
+                  <div>
+                    <h3>Contrôles rapides + XY Morph</h3>
+                    <p>Knobs seuls, sans sliders. Le pad XY est un macro-control prêt à être routé côté moteur.</p>
+                  </div>
+                  <span class="section-pill">8 knobs + XY macro</span>
+                </div>
+                <div class="top-morph-layout">
+                  <div class="quick-controls-grid" id="quickControlsGrid"></div>
+                  <div class="xy-card">
+                    <div class="xy-head">
+                      <div>
+                        <strong>Operator Mix Pad</strong>
+                        <p>Centre = équilibre. Les coins représentent quatre dominances opérateurs.</p>
+                      </div>
+                      <span class="section-pill">xy macro</span>
+                    </div>
+                    <div class="xy-pad" id="xyPad">
+                      <div class="xy-ring"></div>
+                      <div class="xy-label tl">OP1</div>
+                      <div class="xy-label tr">OP2</div>
+                      <div class="xy-label bl">OP3</div>
+                      <div class="xy-label br">OP4</div>
+                      <div class="xy-label center">MIX</div>
+                      <div class="xy-point" id="xyPoint"></div>
+                    </div>
+                    <div class="xy-metrics" id="xyMixGrid"></div>
+                    <div class="env-help">Contrat moteur recommandé : envoyer <code>x</code>, <code>y</code> et le mix OP1–OP4 calculé.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel-card">
+                <div class="card-head">
+                  <div>
+                    <h3>Algorithmes FM</h3>
+                    <p>Docker séparé. Changement d’algorithme prêt pour émission backend.</p>
+                  </div>
+                </div>
+                <div class="algorithm-grid" id="algorithmGrid"></div>
+              </div>
+
+              <div class="panel-card">
+                <div class="card-head">
+                  <div>
+                    <h3>Opérateurs</h3>
+                    <p>Chaque opérateur possède des outils d’édition et un bouton Edit Env fonctionnel.</p>
+                  </div>
+                </div>
+                <div class="operator-grid" id="operatorGrid"></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="tab-envelopes">
+        <div class="tab-scroll">
+          <div class="stack-lg">
+            <div class="panel-card">
+              <div class="card-head">
+                <div>
+                  <h2>Enveloppes globales</h2>
+                  <p>Les enveloppes globales restent séparées des enveloppes opérateurs.</p>
+                </div>
+                <span class="section-pill">global envs</span>
+              </div>
+              <div class="style-grid" id="envelopeGrid"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="tab-styles">
+        <div class="tab-scroll">
+          <div class="stack-lg">
+            <div class="panel-card">
+              <div class="card-head">
+                <div>
+                  <h2>Familles de styles</h2>
+                  <p>Presets orientés jazz, rock, metal, trap, electro, hybrid.</p>
+                </div>
+                <span class="section-pill">multi-genre</span>
+              </div>
+              <div class="style-grid" id="styleGrid"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="tab-settings">
+        <div class="tab-scroll">
+          <div class="stack-lg">
+            <div class="panel-card">
+              <div class="card-head">
+                <div>
+                  <h2>Réglages fenêtre instrument</h2>
+                  <p>Panneau prêt pour devenir un vrai système de préférences UI.</p>
+                </div>
+              </div>
+              <div class="settings-grid" id="settingsGrid"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="resize-handle" id="resizeHandle"></div>
+
+    <div class="env-modal-backdrop" id="envModal">
+      <div class="env-modal-card">
+        <div class="env-modal-top">
+          <div>
+            <div class="eyebrow">Operator Envelope Editor</div>
+            <div class="title-row">
+              <div class="window-name" style="font-size:18px;" id="envModalTitle">Edit Env</div>
+              <div class="status-pill" id="envModalSubtitle">linked to selected operator</div>
+            </div>
+          </div>
+          <div class="env-modal-actions">
+            <button class="env-modal-btn" id="envModalClose">Fermer</button>
+          </div>
+        </div>
+
+        <div class="env-modal-grid">
+          <div class="stack-lg">
+            <div class="panel-card">
+              <div class="card-head">
+                <div>
+                  <h3>Courbe éditable</h3>
+                  <p>Déplace les points A, D, S, R. La mini-courbe de l’opérateur est mise à jour en direct.</p>
+                </div>
+              </div>
+              <div class="env-box large">
+                <svg class="env-svg" id="envEditorSvg" viewBox="0 0 760 320" preserveAspectRatio="none"></svg>
+              </div>
+              <div class="env-help">Double usage : édition directe de la courbe + émission d’un événement backend <code>project:drumkit/operator-set-envelope</code>.</div>
+            </div>
+
+            <div class="panel-card">
+              <div class="card-head">
+                <div>
+                  <h3>Presets rapides</h3>
+                  <p>Raccourcis utiles avant routage final moteur.</p>
+                </div>
+              </div>
+              <div class="env-modal-presets">
+                <button class="env-preset-btn" data-env-preset="tight">Tight</button>
+                <button class="env-preset-btn" data-env-preset="natural">Natural</button>
+                <button class="env-preset-btn" data-env-preset="longTail">Long Tail</button>
+                <button class="env-preset-btn" data-env-preset="reset">Reset</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack-lg">
+            <div class="panel-card">
+              <div class="card-head">
+                <div>
+                  <h3>Résumé ADSR</h3>
+                  <p>Valeurs dérivées depuis les points de la courbe.</p>
+                </div>
+              </div>
+              <div class="env-summary-grid" id="envSummaryGrid"></div>
+            </div>
+
+            <div class="panel-card">
+              <div class="card-head">
+                <div>
+                  <h3>Actions</h3>
+                  <p>Points d’intégration IPC / backend.</p>
+                </div>
+              </div>
+              <div class="stack-md">
+                <button class="tool-button" id="envApplyBtn">Apply Envelope</button>
+                <button class="tool-button" id="envPreviewBtn">Preview Row / Voice</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const round = (v, d = 2) => Number(v.toFixed(d));
+    const HOST_SOURCE = 'sls-drumkit-host';
+    const UI_SOURCE = 'sls-drumkit-ui';
+    const EMBEDDED = new URLSearchParams(window.location.search).get('embedded') === '1' || (window.parent && window.parent !== window);
+    if (EMBEDDED) document.body.classList.add('embedded-host');
+
+    const DrumKitBridge = {
+      emit(type, payload) {
+        const detail = { type, payload, at: Date.now() };
+        window.dispatchEvent(new CustomEvent('drumkit:ipc', { detail }));
+        if (window.electronAPI && typeof window.electronAPI.drumKitEmit === 'function') {
+          window.electronAPI.drumKitEmit(type, payload);
+        }
+        if (EMBEDDED) {
+          try {
+            window.parent.postMessage({
+              source: UI_SOURCE,
+              detail,
+              snapshot: JSON.parse(JSON.stringify(state))
+            }, '*');
+          } catch (_) {}
+        }
+        appendEventLog(detail);
+      }
+    };
+
+    const voiceSpecs = [
+      ['kickSub','Kick Sub','Kick profond type 808, pensé pour trap et hip-hop.','#50d5ff',3,'Tuned Drum','tune','feedback','noiseMix','drive',['Sub Sustain','Pitch Glide','Body Morph','Transient']],
+      ['kickAcoustic','Kick Acoustic','Version plus naturelle pour jazz, rock et metal.','#8be9fd',4,'Drum Voice','tune','feedback','noiseMix','drive',['Beater','Shell','Acoustic Depth','Punch']],
+      ['snareMain','Snare Main','Caisse claire principale adaptable du jazz au rock.','#ff7b72',6,'Drum Voice','tune','feedback','noiseMix','drive',['Crack','Wire Buzz','Jazz Soft','Metal Snap']],
+      ['sideSnare','Side Stick','Variation plus douce, idéale pour grooves feutrés.','#f6ad55',1,'Perc Voice','tune','feedback','noiseMix','drive',['Wood Tone','Soft Tap','Body Cut','Jazz Tight']],
+      ['clapLayer','Clap Layer','Clap électro ou hybride, utile pour couches modernes.','#c084fc',5,'Layered Voice','tune','feedback','noiseMix','drive',['Layer Width','Burst Count','Room Tail','Electro Edge']],
+      ['rimshotVar','Rimshot Morph','Rimshot modulable avec position de baguette.','#f59e0b',2,'Perc Voice','tune','feedback','noiseMix','drive',['Stick Position','Rim Harshness','Body Tone','Snap']],
+      ['openCloseHat','Variable Hi-Hat','Hi-hat fermé / ouvert avec contrôle d’ouverture.','#ffd84d',2,'Perc Voice','tune','feedback','noiseMix','drive',['Openness','Brightness','Choke','Air Tail']],
+      ['pedalHat','Pedal Hat','Articulation pédale dédiée du hi-hat.','#d1b94d',1,'Perc Voice','tune','feedback','noiseMix','drive',['Pedal Pressure','Tick Sharpness','Short Tail','Foot Noise']],
+      ['highTom','High Tom','Tom aigu pour fills rapides.','#f97316',4,'Tuned Drum','tune','feedback','noiseMix','drive',['High Tone','Attack Focus','Shell Ring','Tight Fill']],
+      ['midTom','Mid Tom','Tom médium utile pour fills équilibrés.','#fb923c',4,'Tuned Drum','tune','feedback','noiseMix','drive',['Mid Tone','Attack Focus','Shell Ring','Balance']],
+      ['lowTom','Low Tom','Tom grave pour rock, metal, electro ou orchestral.','#ff9d42',4,'Tuned Drum','tune','feedback','noiseMix','drive',['Shell Size','Low Resonance','Stick Attack','Metal Body']],
+      ['crash1','Crash 1','Crash principale brillante pour rock, metal et pop.','#ff86d0',7,'Cymbal Voice','tune','feedback','noiseMix','drive',['Crash Width','Metal Wash','Attack Glass','Aggression']],
+      ['crash2','Crash 2','Deuxième crash plus large ou plus sombre.','#f472b6',7,'Cymbal Voice','tune','feedback','noiseMix','drive',['Darkness','Wide Tail','Air Bloom','Heavy Hit']],
+      ['rideMain','Ride Main','Ride principale pour jazz, rock, fusion.','#5eead4',8,'Cymbal Voice','tune','feedback','noiseMix','drive',['Ping Focus','Bow Wash','Jazz Soft','Rock Cut']],
+      ['rideBell','Ride Bell','Bell dédiée pour articulation métallique précise.','#67e8f9',8,'Cymbal Voice','tune','feedback','noiseMix','drive',['Bell Intensity','Metal Ring','Stick Focus','Cut Through']],
+      ['splash','Splash','Splash courte et brillante pour ponctuer des phrases.','#a78bfa',7,'Cymbal Voice','tune','feedback','noiseMix','drive',['Shortness','Bright Ping','Fast Bloom','Accent Cut']],
+      ['china','China','China plus agressive pour metal et hybrid.','#fb7185',7,'Cymbal Voice','tune','feedback','noiseMix','drive',['Edge Harshness','Metal Trash','Air Spread','Heavy Accent']]
+    ];
+
+    function makeEnv(seed = 0) {
+      return {
+        points: [
+          { x: round(0.12 + seed * 0.008), y: round(0.10 + seed * 0.01) },
+          { x: round(0.34 + seed * 0.01), y: round(0.44 + seed * 0.01) },
+          { x: round(0.68 + seed * 0.01), y: round(0.54 + seed * 0.006) },
+          { x: round(0.92 + seed * 0.004), y: round(0.90 - seed * 0.006) }
+        ]
+      };
+    }
+
+    function makeVoice(spec, index) {
+      const [id, name, desc, color, algorithm, mode, p1, p2, p3, p4, macros] = spec;
+      const base = 34 + index * 2;
+      return {
+        id,
+        name,
+        desc,
+        color,
+        algorithm,
+        mode,
+        quickParams: {
+          [p1]: 50,
+          [p2]: clamp(base + 6, 0, 100),
+          [p3]: clamp(base - 14, 0, 100),
+          [p4]: clamp(base + 2, 0, 100),
+          macro1: clamp(base + 18, 0, 100),
+          macro2: clamp(base + 4, 0, 100),
+          macro3: clamp(base - 3, 0, 100),
+          macro4: clamp(base + 10, 0, 100)
+        },
+        quickMeta: [
+          { key: p1, label: p1 === 'tune' ? 'Tune' : p1, color: 'var(--cyan)', format: 'signed' },
+          { key: p2, label: p2 === 'feedback' ? 'Feedback' : p2, color: 'var(--yellow)', format: 'int' },
+          { key: p3, label: p3 === 'noiseMix' ? 'Noise Mix' : p3, color: 'var(--green)', format: 'percent' },
+          { key: p4, label: p4 === 'drive' ? 'Drive' : p4, color: 'var(--red)', format: 'percent' },
+          { key: 'macro1', label: macros[0], color: 'var(--pink)', format: 'percent' },
+          { key: 'macro2', label: macros[1], color: 'var(--yellow)', format: 'percent' },
+          { key: 'macro3', label: macros[2], color: 'var(--cyan)', format: 'percent' },
+          { key: 'macro4', label: macros[3], color: 'var(--orange)', format: 'percent' }
+        ],
+        xy: { x: 0.5, y: 0.5 },
+        globalEnvelopes: [
+          { id: `${id}_global_amp`, title: 'Envelope Amp', tag: 'Global amp contour', env: makeEnv((index % 4) + 1) },
+          { id: `${id}_global_pitch`, title: 'Envelope Pitch', tag: 'Global pitch contour', env: makeEnv((index % 5) + 2) }
+        ],
+        operators: [0,1,2,3].map((opIndex) => ({
+          id: `${id}_op${opIndex+1}`,
+          name: `OP${opIndex+1}`,
+          role: ['Carrier','Mod','Mod','Feedback'][opIndex],
+          level: clamp(72 + (index % 5) * 4 - opIndex * 9, 10, 99),
+          ratio: round(0.5 + opIndex * 1.5 + index * 0.08, 2),
+          detune: clamp(50 + (opIndex - 1.5) * 8 + index, 0, 100),
+          attack: clamp(28 + opIndex * 12 + index, 0, 100),
+          release: clamp(38 + opIndex * 10 + index, 0, 100),
+          env: makeEnv(opIndex + index * 0.2)
+        }))
+      };
+    }
+
+    const presetFamilies = [
+      { id: 'globalHybridA', name: 'Global Hybrid A', tag: 'Hybrid', desc: 'Kit polyvalent pensé pour servir de preset de base.' },
+      { id: 'jazzStudio', name: 'Jazz Studio', tag: 'Jazz', desc: 'Kick acoustique doux, cymbales fines, dynamique naturelle.' },
+      { id: 'trapSub808', name: 'Trap Sub 808', tag: 'Trap', desc: 'Kick profond, pitch jouable, comportement quasi-basse.' },
+      { id: 'rockMetalKit', name: 'Rock Metal Kit', tag: 'Metal', desc: 'Toms affirmés, rimshot incisif, crash agressives.' },
+      { id: 'electroFmLab', name: 'Electro FM Lab', tag: 'Electro', desc: 'Percus métalliques, hi-hat précis, transients brillants.' }
+    ];
+
+    const voices = Object.fromEntries(voiceSpecs.map((spec, index) => [spec[0], makeVoice(spec, index)]));
+
+    const mappingRows = [
+      ['row_b2_bell','B2',47,false,'rideBell','bell',13,72,78],
+      ['row_as2_hat_open','A#2',46,true,'openCloseHat','open',11,28,54],
+      ['row_a2_low_tom','A2',45,false,'lowTom','low',12,90,48],
+      ['row_gs2_pedal_hat','G#2',44,true,'pedalHat','pedal',11,46,34],
+      ['row_g2_mid_tom','G2',43,false,'midTom','medium',12,122,42],
+      ['row_fs2_hat_closed','F#2',42,true,'openCloseHat','closed',11,18,30],
+      ['row_f2_high_tom','F2',41,false,'highTom','high',12,56,58],
+      ['row_e2_snare_main','E2',40,false,'snareMain','main',10,84,46],
+      ['row_ds2_clap','D#2',39,true,'clapLayer','layer',10,140,38],
+      ['row_d2_rim','D2',38,false,'rimshotVar','stickPosition',10,36,26],
+      ['row_cs2_side','C#2',37,true,'sideSnare','side',10,160,28],
+      ['row_c2_kick_sub','C2',36,false,'kickSub','mainKick',10,12,94],
+      ['row_b1_kick_ac','B1',35,false,'kickAcoustic','acousticAlt',10,108,40],
+      ['row_as1_crash2','A#1',34,true,'crash2','wide',13,186,74],
+      ['row_a1_ride','A1',33,false,'rideMain','bow',13,216,66],
+      ['row_gs1_splash','G#1',32,true,'splash','accent',13,248,24],
+      ['row_g1_china','G1',31,false,'china','main',13,276,70],
+      ['row_fs1_crash1','F#1',30,true,'crash1','main',13,310,80]
+    ].map(([id, note, midi, black, voiceId, articulation, channel, start, length]) => ({ id, note, midi, black, voiceId, articulation, channel, start, length }));
+
+    const state = {
+      ui: {
+        window: { x: 70, y: 50, w: 1400, h: 860, isOpen: true, isMinimized: false, zIndex: 10 },
+        navigation: { selectedTab: 'mapping', selectedVoiceId: 'kickSub', selectedMappingRowId: 'row_c2_kick_sub', selectedOperatorIndex: 0 },
+        modal: { envOpen: false, operatorIndex: 0 },
+        settings: {
+          compactMode: true,
+          stickyTopInfo: true,
+          oneTabFocus: true,
+          highContrastMenus: true,
+          quickChannelEdit: true,
+          detachedPluginLogic: true
+        }
+      },
+      project: {
+        kitId: 'globalHybridA',
+        voices,
+        mappingRows
+      }
+    };
+
+
+    function deepMergeInto(target, source) {
+      if (!source || typeof source !== 'object') return target;
+      Object.keys(source).forEach((key) => {
+        const next = source[key];
+        if (Array.isArray(next)) {
+          target[key] = JSON.parse(JSON.stringify(next));
+        } else if (next && typeof next === 'object') {
+          if (!target[key] || typeof target[key] !== 'object' || Array.isArray(target[key])) target[key] = {};
+          deepMergeInto(target[key], next);
+        } else {
+          target[key] = next;
+        }
+      });
+      return target;
+    }
+
+    function hydrateState(snapshot) {
+      if (!snapshot || typeof snapshot !== 'object') return;
+      if (snapshot.ui) deepMergeInto(state.ui, snapshot.ui);
+      if (snapshot.project) deepMergeInto(state.project, snapshot.project);
+      if (snapshot.ui && snapshot.ui.navigation) {
+        state.ui.navigation.selectedTab = snapshot.ui.navigation.selectedTab || state.ui.navigation.selectedTab;
+      }
+      if (EMBEDDED) {
+        state.ui.window.isOpen = true;
+        dom?.pluginWindow?.classList.remove('hidden');
+      }
+      render();
+      applyEmbeddedMode();
+    }
+
+    window.addEventListener('message', (event) => {
+      const msg = event && event.data;
+      if (!msg || msg.source !== HOST_SOURCE) return;
+      if (msg.type === 'drumkit:set-state') {
+        hydrateState(msg.payload || {});
+      } else if (msg.type === 'drumkit:request-state') {
+        try {
+          window.parent.postMessage({
+            source: UI_SOURCE,
+            detail: { type: 'ui:drumkit/state-sync', payload: {} , at: Date.now() },
+            snapshot: JSON.parse(JSON.stringify(state))
+          }, '*');
+        } catch (_) {}
+      }
+    });
+
+    const dom = {
+      pluginWindow: document.getElementById('pluginWindow'),
+      windowBar: document.getElementById('windowBar'),
+      btnClose: document.getElementById('btnClose'),
+      btnMinimize: document.getElementById('btnMinimize'),
+      btnRestore: document.getElementById('btnRestore'),
+      resizeHandle: document.getElementById('resizeHandle'),
+      kitSelect: document.getElementById('kitSelect'),
+      windowTitleInput: document.getElementById('windowTitleInput'),
+      voiceList: document.getElementById('voiceList'),
+      voiceBrowser: document.getElementById('voiceBrowser'),
+      mappingTable: document.getElementById('mappingTable'),
+      quickControlsGrid: document.getElementById('quickControlsGrid'),
+      algorithmGrid: document.getElementById('algorithmGrid'),
+      operatorGrid: document.getElementById('operatorGrid'),
+      envelopeGrid: document.getElementById('envelopeGrid'),
+      styleGrid: document.getElementById('styleGrid'),
+      settingsGrid: document.getElementById('settingsGrid'),
+      eventLog: document.getElementById('eventLog'),
+      xyPad: document.getElementById('xyPad'),
+      xyPoint: document.getElementById('xyPoint'),
+      xyMixGrid: document.getElementById('xyMixGrid'),
+      lcdPatch: document.getElementById('lcdPatch'),
+      metricVoices: document.getElementById('metricVoices'),
+      metricRows: document.getElementById('metricRows'),
+      metricStyle: document.getElementById('metricStyle'),
+      metricSelection: document.getElementById('metricSelection'),
+      compactRow: document.getElementById('compactRow'),
+      compactChannel: document.getElementById('compactChannel'),
+      compactVoice: document.getElementById('compactVoice'),
+      compactAlgo: document.getElementById('compactAlgo'),
+      voiceTitle: document.getElementById('voiceTitle'),
+      voiceSubtitle: document.getElementById('voiceSubtitle'),
+      voiceMode: document.getElementById('voiceMode'),
+      voiceIdLabel: document.getElementById('voiceIdLabel'),
+      voiceAlgo: document.getElementById('voiceAlgo'),
+      voiceRowLabel: document.getElementById('voiceRowLabel'),
+      voiceRowChannel: document.getElementById('voiceRowChannel'),
+      envModal: document.getElementById('envModal'),
+      envModalTitle: document.getElementById('envModalTitle'),
+      envModalSubtitle: document.getElementById('envModalSubtitle'),
+      envEditorSvg: document.getElementById('envEditorSvg'),
+      envSummaryGrid: document.getElementById('envSummaryGrid'),
+      envModalClose: document.getElementById('envModalClose'),
+      envApplyBtn: document.getElementById('envApplyBtn'),
+      envPreviewBtn: document.getElementById('envPreviewBtn'),
+    };
+
+    function getSelectedVoice() {
+      return state.project.voices[state.ui.navigation.selectedVoiceId];
+    }
+
+    function getSelectedRow() {
+      return state.project.mappingRows.find(r => r.id === state.ui.navigation.selectedMappingRowId) || null;
+    }
+
+    function getSelectedOperator() {
+      const voice = getSelectedVoice();
+      return voice.operators[state.ui.navigation.selectedOperatorIndex] || voice.operators[0];
+    }
+
+    function appendEventLog(detail) {
+      const line = document.createElement('div');
+      line.className = 'event-log-line';
+      line.textContent = `${new Date(detail.at).toLocaleTimeString()}  ${detail.type}  ${JSON.stringify(detail.payload)}`;
+      dom.eventLog.prepend(line);
+      while (dom.eventLog.children.length > 12) {
+        dom.eventLog.removeChild(dom.eventLog.lastChild);
+      }
+    }
+
+    function emit(type, payload) {
+      DrumKitBridge.emit(type, payload);
+    }
+
+    function setTab(tab) {
+      state.ui.navigation.selectedTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+      document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.id === `tab-${tab}`));
+    }
+
+    function selectVoice(voiceId, source = 'voiceBrowser') {
+      state.ui.navigation.selectedVoiceId = voiceId;
+      emit('ui:drumkit/select-voice', { voiceId, source });
+      render();
+    }
+
+    function selectRow(rowId, source = 'mapping') {
+      const row = state.project.mappingRows.find(r => r.id === rowId);
+      if (!row) return;
+      state.ui.navigation.selectedMappingRowId = rowId;
+      state.ui.navigation.selectedVoiceId = row.voiceId;
+      emit('ui:drumkit/select-mapping-row', { rowId, voiceId: row.voiceId, source });
+      render();
+    }
+
+    function selectOperator(opIndex) {
+      state.ui.navigation.selectedOperatorIndex = opIndex;
+      emit('ui:drumkit/select-operator', { voiceId: state.ui.navigation.selectedVoiceId, operatorIndex: opIndex });
+      render();
+    }
+
+    function formatParam(value, format) {
+      if (format === 'percent') return `${Math.round(value)}%`;
+      if (format === 'signed') {
+        const n = Math.round(value) - 50;
+        return `${n >= 0 ? '+' : ''}${n}`;
+      }
+      if (format === 'ratio') return round(0.25 + (value / 100) * 15, 2).toFixed(2);
+      if (format === 'detune') {
+        const n = Math.round((value - 50) / 7);
+        return `${n >= 0 ? '+' : ''}${n}`;
+      }
+      return `${Math.round(value)}`;
+    }
+
+    function getRowLabel(row) {
+      if (!row) return '—';
+      return `${row.note} / ${row.articulation}`;
+    }
+
+    function computeCornerMix(x, y) {
+      const corners = [
+        { name: 'OP1', cx: 0, cy: 0 },
+        { name: 'OP2', cx: 1, cy: 0 },
+        { name: 'OP3', cx: 0, cy: 1 },
+        { name: 'OP4', cx: 1, cy: 1 }
+      ];
+      const values = corners.map(c => ({ name: c.name, value: 1 / (Math.hypot(x - c.cx, y - c.cy) + 0.001) }));
+      const sum = values.reduce((a, b) => a + b.value, 0);
+      return values.map(v => ({ name: v.name, percent: round((v.value / sum) * 100, 2) }));
+    }
+
+    function renderHeader() {
+      const voice = getSelectedVoice();
+      const row = getSelectedRow();
+      const preset = presetFamilies.find(p => p.id === state.project.kitId) || presetFamilies[0];
+      const selectionMode = row && row.voiceId === voice.id ? 'row + voice' : 'voice';
+
+      dom.metricVoices.textContent = String(Object.keys(state.project.voices).length);
+      dom.metricRows.textContent = String(state.project.mappingRows.length);
+      dom.metricStyle.textContent = preset.tag;
+      dom.metricSelection.textContent = selectionMode;
+
+      dom.compactRow.textContent = getRowLabel(row);
+      dom.compactChannel.textContent = row ? `Ch ${row.channel}` : '—';
+      dom.compactVoice.textContent = voice.name;
+      dom.compactAlgo.textContent = `Algo ${voice.algorithm}`;
+
+      const lcdLines = [];
+      lcdLines.push(`Voice : ${voice.name} (${voice.id})`);
+      if (row) lcdLines.push(`Row : ${row.note} / ${row.articulation} / Canal ${row.channel}`);
+      lcdLines.push(`Preset : ${preset.name}`);
+      lcdLines.push(`Operator : OP${state.ui.navigation.selectedOperatorIndex + 1}`);
+      dom.lcdPatch.innerHTML = lcdLines.join('<br>');
+
+      dom.voiceTitle.textContent = `Voix — ${voice.name}`;
+      dom.voiceSubtitle.textContent = voice.desc;
+      dom.voiceMode.textContent = voice.mode;
+      dom.voiceIdLabel.textContent = voice.id;
+      dom.voiceAlgo.textContent = `Algo ${voice.algorithm}`;
+      dom.voiceRowLabel.textContent = getRowLabel(row);
+      dom.voiceRowChannel.textContent = row ? `Ch ${row.channel}` : '—';
+    }
+
+    function renderVoiceBrowsers() {
+      const selectedVoiceId = state.ui.navigation.selectedVoiceId;
+      const selectedRowId = state.ui.navigation.selectedMappingRowId;
+      const rowVoiceIds = new Set(state.project.mappingRows.map(r => r.voiceId));
+      const html = Object.values(state.project.voices).map(voice => {
+        const active = voice.id === selectedVoiceId;
+        const used = rowVoiceIds.has(voice.id) ? 'mapped' : 'unused';
+        return `
+          <div class="voice-tile ${active ? 'active' : ''}" data-voice-id="${voice.id}" style="--voice-color:${voice.color}">
+            <div class="voice-tile-head">
+              <div class="voice-name"><span class="voice-dot"></span>${voice.name}</div>
+              <span class="voice-tag">${used}</span>
+            </div>
+            <p>${voice.desc}</p>
+          </div>
+        `;
+      }).join('');
+      dom.voiceList.innerHTML = html;
+      dom.voiceBrowser.innerHTML = html;
+      document.querySelectorAll('[data-voice-id]').forEach(node => {
+        node.addEventListener('click', () => selectVoice(node.dataset.voiceId, 'browser'));
+      });
+    }
+
+    function renderMappingTable() {
+      dom.mappingTable.innerHTML = `
+        <div class="th">Note</div>
+        <div class="th">MIDI</div>
+        <div class="th">Voice</div>
+        <div class="th">Articulation</div>
+        <div class="th">Canal</div>
+        <div class="th">Select</div>
+        <div class="th">Aperçu</div>
+      `;
+      state.project.mappingRows.forEach(row => {
+        const voice = state.project.voices[row.voiceId];
+        const active = row.id === state.ui.navigation.selectedMappingRowId;
+        const cells = [];
+
+        const note = document.createElement('div');
+        note.className = `td clickable ${active ? 'mapping-row-active' : ''}`;
+        note.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span class="note-chip ${row.black ? 'black' : ''}">${row.note}</span><button class="tool-button" style="padding:6px 8px" title="Preview">▶</button></div>`;
+        note.addEventListener('click', (e) => { if (e.target.closest('button')) return; selectRow(row.id, 'table'); });
+        note.querySelector('button')?.addEventListener('click', (e) => { e.stopPropagation(); selectRow(row.id, 'table-preview-note'); emit('engine:drumkit/preview-note', { rowId: row.id, voiceId: row.voiceId, midi: row.midi }); });
+        cells.push(note);
+
+        const midi = document.createElement('div');
+        midi.className = `td clickable ${active ? 'mapping-row-active' : ''}`;
+        midi.textContent = String(row.midi);
+        midi.addEventListener('click', () => selectRow(row.id, 'table'));
+        cells.push(midi);
+
+        const voiceCell = document.createElement('div');
+        voiceCell.className = `td clickable ${active ? 'mapping-row-active' : ''}`;
+        voiceCell.innerHTML = `<span class="voice-pill clickable" style="--voice-color:${voice.color}"><span class="voice-dot"></span>${voice.name}</span>`;
+        voiceCell.addEventListener('click', () => selectRow(row.id, 'table-voice'));
+        cells.push(voiceCell);
+
+        const art = document.createElement('div');
+        art.className = `td clickable ${active ? 'mapping-row-active' : ''}`;
+        art.innerHTML = `<span class="mod-pill">${row.articulation}</span>`;
+        art.addEventListener('click', () => selectRow(row.id, 'table-articulation'));
+        cells.push(art);
+
+        const ch = document.createElement('div');
+        ch.className = `td ${active ? 'mapping-row-active' : ''}`;
+        const select = document.createElement('select');
+        select.className = 'row-select';
+        for (let i = 1; i <= 16; i++) {
+          const opt = document.createElement('option');
+          opt.value = String(i);
+          opt.textContent = `Ch ${i}`;
+          if (i === row.channel) opt.selected = true;
+          select.appendChild(opt);
+        }
+        select.addEventListener('change', () => {
+          row.channel = Number(select.value);
+          emit('project:drumkit/mapping-row-update', { rowId: row.id, patch: { channel: row.channel } });
+          renderHeader();
+        });
+        ch.appendChild(select);
+        cells.push(ch);
+
+        const sel = document.createElement('div');
+        sel.className = `td ${active ? 'mapping-row-active' : ''}`;
+        const btn = document.createElement('button');
+        btn.className = 'tool-button';
+        btn.style.padding = '8px 10px';
+        btn.textContent = active ? 'Active' : 'Edit';
+        btn.addEventListener('click', () => selectRow(row.id, 'table-button'));
+        sel.appendChild(btn);
+        cells.push(sel);
+
+        const preview = document.createElement('div');
+        preview.className = `td clickable ${active ? 'mapping-row-active' : ''}`;
+        preview.innerHTML = `<div style="display:flex;align-items:center;gap:8px;"><button class="tool-button" style="padding:6px 8px" title="Preview">▶</button><div class="mini-roll" style="flex:1"><div class="note-block" style="--voice-color:${voice.color}; left:${row.start}px; width:${row.length}px;"></div></div></div>`;
+        preview.addEventListener('click', (e) => { if (e.target.closest('button')) return; selectRow(row.id, 'table-preview'); });
+        preview.querySelector('button')?.addEventListener('click', (e) => { e.stopPropagation(); selectRow(row.id, 'table-preview'); emit('engine:drumkit/preview-note', { rowId: row.id, voiceId: row.voiceId, midi: row.midi }); });
+        cells.push(preview);
+
+        cells.forEach(cell => dom.mappingTable.appendChild(cell));
+      });
+    }
+
+    function renderQuickControls() {
+      const voice = getSelectedVoice();
+      dom.quickControlsGrid.innerHTML = voice.quickMeta.map(meta => {
+        const value = voice.quickParams[meta.key];
+        return `
+          <div class="control">
+            <div class="control-label"><strong>${meta.label}</strong><span class="value">${formatParam(value, meta.format)}</span></div>
+            <div class="knob-wrap">
+              <div class="knob" data-knob-type="quick" data-param-key="${meta.key}" data-format="${meta.format}" data-value="${value}" style="--value:${value / 100}; --knob-color:${meta.color};"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderAlgorithms() {
+      const voice = getSelectedVoice();
+      dom.algorithmGrid.innerHTML = [1,2,3,4,5,6,7,8].map(algo => `
+        <div class="algo ${algo === voice.algorithm ? 'active' : ''}" data-algo="${algo}">
+          ${algoSvg(algo, algo === voice.algorithm)}
+          <div class="algo-name">Algorithm ${algo}</div>
+        </div>
+      `).join('');
+      document.querySelectorAll('[data-algo]').forEach(node => {
+        node.addEventListener('click', () => {
+          getSelectedVoice().algorithm = Number(node.dataset.algo);
+          emit('project:drumkit/voice-set-algorithm', { voiceId: getSelectedVoice().id, algorithm: getSelectedVoice().algorithm });
+          renderHeader();
+          renderAlgorithms();
+          dom.voiceAlgo.textContent = `Algo ${getSelectedVoice().algorithm}`;
+          dom.compactAlgo.textContent = `Algo ${getSelectedVoice().algorithm}`;
+        });
+      });
+    }
+
+    function envToSvgPoints(env, width = 100, height = 100) {
+      const p = env.points;
+      const pts = [
+        [0, height],
+        [p[0].x * width, p[0].y * height],
+        [p[1].x * width, p[1].y * height],
+        [p[2].x * width, p[2].y * height],
+        [p[3].x * width, p[3].y * height],
+        [width, height]
+      ];
+      return pts;
+    }
+
+    function envPathData(env, width = 100, height = 100) {
+      const pts = envToSvgPoints(env, width, height);
+      return pts.map(([x, y]) => `${round(x, 1)},${round(y, 1)}`).join(' ');
+    }
+
+    function renderMiniEnvSvg(env, color) {
+      const poly = envPathData(env, 100, 100);
+      const area = `0,100 ${poly} 100,100`;
+      return `
+        <svg class="mini-env-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="--accent:${color}">
+          <polyline points="0,0 0,100 100,100" fill="none" opacity="0"></polyline>
+          <polygon class="env-fill" points="${area}"></polygon>
+          <polyline class="env-line-main" points="${poly}"></polyline>
+        </svg>
+      `;
+    }
+
+    function renderOperators() {
+      const voice = getSelectedVoice();
+      dom.operatorGrid.innerHTML = voice.operators.map((op, opIndex) => `
+        <div class="operator ${opIndex === state.ui.navigation.selectedOperatorIndex ? 'mapping-row-active' : ''}">
+          <div class="operator-top">
+            <div class="op-name">${op.name}</div>
+            <div class="pill">${op.role}</div>
+          </div>
+          <div class="env-box">${renderMiniEnvSvg(op.env, voice.color)}</div>
+          <div class="mini-params">
+            <div class="mini"><span>Ratio</span><strong>${op.ratio.toFixed(2)}</strong></div>
+            <div class="mini"><span>Level</span><strong>${op.level}</strong></div>
+          </div>
+          <div class="operator-tools">
+            <div class="tool-cell">
+              <span class="event-log-title">Level</span>
+              <div class="knob-wrap"><div class="knob small" data-knob-type="operator" data-operator-index="${opIndex}" data-operator-param="level" data-format="int" data-value="${op.level}" style="--value:${op.level / 100}; --knob-color:${voice.color};"></div></div>
+              <span class="tool-cell-value">${op.level}</span>
+            </div>
+            <div class="tool-cell">
+              <span class="event-log-title">Ratio</span>
+              <div class="knob-wrap"><div class="knob small" data-knob-type="operator" data-operator-index="${opIndex}" data-operator-param="ratioKnob" data-format="ratio" data-value="${Math.round(((op.ratio - 0.25) / 15) * 100)}" style="--value:${((op.ratio - 0.25) / 15)}; --knob-color:${voice.color};"></div></div>
+              <span class="tool-cell-value">${op.ratio.toFixed(2)}</span>
+            </div>
+            <div class="tool-cell">
+              <span class="event-log-title">Attack</span>
+              <div class="knob-wrap"><div class="knob small" data-knob-type="operator" data-operator-index="${opIndex}" data-operator-param="attack" data-format="int" data-value="${op.attack}" style="--value:${op.attack / 100}; --knob-color:${voice.color};"></div></div>
+              <span class="tool-cell-value">${op.attack}</span>
+            </div>
+            <div class="tool-cell">
+              <span class="event-log-title">Release</span>
+              <div class="knob-wrap"><div class="knob small" data-knob-type="operator" data-operator-index="${opIndex}" data-operator-param="release" data-format="int" data-value="${op.release}" style="--value:${op.release / 100}; --knob-color:${voice.color};"></div></div>
+              <span class="tool-cell-value">${op.release}</span>
+            </div>
+          </div>
+          <div style="margin-top:10px; display:grid; gap:10px;">
+            <button class="tool-button" data-edit-env="${opIndex}">Edit Env</button>
+            <button class="tool-button" data-select-operator="${opIndex}">Select Operator</button>
+          </div>
+        </div>
+      `).join('');
+
+      document.querySelectorAll('[data-edit-env]').forEach(btn => {
+        btn.addEventListener('click', () => openEnvEditor(Number(btn.dataset.editEnv)));
+      });
+
+      document.querySelectorAll('[data-select-operator]').forEach(btn => {
+        btn.addEventListener('click', () => selectOperator(Number(btn.dataset.selectOperator)));
+      });
+    }
+
+    function renderGlobalEnvelopes() {
+      const voice = getSelectedVoice();
+      dom.envelopeGrid.innerHTML = voice.globalEnvelopes.map(item => `
+        <div class="panel-card">
+          <div class="card-head">
+            <div>
+              <h3>${item.title}</h3>
+              <p>${item.tag}</p>
+            </div>
+          </div>
+          <div class="env-box">${renderMiniEnvSvg(item.env, voice.color)}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderStyles() {
+      dom.styleGrid.innerHTML = presetFamilies.map(preset => `
+        <div class="style-card ${preset.id === state.project.kitId ? 'active' : ''}" data-style-id="${preset.id}">
+          <div class="style-head">
+            <div class="style-name">${preset.name}</div>
+            <span class="pill">${preset.tag}</span>
+          </div>
+          <p>${preset.desc}</p>
+        </div>
+      `).join('');
+      document.querySelectorAll('[data-style-id]').forEach(node => {
+        node.addEventListener('click', () => {
+          state.project.kitId = node.dataset.styleId;
+          dom.kitSelect.value = node.dataset.styleId;
+          emit('project:drumkit/load-kit', { kitId: state.project.kitId });
+          renderHeader();
+          renderStyles();
+        });
+      });
+    }
+
+    function renderSettings() {
+      const items = [
+        ['compactMode','Compact mode','Réduit les marges et la densité pour petites résolutions.'],
+        ['stickyTopInfo','Sticky top info','Garde les informations critiques visibles pendant la navigation.'],
+        ['oneTabFocus','One-tab focus','Évite d’ouvrir plusieurs sections lourdes à la fois.'],
+        ['highContrastMenus','Contraste élevé','Menus foncés, texte clair, adaptés à ta lisibilité.'],
+        ['quickChannelEdit','Quick channel edit','Canal éditable directement dans le mapping.'],
+        ['detachedPluginLogic','Detached plugin logic','Pas de transport, pas de logique song dans cette fenêtre.']
+      ];
+      dom.settingsGrid.innerHTML = items.map(([key, title, desc]) => `
+        <div class="setting-card">
+          <strong>${title}</strong>
+          <p>${desc}</p>
+          <div class="setting-row">
+            <span class="pill">pref</span>
+            <button class="tool-button" data-setting-key="${key}">${state.ui.settings[key] ? 'On' : 'Off'}</button>
+          </div>
+        </div>
+      `).join('');
+      document.querySelectorAll('[data-setting-key]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.settingKey;
+          state.ui.settings[key] = !state.ui.settings[key];
+          emit('ui:drumkit/settings-update', { key, value: state.ui.settings[key] });
+          renderSettings();
+        });
+      });
+    }
+
+    function renderXY() {
+      const voice = getSelectedVoice();
+      const { x, y } = voice.xy;
+      const mix = computeCornerMix(x, y);
+      const rect = dom.xyPad.getBoundingClientRect();
+      dom.xyPoint.style.left = `${x * rect.width}px`;
+      dom.xyPoint.style.top = `${y * rect.height}px`;
+      dom.xyMixGrid.innerHTML = mix.map(item => `
+        <div class="xy-metric">
+          <span>${item.name}</span>
+          <strong>${Math.round(item.percent)}%</strong>
+          <div class="xy-bar"><div class="xy-bar-fill" style="width:${item.percent}%"></div></div>
+        </div>
+      `).join('');
+    }
+
+    function openEnvEditor(opIndex) {
+      state.ui.navigation.selectedOperatorIndex = opIndex;
+      state.ui.modal.envOpen = true;
+      state.ui.modal.operatorIndex = opIndex;
+      emit('project:drumkit/operator-open-envelope-editor', { voiceId: getSelectedVoice().id, operatorIndex: opIndex });
+      renderEnvModal();
+      dom.envModal.classList.add('open');
+    }
+
+    function closeEnvEditor() {
+      state.ui.modal.envOpen = false;
+      dom.envModal.classList.remove('open');
+    }
+
+    function getEnvEditorTarget() {
+      const voice = getSelectedVoice();
+      return voice.operators[state.ui.modal.operatorIndex];
+    }
+
+    function envPointToAdsr(env) {
+      const [a, d, s, r] = env.points;
+      return {
+        attack: Math.round(a.x * 100),
+        decay: Math.round((d.x - a.x) * 100),
+        sustain: Math.round((1 - s.y) * 100),
+        release: Math.round((r.x - s.x) * 100)
+      };
+    }
+
+    function renderEnvModal() {
+      const voice = getSelectedVoice();
+      const operator = getEnvEditorTarget();
+      dom.envModalTitle.textContent = `${voice.name} — ${operator.name}`;
+      dom.envModalSubtitle.textContent = `${operator.role} • mini-graph et outils liés en direct`;
+      renderEnvSummary();
+      renderEnvSvg();
+    }
+
+    function renderEnvSummary() {
+      const adsr = envPointToAdsr(getEnvEditorTarget().env);
+      dom.envSummaryGrid.innerHTML = Object.entries(adsr).map(([k,v]) => `
+        <div class="mini"><span>${k}</span><strong>${v}</strong></div>
+      `).join('');
+    }
+
+    function renderEnvSvg() {
+      const voice = getSelectedVoice();
+      const operator = getEnvEditorTarget();
+      dom.envEditorSvg.style.setProperty('--accent', voice.color);
+      dom.envEditorSvg.innerHTML = `
+        ${[0.2,0.4,0.6,0.8].map(v => `<line class="env-grid-line" x1="${760*v}" y1="0" x2="${760*v}" y2="320"></line>`).join('')}
+        ${[0.25,0.5,0.75].map(v => `<line class="env-grid-line" x1="0" y1="${320*v}" x2="760" y2="${320*v}"></line>`).join('')}
+        <polygon class="env-fill" id="envArea" points="" style="fill:${voice.color}22;"></polygon>
+        <polyline class="env-line-main" id="envLine" points="" style="stroke:${voice.color};"></polyline>
+        ${operator.env.points.map((_, idx) => `
+          <circle class="env-point" data-env-point="${idx}" cx="0" cy="0" r="10" style="stroke:${voice.color};"></circle>
+          <text class="env-point-label" data-env-label="${idx}" x="0" y="0">${['A','D','S','R'][idx]}</text>
+        `).join('')}
+      `;
+      updateEnvSvgFromState();
+      bindEnvPoints();
+    }
+
+    function updateEnvSvgFromState() {
+      const operator = getEnvEditorTarget();
+      const pts = envToSvgPoints(operator.env, 760, 320);
+      const poly = pts.map(([x,y]) => `${x},${y}`).join(' ');
+      const area = `0,320 ${poly} 760,320`;
+      const areaNode = dom.envEditorSvg.querySelector('#envArea');
+      const lineNode = dom.envEditorSvg.querySelector('#envLine');
+      if (areaNode) areaNode.setAttribute('points', area);
+      if (lineNode) lineNode.setAttribute('points', poly);
+      operator.env.points.forEach((p, idx) => {
+        const cx = p.x * 760;
+        const cy = p.y * 320;
+        const pointNode = dom.envEditorSvg.querySelector(`[data-env-point="${idx}"]`);
+        const labelNode = dom.envEditorSvg.querySelector(`[data-env-label="${idx}"]`);
+        if (pointNode) {
+          pointNode.setAttribute('cx', String(cx));
+          pointNode.setAttribute('cy', String(cy));
+        }
+        if (labelNode) {
+          labelNode.setAttribute('x', String(cx + 14));
+          labelNode.setAttribute('y', String(cy - 12));
+        }
+      });
+    }
+
+    function bindEnvPoints() {
+      const voice = getSelectedVoice();
+      const operator = getEnvEditorTarget();
+      const svg = dom.envEditorSvg;
+      svg.querySelectorAll('[data-env-point]').forEach(point => {
+        if (point.dataset.bound === '1') return;
+        point.dataset.bound = '1';
+        let dragging = false;
+        const idx = Number(point.dataset.envPoint);
+
+        const movePoint = (clientX, clientY) => {
+          const rect = svg.getBoundingClientRect();
+          const nx = clamp((clientX - rect.left) / rect.width, 0.04, 0.96);
+          const ny = clamp((clientY - rect.top) / rect.height, 0.06, 0.94);
+          const prevX = idx > 0 ? operator.env.points[idx - 1].x + 0.04 : 0.06;
+          const nextX = idx < operator.env.points.length - 1 ? operator.env.points[idx + 1].x - 0.04 : 0.96;
+          operator.env.points[idx].x = round(clamp(nx, prevX, nextX), 3);
+          operator.env.points[idx].y = round(ny, 3);
+          syncOperatorFromEnvelope(operator);
+          updateEnvSvgFromState();
+          renderEnvSummary();
+        };
+
+        point.addEventListener('pointerdown', (e) => {
+          dragging = true;
+          point.classList.add('dragging');
+          point.setPointerCapture(e.pointerId);
+          movePoint(e.clientX, e.clientY);
+        });
+
+        point.addEventListener('pointermove', (e) => {
+          if (!dragging) return;
+          movePoint(e.clientX, e.clientY);
+        });
+
+        point.addEventListener('pointerup', (e) => {
+          if (!dragging) return;
+          dragging = false;
+          point.classList.remove('dragging');
+          try { point.releasePointerCapture(e.pointerId); } catch {}
+          renderOperators();
+          bindKnobs();
+          emit('project:drumkit/operator-set-envelope', {
+            voiceId: voice.id,
+            operatorIndex: state.ui.modal.operatorIndex,
+            env: JSON.parse(JSON.stringify(operator.env))
+          });
+        });
+
+        point.addEventListener('pointercancel', (e) => {
+          dragging = false;
+          point.classList.remove('dragging');
+          try { point.releasePointerCapture(e.pointerId); } catch {}
+        });
+      });
+    }
+
+    function syncOperatorFromEnvelope(operator) {
+      const adsr = envPointToAdsr(operator.env);
+      operator.attack = adsr.attack;
+      operator.release = adsr.release;
+    }
+
+    function updateOperatorByKnob(op, param, value) {
+      if (param === 'level') op.level = Math.round(value);
+      if (param === 'ratioKnob') op.ratio = round(0.25 + (value / 100) * 15, 2);
+      if (param === 'attack') {
+        op.attack = Math.round(value);
+        op.env.points[0].x = round(0.06 + (value / 100) * 0.24, 3);
+      }
+      if (param === 'release') {
+        op.release = Math.round(value);
+        op.env.points[3].x = round(0.74 + (value / 100) * 0.22, 3);
+        op.env.points[3].y = round(0.92 - (value / 100) * 0.24, 3);
+      }
+    }
+
+    function bindKnobs() {
+      document.querySelectorAll('.knob[data-knob-type]').forEach(knob => {
+        if (knob.dataset.bound === '1') return;
+        knob.dataset.bound = '1';
+        const label = knob.closest('.control, .tool-cell')?.querySelector('.value, .tool-cell-value');
+        const format = knob.dataset.format || 'int';
+
+        const applyValue = (val, emitChange = false) => {
+          const v = clamp(val, 0, 100);
+          knob.dataset.value = String(v);
+          knob.style.setProperty('--value', String(v / 100));
+          if (label) label.textContent = formatParam(v, format);
+
+          if (knob.dataset.knobType === 'quick') {
+            const voice = getSelectedVoice();
+            const key = knob.dataset.paramKey;
+            voice.quickParams[key] = v;
+            if (emitChange) emit('project:drumkit/voice-set-quick-param', { voiceId: voice.id, param: key, value: v });
+          }
+
+          if (knob.dataset.knobType === 'operator') {
+            const voice = getSelectedVoice();
+            const opIndex = Number(knob.dataset.operatorIndex);
+            const param = knob.dataset.operatorParam;
+            const op = voice.operators[opIndex];
+            updateOperatorByKnob(op, param, v);
+            renderOperators();
+            bindKnobs();
+            if (state.ui.modal.envOpen && state.ui.modal.operatorIndex === opIndex) {
+              renderEnvSvg();
+              renderEnvSummary();
+            }
+            if (emitChange) emit('project:drumkit/operator-set-param', { voiceId: voice.id, operatorIndex: opIndex, param, value: v });
+          }
+        };
+
+        let dragging = false;
+        let startY = 0;
+        let startValue = Number(knob.dataset.value || 50);
+
+        knob.addEventListener('pointerdown', (e) => {
+          dragging = true;
+          startY = e.clientY;
+          startValue = Number(knob.dataset.value || 50);
+          knob.setPointerCapture(e.pointerId);
+        });
+
+        knob.addEventListener('pointermove', (e) => {
+          if (!dragging) return;
+          const delta = (startY - e.clientY) * 0.55;
+          applyValue(startValue + delta);
+        });
+
+        knob.addEventListener('pointerup', (e) => {
+          dragging = false;
+          try { knob.releasePointerCapture(e.pointerId); } catch {}
+          applyValue(Number(knob.dataset.value || 50), true);
+        });
+
+        knob.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const current = Number(knob.dataset.value || 50);
+          applyValue(current + (e.deltaY < 0 ? 2 : -2), true);
+        }, { passive: false });
+      });
+    }
+
+    function bindXYPad() {
+      let dragging = false;
+      const setFromEvent = (e, emitChange = false) => {
+        const rect = dom.xyPad.getBoundingClientRect();
+        const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+        const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+        const voice = getSelectedVoice();
+        voice.xy = { x: round(x, 4), y: round(y, 4) };
+        renderXY();
+        if (emitChange) emit('project:drumkit/voice-set-xy', { voiceId: voice.id, x: voice.xy.x, y: voice.xy.y, mix: computeCornerMix(voice.xy.x, voice.xy.y) });
+      };
+      dom.xyPad.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        dom.xyPad.setPointerCapture(e.pointerId);
+        setFromEvent(e, false);
+      });
+      dom.xyPad.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        setFromEvent(e, false);
+      });
+      dom.xyPad.addEventListener('pointerup', (e) => {
+        dragging = false;
+        try { dom.xyPad.releasePointerCapture(e.pointerId); } catch {}
+        setFromEvent(e, true);
+      });
+      dom.xyPad.addEventListener('dblclick', () => {
+        const voice = getSelectedVoice();
+        voice.xy = { x: 0.5, y: 0.5 };
+        renderXY();
+        emit('project:drumkit/voice-set-xy', { voiceId: voice.id, x: 0.5, y: 0.5, mix: computeCornerMix(0.5, 0.5) });
+      });
+      window.addEventListener('resize', renderXY);
+    }
+
+    function bindWindowControls() {
+      dom.btnClose.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.ui.window.isOpen = false;
+        if (!EMBEDDED) dom.pluginWindow.classList.add('hidden');
+        emit('ui:drumkit/window-close', { isOpen: false });
+      });
+      dom.btnMinimize.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.ui.window.isMinimized = !state.ui.window.isMinimized;
+        dom.pluginWindow.classList.toggle('minimized', state.ui.window.isMinimized);
+        applyWindowBounds();
+        emit('ui:drumkit/window-minimize', { isMinimized: state.ui.window.isMinimized });
+      });
+      dom.btnRestore.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.ui.window.isOpen = true;
+        state.ui.window.isMinimized = false;
+        dom.pluginWindow.classList.remove('hidden', 'minimized');
+        dom.pluginWindow.style.zIndex = String(++state.ui.window.zIndex);
+        applyWindowBounds();
+        emit('ui:drumkit/window-focus', { zIndex: state.ui.window.zIndex });
+      });
+
+      let dragging = false;
+      let startX = 0;
+      let startY = 0;
+      let originX = state.ui.window.x;
+      let originY = state.ui.window.y;
+      const interactiveSelector = 'button, input, select, option';
+
+      dom.windowBar.addEventListener('pointerdown', (e) => {
+        if (e.target.closest(interactiveSelector)) return;
+        dragging = true;
+        dom.windowBar.classList.add('dragging');
+        startX = e.clientX;
+        startY = e.clientY;
+        originX = state.ui.window.x;
+        originY = state.ui.window.y;
+        dom.windowBar.setPointerCapture(e.pointerId);
+      });
+      dom.windowBar.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        state.ui.window.x = Math.max(0, originX + (e.clientX - startX));
+        state.ui.window.y = Math.max(0, originY + (e.clientY - startY));
+        if (!EMBEDDED) applyWindowBounds();
+        emit('ui:drumkit/window-move', { x: state.ui.window.x, y: state.ui.window.y });
+      });
+      dom.windowBar.addEventListener('pointerup', (e) => {
+        if (!dragging) return;
+        dragging = false;
+        dom.windowBar.classList.remove('dragging');
+        try { dom.windowBar.releasePointerCapture(e.pointerId); } catch {}
+        emit('ui:drumkit/window-move', { x: state.ui.window.x, y: state.ui.window.y });
+      });
+
+      let resizing = false;
+      let rw = state.ui.window.w;
+      let rh = state.ui.window.h;
+      dom.resizeHandle.addEventListener('pointerdown', (e) => {
+        resizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        rw = state.ui.window.w;
+        rh = state.ui.window.h;
+        dom.resizeHandle.setPointerCapture(e.pointerId);
+      });
+      dom.resizeHandle.addEventListener('pointermove', (e) => {
+        if (!resizing) return;
+        state.ui.window.w = Math.max(1080, rw + (e.clientX - startX));
+        state.ui.window.h = Math.max(720, rh + (e.clientY - startY));
+        if (!EMBEDDED) applyWindowBounds();
+        emit('ui:drumkit/window-resize', { w: state.ui.window.w, h: state.ui.window.h });
+      });
+      dom.resizeHandle.addEventListener('pointerup', (e) => {
+        if (!resizing) return;
+        resizing = false;
+        try { dom.resizeHandle.releasePointerCapture(e.pointerId); } catch {}
+        emit('ui:drumkit/window-resize', { w: state.ui.window.w, h: state.ui.window.h });
+      });
+    }
+
+    function applyWindowBounds() {
+      if (EMBEDDED) {
+        dom.pluginWindow.style.left = '0px';
+        dom.pluginWindow.style.top = '0px';
+        dom.pluginWindow.style.width = '100%';
+        dom.pluginWindow.style.height = state.ui.window.isMinimized ? '72px' : '100%';
+        return;
+      }
+      dom.pluginWindow.style.left = `${state.ui.window.x}px`;
+      dom.pluginWindow.style.top = `${state.ui.window.y}px`;
+      dom.pluginWindow.style.width = `${state.ui.window.w}px`;
+      dom.pluginWindow.style.height = `${state.ui.window.h}px`;
+    }
+
+    function bindTabButtons() {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          setTab(btn.dataset.tab);
+          emit('ui:drumkit/select-tab', { tab: btn.dataset.tab });
+        });
+      });
+    }
+
+    function emitPreviewForSelection(mode = 'row') {
+      let row = getSelectedRow();
+      if ((!row || mode === 'voice') && state?.project?.mappingRows) {
+        const voice = getSelectedVoice();
+        row = state.project.mappingRows.find(r => r.voiceId === voice.id) || row;
+      }
+      emit('engine:drumkit/preview-note', {
+        rowId: row ? row.id : null,
+        voiceId: getSelectedVoice().id,
+        midi: row ? row.midi : null
+      });
+    }
+
+    function bindEnvModalButtons() {
+      dom.envModalClose.addEventListener('click', closeEnvEditor);
+      dom.envApplyBtn.addEventListener('click', () => {
+        const operator = getEnvEditorTarget();
+        emit('project:drumkit/operator-set-envelope', { voiceId: getSelectedVoice().id, operatorIndex: state.ui.modal.operatorIndex, env: JSON.parse(JSON.stringify(operator.env)) });
+      });
+      dom.envPreviewBtn.addEventListener('click', () => {
+        emitPreviewForSelection('row');
+      });
+      document.querySelectorAll('[data-env-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const operator = getEnvEditorTarget();
+          const preset = btn.dataset.envPreset;
+          if (preset === 'tight') operator.env.points = [{x:0.08,y:0.10},{x:0.24,y:0.46},{x:0.56,y:0.62},{x:0.80,y:0.92}];
+          if (preset === 'natural') operator.env.points = [{x:0.12,y:0.09},{x:0.36,y:0.44},{x:0.68,y:0.52},{x:0.92,y:0.88}];
+          if (preset === 'longTail') operator.env.points = [{x:0.14,y:0.08},{x:0.40,y:0.38},{x:0.74,y:0.48},{x:0.97,y:0.78}];
+          if (preset === 'reset') operator.env = makeEnv(state.ui.modal.operatorIndex + 1);
+          syncOperatorFromEnvelope(operator);
+          renderEnvModal();
+          renderOperators();
+          bindKnobs();
+          emit('project:drumkit/operator-set-envelope', { voiceId: getSelectedVoice().id, operatorIndex: state.ui.modal.operatorIndex, env: JSON.parse(JSON.stringify(operator.env)), preset });
+        });
+      });
+    }
+
+    function bindKitSelectors() {
+      dom.kitSelect.addEventListener('change', () => {
+        state.project.kitId = dom.kitSelect.value;
+        emit('project:drumkit/load-kit', { kitId: state.project.kitId });
+        renderHeader();
+        renderStyles();
+      });
+      dom.windowTitleInput.addEventListener('change', () => {
+        emit('ui:drumkit/window-title-change', { title: dom.windowTitleInput.value });
+      });
+    }
+
+    function render() {
+      applyWindowBounds();
+      renderHeader();
+      renderVoiceBrowsers();
+      renderMappingTable();
+      renderQuickControls();
+      renderAlgorithms();
+      renderOperators();
+      renderGlobalEnvelopes();
+      renderStyles();
+      renderSettings();
+      renderXY();
+      bindKnobs();
+      if (state.ui.modal.envOpen) renderEnvModal();
+    }
+
+    function algoSvg(index, active) {
+      const stroke = active ? '#50d5ff' : '#8fa8c9';
+      const fill = active ? 'rgba(80,213,255,0.18)' : 'rgba(255,255,255,0.04)';
+      const nodes = [14, 32, 50, 68];
+      const pairs = {
+        1:[[14,32],[32,50],[50,68]], 2:[[14,50],[32,50],[50,68]], 3:[[14,32],[14,50],[50,68]], 4:[[14,32],[32,68],[50,68]],
+        5:[[14,68],[32,50]], 6:[[14,32],[50,68]], 7:[[14,50],[32,68]], 8:[[14,68],[32,68],[50,68]]
+      };
+      const lines = (pairs[index] || []).map(([a,b]) => `<line x1="26" y1="${a}" x2="86" y2="${b}" stroke="${stroke}" stroke-width="3" stroke-linecap="round" />`).join('');
+      const rects = nodes.map(y => `<rect x="14" y="${y-8}" width="24" height="16" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="2" /><rect x="74" y="${y-8}" width="24" height="16" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="2" />`).join('');
+      return `<svg viewBox="0 0 112 84" aria-hidden="true">${lines}${rects}</svg>`;
+    }
+
+    bindTabButtons();
+    bindXYPad();
+    bindWindowControls();
+    bindEnvModalButtons();
+    bindKitSelectors();
+    setTab(state.ui.navigation.selectedTab);
+    render();
+    emit('ui:drumkit/window-ready', { version: 'production-front-v1', selectedVoiceId: state.ui.navigation.selectedVoiceId, selectedMappingRowId: state.ui.navigation.selectedMappingRowId });
+  </script>
+</body>
+</html>

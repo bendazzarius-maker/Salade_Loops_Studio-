@@ -1,0 +1,590 @@
+/* ================= Electro DAW | samplePatternEditor.js ================= */
+(function initSamplePatternEditor(global) {
+  const host = document.getElementById("samplePatternEditor");
+  if (!host) return;
+
+
+  // Sample Pattern convention (audio steps): 16 steps = 1 beat
+  const STEPS_PER_BEAT_SP = 16;
+  const BEATS_PER_BAR_SP = 4;
+
+  const startEl = document.getElementById("samplePatternStart");
+  const endEl = document.getElementById("samplePatternEnd");
+  const beatsEl = document.getElementById("samplePatternBeats");
+  const rootMidiEl = document.getElementById("samplePatternRootMidi");
+  const pitchModeEl = document.getElementById("samplePatternPitchMode");
+  const gainEl = document.getElementById("samplePatternGain");
+  const mixOutEl = document.getElementById("samplePatternMixOut");
+  const nameEl = document.getElementById("samplePatternName");
+  const importModeEl = document.getElementById("samplePatternImportMode");
+  const programListEl = document.getElementById("samplePatternProgramList");
+  const loadProgramBtn = document.getElementById("samplePatternLoadProgram");
+  const saveBtn = document.getElementById("samplePatternSavePattern");
+  const previewBtn = document.getElementById("samplePatternPreviewBtn");
+  const statusEl = document.getElementById("samplePatternStatus");
+  const canvas = document.getElementById("samplePatternWave");
+
+  const editor = {
+    samplePath: "",
+    buffer: null,
+    posStart: 0,
+    posEnd: 1,
+    zoomStart: 0,
+    zoomEnd: 1,
+    ampZoom: 1,
+    dragging: null,
+    isPanning: false,
+    panAnchorX: 0,
+    panStartView: 0,
+    previewSession: null,
+  };
+
+  function ensurePreviewCtx() {
+    const Ctor = global.AudioContext || global.webkitAudioContext;
+    if (!Ctor) return null;
+    const ae = global.audioEngine;
+    if (ae?.ctx) return ae.ctx;
+    if (!editor.previewCtx) editor.previewCtx = new Ctor({ latencyHint: "interactive" });
+    return editor.previewCtx;
+  }
+
+  async function startPreviewLoop() {
+    if (!editor.buffer) {
+      setStatus("Pré-écoute: chargez un sample avant lecture.");
+      return;
+    }
+    const ctx = ensurePreviewCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      try { await ctx.resume(); } catch (_) {}
+    }
+    stopPreviewLoop();
+
+    const startNorm = clamp01(+startEl.value || editor.posStart);
+    const endNormRaw = clamp01(+endEl.value || editor.posEnd);
+    const endNorm = Math.max(startNorm + 0.001, endNormRaw);
+    const startSec = startNorm * editor.buffer.duration;
+    const endSec = endNorm * editor.buffer.duration;
+    const loopLen = Math.max(0.01, endSec - startSec);
+    const now = ctx.currentTime;
+
+    const source = ctx.createBufferSource();
+    source.buffer = editor.buffer;
+    source.loop = true;
+    source.loopStart = startSec;
+    source.loopEnd = endSec;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.95, now);
+
+    const targetOut = global.audioEngine?.master || ctx.destination;
+    source.connect(gain);
+    gain.connect(targetOut);
+    source.start(now, startSec);
+
+    editor.previewSession = { source, gain, ctx };
+    setStatus("Pré-écoute active: maintenez le bouton (souris/clavier) pour écouter Start→End en boucle.");
+  }
+
+  function stopPreviewLoop() {
+    const session = editor.previewSession;
+    if (!session) return;
+    const now = session.ctx?.currentTime || 0;
+    try {
+      session.gain?.gain.cancelScheduledValues(now);
+      session.gain?.gain.setValueAtTime(session.gain?.gain.value || 0.95, now);
+      session.gain?.gain.linearRampToValueAtTime(0.0001, now + 0.02);
+    } catch (_) {}
+    try { session.source?.stop(now + 0.03); } catch (_) {}
+    editor.previewSession = null;
+    setStatus("Pré-écoute stoppée.");
+  }
+
+  function setStatus(msg) {
+    if (statusEl) statusEl.textContent = msg;
+  }
+
+  function clamp01(v) {
+    return Math.max(0, Math.min(1, Number(v) || 0));
+  }
+
+  function normToX(norm) {
+    return ((norm - editor.zoomStart) / Math.max(1e-6, editor.zoomEnd - editor.zoomStart)) * canvas.width;
+  }
+
+  function xToNorm(x) {
+    const ratio = clamp01(x / Math.max(1, canvas.width));
+    return editor.zoomStart + ratio * (editor.zoomEnd - editor.zoomStart);
+  }
+
+  function nearestZeroCrossing(data, sampleIndex, radius = 256) {
+    let best = Math.max(1, Math.min(data.length - 2, sampleIndex));
+    let bestScore = Infinity;
+    const from = Math.max(1, best - radius);
+    const to = Math.min(data.length - 2, best + radius);
+    for (let i = from; i <= to; i += 1) {
+      const a = data[i - 1];
+      const b = data[i];
+      const crossing = (a <= 0 && b >= 0) || (a >= 0 && b <= 0);
+      if (!crossing) continue;
+      const score = Math.abs(i - sampleIndex);
+      if (score < bestScore) {
+        best = i;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+
+  function eventToCanvasX(event) {
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width) return 0;
+    return clamp01((event.clientX - rect.left) / rect.width) * canvas.width;
+  }
+
+  function markerFromX(x) {
+    const sx = normToX(editor.posStart);
+    const ex = normToX(editor.posEnd);
+    if (Math.abs(sx - x) <= 10) return "start";
+    if (Math.abs(ex - x) <= 10) return "end";
+    return null;
+  }
+
+  async function decodePath(path) {
+    if (!path) return null;
+    const Ctor = global.AudioContext || global.webkitAudioContext;
+    if (!Ctor) return null;
+    const ac = new Ctor();
+    try {
+      const response = await fetch(`file://${encodeURI(path.replace(/\\/g, "/"))}`);
+      const raw = await response.arrayBuffer();
+      const buffer = await ac.decodeAudioData(raw.slice(0));
+      return buffer;
+    } finally {
+      try { await ac.close(); } catch (_) {}
+    }
+  }
+
+  function drawWaveform() {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.fillStyle = "#070b12";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const buffer = editor.buffer;
+    if (!buffer) {
+      ctx.fillStyle = "#9fb4d9";
+      ctx.font = "12px sans-serif";
+      ctx.fillText("Drag & drop un sample ici", 12, 18);
+      return;
+    }
+
+    const data = buffer.getChannelData(0);
+    const h = canvas.height;
+    const mid = h / 2;
+    const start = Math.floor(editor.zoomStart * (data.length - 1));
+    const end = Math.max(start + 2, Math.floor(editor.zoomEnd * (data.length - 1)));
+    const range = end - start;
+
+    ctx.strokeStyle = "#70a7ff";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x < canvas.width; x += 1) {
+      const idx = Math.min(data.length - 1, start + Math.floor((x / canvas.width) * range));
+      const y = mid + data[idx] * (mid * 0.9 * editor.ampZoom);
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    const xStart = normToX(editor.posStart);
+    const xEnd = normToX(editor.posEnd);
+    const from = Math.max(0, Math.min(xStart, xEnd));
+    const width = Math.max(1, Math.abs(xEnd - xStart));
+
+    ctx.fillStyle = "rgba(39,224,163,.16)";
+    ctx.fillRect(from, 0, width, h);
+
+    ctx.strokeStyle = "#27e0a3";
+    ctx.lineWidth = editor.dragging === "start" ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(xStart, 0);
+    ctx.lineTo(xStart, h);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = editor.dragging === "end" ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(xEnd, 0);
+    ctx.lineTo(xEnd, h);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.font = "11px sans-serif";
+    ctx.fillText(`Zoom X ${(1 / Math.max(0.0001, editor.zoomEnd - editor.zoomStart)).toFixed(2)}x | Zoom Y ${editor.ampZoom.toFixed(2)}x`, 10, 15);
+  }
+
+  function placeMarkerAt(x, key) {
+    if (!editor.buffer) return;
+    const data = editor.buffer.getChannelData(0);
+    const norm = clamp01(xToNorm(x));
+    const idx = Math.floor(norm * (data.length - 1));
+    const snapped = nearestZeroCrossing(data, idx) / Math.max(1, data.length - 1);
+    if (key === "start") editor.posStart = Math.min(0.999, snapped);
+    if (key === "end") editor.posEnd = Math.max(0.001, snapped);
+    if (editor.posStart >= editor.posEnd) {
+      if (key === "start") editor.posEnd = Math.min(1, editor.posStart + 0.001);
+      else editor.posStart = Math.max(0, editor.posEnd - 0.001);
+    }
+    startEl.value = String(Math.round(editor.posStart * 1000) / 1000);
+    endEl.value = String(Math.round(editor.posEnd * 1000) / 1000);
+    drawWaveform();
+  }
+
+  function installInteractions() {
+    canvas.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      canvas.style.outline = "2px dashed rgba(39,224,163,.6)";
+    });
+
+    canvas.addEventListener("dragleave", () => {
+      canvas.style.outline = "none";
+    });
+
+    canvas.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      canvas.style.outline = "none";
+
+      const pickDropPath = () => {
+        const dt = event.dataTransfer;
+        if (!dt) return "";
+
+        // Electron drag&drop from OS/file manager exposes File objects with absolute `path`.
+        const file = dt.files && dt.files[0];
+        if (file && typeof file.path === "string" && file.path.trim()) return file.path.trim();
+
+        // Custom app drags may expose plain text (absolute path).
+        const dropped = dt.getData("text/plain") || "";
+        if (dropped && dropped.trim()) return dropped.trim();
+
+        // URI list fallback (e.g. file:///...)
+        const uriList = dt.getData("text/uri-list") || "";
+        if (uriList.trim()) {
+          const first = uriList.split(/\r?\n/).find((line) => line && !line.startsWith("#")) || "";
+          if (first.startsWith("file://")) {
+            try { return decodeURIComponent(first.replace(/^file:\/\//, "")); } catch (_) {}
+          }
+        }
+        return "";
+      };
+
+      let path = global.sampleDirectory?.state?.dragSample?.path || "";
+      if (!path) path = pickDropPath();
+      if (!path) {
+        setStatus("Aucun sample détecté au drop.");
+        return;
+      }
+      editor.samplePath = path;
+      editor.buffer = await decodePath(path);
+      editor.zoomStart = 0;
+      editor.zoomEnd = 1;
+      drawWaveform();
+      setStatus(`Sample chargé: ${path.split(/[\\/]/).pop()}`);
+    });
+
+    canvas.addEventListener("wheel", (event) => {
+      if (!editor.buffer) return;
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? 1 : -1;
+      if (event.shiftKey) {
+        const next = editor.ampZoom * (direction > 0 ? 0.9 : 1.1);
+        editor.ampZoom = Math.max(0.35, Math.min(8, next));
+      } else {
+        const pivot = xToNorm(eventToCanvasX(event));
+        const range = editor.zoomEnd - editor.zoomStart;
+        const nextRange = Math.max(0.01, Math.min(1, range * (direction > 0 ? 1.08 : 0.92)));
+        const anchor = clamp01((pivot - editor.zoomStart) / Math.max(1e-6, range));
+        let nextStart = pivot - anchor * nextRange;
+        nextStart = Math.max(0, Math.min(1 - nextRange, nextStart));
+        editor.zoomStart = nextStart;
+        editor.zoomEnd = nextStart + nextRange;
+      }
+      drawWaveform();
+    }, { passive: false });
+
+    canvas.addEventListener("mousedown", (event) => {
+      if (!editor.buffer) return;
+      if (event.button === 1) {
+        event.preventDefault();
+        editor.isPanning = true;
+        editor.panAnchorX = event.clientX;
+        editor.panStartView = editor.zoomStart;
+        return;
+      }
+      if (event.button !== 0) return;
+      const x = eventToCanvasX(event);
+      const marker = markerFromX(x);
+      if (marker) {
+        editor.dragging = marker;
+        drawWaveform();
+        return;
+      }
+      placeMarkerAt(x, "start");
+    });
+
+    canvas.addEventListener("mousemove", (event) => {
+      if (!editor.buffer) return;
+      if (editor.isPanning) {
+        const range = editor.zoomEnd - editor.zoomStart;
+        if (range >= 0.999) return;
+        const rect = canvas.getBoundingClientRect();
+        const deltaNorm = (event.clientX - editor.panAnchorX) / Math.max(1, rect.width);
+        let nextStart = editor.panStartView - deltaNorm * range;
+        nextStart = Math.max(0, Math.min(1 - range, nextStart));
+        editor.zoomStart = nextStart;
+        editor.zoomEnd = nextStart + range;
+        drawWaveform();
+        return;
+      }
+      if (!editor.dragging) return;
+      placeMarkerAt(eventToCanvasX(event), editor.dragging);
+    });
+
+    const release = () => {
+      editor.dragging = null;
+      editor.isPanning = false;
+      drawWaveform();
+    };
+
+    canvas.addEventListener("mouseup", release);
+    canvas.addEventListener("mouseleave", release);
+  }
+
+  function refreshMixOut() {
+    if (!mixOutEl) return;
+    mixOutEl.innerHTML = "";
+    const channels = project?.mixer?.channels || [];
+    channels.forEach((mix, index) => {
+      const opt = document.createElement("option");
+      opt.value = String(index + 1);
+      opt.textContent = `${mix.name || `CH ${index + 1}`}`;
+      mixOutEl.appendChild(opt);
+    });
+    mixOutEl.value = "1";
+  }
+
+  async function refreshPrograms() {
+    if (!programListEl) return;
+    programListEl.innerHTML = "";
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "(Aucun programme)";
+    programListEl.appendChild(placeholder);
+
+    if (!global.samplePattern?.listPrograms) return;
+
+    try {
+      const res = await global.samplePattern.listPrograms();
+      if (!res?.ok || !Array.isArray(res.programs)) return;
+      res.programs.forEach((entry) => {
+        const programPath = String(entry?.programPath || "").trim();
+        if (!programPath) return;
+        const opt = document.createElement("option");
+        opt.value = programPath;
+        opt.textContent = String(entry?.name || programPath.split(/[\\/]/).pop() || programPath);
+        programListEl.appendChild(opt);
+      });
+      if (editor.selectedProgramPath) {
+        programListEl.value = editor.selectedProgramPath;
+      }
+    } catch (_) {
+      setStatus("Impossible de lister les programmes Sample Pattern.");
+    }
+  }
+
+  async function loadProgramFromDisk() {
+    const programPath = String(programListEl?.value || "").trim();
+    if (!programPath) {
+      setStatus("Sélectionnez un programme à charger.");
+      return;
+    }
+    if (!global.samplePattern?.loadProgram) {
+      setStatus("Chargement de programme indisponible.");
+      return;
+    }
+
+    const res = await global.samplePattern.loadProgram(programPath);
+    if (!res?.ok || !res?.program) throw new Error(res?.error || "Programme invalide.");
+
+    const program = res.program;
+    const samplePath = String(program?.sample?.path || "").trim();
+    if (!samplePath) throw new Error("Sample manquant dans le programme.");
+
+    editor.selectedProgramPath = res.programPath || programPath;
+    editor.samplePath = samplePath;
+    editor.buffer = await decodePath(samplePath);
+    if (!editor.buffer) throw new Error("Impossible de décoder le sample du programme.");
+
+    editor.posStart = clamp01(program?.slice?.startNorm ?? 0);
+    editor.posEnd = clamp01(program?.slice?.endNorm ?? 1);
+    if (editor.posEnd <= editor.posStart) editor.posEnd = Math.min(1, editor.posStart + 0.001);
+
+    startEl.value = String(editor.posStart);
+    endEl.value = String(editor.posEnd);
+    rootMidiEl.value = String(Math.floor(Number(program?.playback?.rootMidi ?? 60)));
+    const loadedPatternSteps = Math.max(1, Math.floor(Number(program?.playback?.patternSteps ?? (Number(program?.playback?.patternBeats ?? 4) * STEPS_PER_BEAT_SP))));
+    beatsEl.value = String(loadedPatternSteps);
+    pitchModeEl.value = String(program?.playback?.pitchMode || "chromatic");
+    gainEl.value = String(Number(program?.playback?.gain ?? 1));
+    if (program?.name) nameEl.value = String(program.name);
+
+    editor.zoomStart = 0;
+    editor.zoomEnd = 1;
+    drawWaveform();
+    setStatus(`Programme chargé: ${program?.name || "Sample Pattern"}`);
+  }
+
+  async function createSamplePattern() {
+    const name = String(nameEl?.value || "").trim();
+    if (!name) {
+      setStatus("Nom pattern requis.");
+      return;
+    }
+    if (!editor.samplePath) {
+      setStatus("Drop un sample dans le waveform avant validation.");
+      return;
+    }
+
+    const patternSteps = Math.max(1, Math.min(128, Math.floor(+beatsEl.value || 16)));
+    const beats = patternSteps / STEPS_PER_BEAT_SP;
+    const bars  = Math.max(0.25, beats / BEATS_PER_BAR_SP);
+    const rootMidi = Math.max(24, Math.min(96, Math.floor(+rootMidiEl.value || 60)));
+    const mixOut = Math.max(1, Math.floor(+mixOutEl.value || 1));
+
+    let samplePath = editor.samplePath;
+    let programPath = editor.selectedProgramPath || "";
+    if (global.samplePattern?.saveProgram) {
+      const saveRes = await global.samplePattern.saveProgram({
+        name,
+        samplePath,
+        startNorm: clamp01(+startEl.value || editor.posStart),
+        endNorm: clamp01(+endEl.value || editor.posEnd),
+        rootMidi,
+        pitchMode: pitchModeEl.value || "chromatic",
+        gain: Math.max(0, Math.min(1.6, +gainEl.value || 1)),
+        importMode: importModeEl?.value || "reference",
+      });
+      if (saveRes?.ok) {
+        samplePath = saveRes.resolvedSamplePath || samplePath;
+        programPath = saveRes.programPath || programPath;
+        editor.selectedProgramPath = programPath;
+      }
+    }
+
+    const params = {
+      samplePath,
+      startNorm: clamp01(+startEl.value || editor.posStart),
+      endNorm: clamp01(+endEl.value || editor.posEnd),
+      patternSteps,
+      patternBeats: patternSteps / STEPS_PER_BEAT_SP,
+      rootMidi,
+      pitchMode: pitchModeEl.value || "chromatic",
+      gain: Math.max(0, Math.min(1.6, +gainEl.value || 1)),
+      programPath,
+    };
+    if (params.endNorm <= params.startNorm) params.endNorm = Math.min(1, params.startNorm + 0.001);
+
+    const sampleChannel = {
+      id: gid("ch"),
+      name: "Sample Paterne",
+      preset: "Sample Paterne",
+      color: "#b28dff",
+      muted: false,
+      params,
+      mixOut,
+      notes: [{ id: gid("note"), step: 0, len: 1, midi: rootMidi, vel: 110, selected: false }],
+    };
+
+    const p = {
+      id: gid("pat"),
+      patternId: null,
+      name,
+      color: "#b28dff",
+      lenBars: bars,
+      kind: "sample_pattern",
+      type: "sample_pattern",
+      samplePatternConfig: Object.assign({}, params),
+      channels: [
+        {
+          id: gid("ch"),
+          name: "Sample Paterne",
+          preset: "Sample Paterne",
+          color: "#b28dff",
+          muted: false,
+          params,
+          mixOut,
+          notes: [{ id: gid("note"), step: 0, len: 1, midi: rootMidi, vel: 110, selected: false }],
+        },
+      ],
+      activeChannelId: null,
+    };
+    p.patternId = p.id;
+    p.activeChannelId = p.channels[0].id;
+
+    project.patterns.push(p);
+    project.activePatternId = p.id;
+    setStatus(`Pattern "${name}" créée (${patternSteps} quarts de temps) et ajoutée à la banque Patterns.`);
+
+    await refreshPrograms();
+
+    try { refreshUI(); } catch (_) {}
+    try { renderAll(); } catch (_) {}
+    try { renderPlaylist(); } catch (_) {}
+  }
+
+  startEl?.addEventListener("input", () => {
+    editor.posStart = clamp01(+startEl.value || 0);
+    if (editor.posStart >= editor.posEnd) editor.posEnd = Math.min(1, editor.posStart + 0.001);
+    endEl.value = String(editor.posEnd);
+    drawWaveform();
+  });
+
+  endEl?.addEventListener("input", () => {
+    editor.posEnd = clamp01(+endEl.value || 1);
+    if (editor.posEnd <= editor.posStart) editor.posStart = Math.max(0, editor.posEnd - 0.001);
+    startEl.value = String(editor.posStart);
+    drawWaveform();
+  });
+
+  saveBtn?.addEventListener("click", () => { createSamplePattern().catch((err) => setStatus(err?.message || "Erreur création pattern")); });
+  loadProgramBtn?.addEventListener("click", () => { loadProgramFromDisk().catch((err) => setStatus(err?.message || "Erreur chargement programme")); });
+
+  previewBtn?.addEventListener("pointerdown", async (event) => {
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  const stopPreviewFromPointer = () => stopPreviewLoop();
+  previewBtn?.addEventListener("pointerup", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointerleave", stopPreviewFromPointer);
+  previewBtn?.addEventListener("pointercancel", stopPreviewFromPointer);
+  previewBtn?.addEventListener("keydown", async (event) => {
+    if (event.repeat) return;
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    await startPreviewLoop();
+  });
+  previewBtn?.addEventListener("keyup", (event) => {
+    if (event.code !== "Space" && event.code !== "Enter") return;
+    event.preventDefault();
+    stopPreviewLoop();
+  });
+  global.addEventListener("blur", stopPreviewLoop);
+
+  refreshMixOut();
+  refreshPrograms();
+  installInteractions();
+  drawWaveform();
+})(window);

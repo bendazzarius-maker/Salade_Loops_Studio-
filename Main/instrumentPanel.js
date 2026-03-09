@@ -2,6 +2,54 @@
 /* Right panel instrument UI (per selected channel) */
 
 
+
+function _isDrumInstrumentChannel(ch){
+  const p = String((ch && ch.preset) || "").toLowerCase();
+  return p.includes("drum");
+}
+
+function _renderDrumMachineLauncher(host, ch){
+  const wrap = document.createElement('div');
+  wrap.className = 'panel-section';
+
+  const title = document.createElement('div');
+  title.className = 'panel-section-title';
+  title.textContent = 'FM Drum Mapping';
+  wrap.appendChild(title);
+
+  const hint = document.createElement('div');
+  hint.className = 'small';
+  hint.style.marginBottom = '10px';
+  hint.textContent = 'Édition détaillée du kit, mapping piano roll, presets FM et canaux de sortie.';
+  wrap.appendChild(hint);
+
+  const row = document.createElement('div');
+  row.className = 'instPresetRow';
+
+  const openBtn = document.createElement('button');
+  openBtn.className = 'btn';
+  const opened = !!window.DrumMachineHost?.isOpen?.();
+  openBtn.textContent = opened ? '🪟 Masquer FM Drum Kit Designer' : '🛠 Ouvrir FM Drum Kit Designer';
+  openBtn.addEventListener('click', ()=>{
+    try{ window.DrumMachineHost?.toggleForActiveChannel?.(); }catch(err){ console.warn('[drums] toggle host failed', err); }
+    try{ if (typeof renderInstrumentPanel === 'function') renderInstrumentPanel(); }catch(_){}
+  });
+  row.appendChild(openBtn);
+  wrap.appendChild(row);
+
+  const st = (ch && ch.params && ch.params.__drumMachineUiState) ? ch.params.__drumMachineUiState : null;
+  const meta = document.createElement('div');
+  meta.className = 'small';
+  meta.style.marginTop = '8px';
+  const rows = Array.isArray(st?.project?.mappingRows) ? st.project.mappingRows.length : 0;
+  const voices = st?.project?.voices ? Object.keys(st.project.voices).length : 0;
+  const kitId = String(st?.project?.kitId || 'default');
+  meta.textContent = rows || voices ? `Kit: ${kitId} • Rows: ${rows} • Voices: ${voices}` : 'Aucun snapshot sauvegardé pour ce channel.';
+  wrap.appendChild(meta);
+
+  host.appendChild(wrap);
+}
+
 function _renderPresetManager(host, def, ch){
   const instId = (def && (def.id || def.name)) ? (def.id || def.name) : (ch.preset || "Instrument");
   const wrap = document.createElement("div");
@@ -212,6 +260,11 @@ function renderInstrumentPanel(){
   row.appendChild(sel);
   routeWrap.appendChild(row);
   instrumentPanel.appendChild(routeWrap);
+
+  if(_isDrumInstrumentChannel(ch)){
+    try{ _renderDrumMachineLauncher(instrumentPanel, ch); }catch(_){ }
+    try{ window.DrumMachineHost?.syncActiveChannelToUI?.(); }catch(_){ }
+  }
 
   // Preset manager (global, cross-pattern)
   const presetDiv = document.createElement("div");

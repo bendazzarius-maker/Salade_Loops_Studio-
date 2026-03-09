@@ -18,6 +18,57 @@ const pb = {
   forceSongFromSelection: false
 };
 
+
+function _setTransportUiPlaying(isPlaying){
+  const playingNow = !!isPlaying;
+  state.playing = playingNow;
+  try{ if (playBtn) playBtn.textContent = playingNow ? "⏸ Pause" : "▶ Play"; }catch(_){ }
+}
+
+function _syncUiFromTransportState(ts){
+  const s = ts || window.audioBackend?.backends?.juce?.transportState || null;
+  if(!s) return;
+
+  const ppq = Math.max(0, Number(s.ppq || 0));
+  const absStep = Math.floor(ppq * (state.stepsPerBar / 4));
+  const rangeStart = Math.max(0, Math.floor(pb.rangeStartStep || 0));
+  const rangeEnd = Math.max(rangeStart + 1, Math.floor(pb.rangeEndStep || (pb.endStep || 1)));
+  const rangeLen = Math.max(1, rangeEnd - rangeStart);
+  const songStep = Math.min(rangeEnd - 1, Math.max(rangeStart, absStep));
+  const relStep = Math.max(0, songStep - rangeStart);
+
+  pb.uiAbsStep = absStep;
+  pb.uiSongStep = songStep;
+  pb.uiStep = songStep;
+
+  try{
+    const p = activePattern();
+    const patSteps = Math.max(1, Math.round(patternLengthBars(p) * state.stepsPerBar));
+    pb.uiRollStep = Math.max(0, songStep - rangeStart) % patSteps;
+  }catch(_){
+    pb.uiRollStep = state.loop ? (relStep % rangeLen) : relStep;
+  }
+
+  _setTransportUiPlaying(!!s.playing);
+}
+
+try{
+  if(!window.__slsTransportStateBoundV2){
+    window.__slsTransportStateBoundV2 = true;
+    window.addEventListener("sls:transport-state", (ev)=>{
+      try{ _syncUiFromTransportState(ev?.detail || null); }catch(_){ }
+    });
+  }
+}catch(_){ }
+
+// Sample Pattern convention (audio steps): 16 steps = 1 beat
+const STEPS_PER_BEAT_SP = 16;
+
+function samplePatternStepsToSeconds(steps, bpm) {
+  return (60 / Math.max(20, Number(bpm || 120))) * (Number(steps || 0) / STEPS_PER_BEAT_SP);
+}
+
+
 function _selectedRangeSteps(){
   try{
     const pl = (typeof getTimeRulerSelectionSteps === "function") ? getTimeRulerSelectionSteps("playlist") : null;
@@ -461,7 +512,320 @@ function _recalcEndStepForMode(){
 }
 
 
+
+
+function _isJuceTransportScheduling(){
+  return !!(window.audioBackend?.getActiveBackendName?.() === "juce" && window.audioBackend?.backends?.juce);
+}
+
+function _ppqPerStep(){
+  return 4 / Math.max(1, Number(state.stepsPerBar || 16));
+}
+
+function _collectEngineEventsForRange(startStep, endStep){
+  const events = [];
+  const ppqPerStep = _ppqPerStep();
+  const start = Math.max(0, Math.floor(startStep || 0));
+  const end = Math.max(start + 1, Math.floor(endStep || start + 1));
+  const isPatternMode = !pb.forceSongFromSelection && String(state.mode || "song") === "pattern";
+
+  const emitChannelNoteEvents = ({ pat, ch, songStep, localStep, trackHint }) => {
+    if (!ch || ch.muted) return;
+    const channelPreset = String(ch.preset || "");
+    const effectiveParams = resolveSamplePatternParams(pat, ch) || ch.params || {};
+    const mixCh = Number(ch?.mixOut || 1);
+    const patSteps = Math.max(1, Math.round(patternLengthBars(pat) * state.stepsPerBar));
+
+    for (const n of (ch.notes || [])) {
+      if (Number(n.step || 0) !== localStep) continue;
+      const note = Number(n.midi || 60);
+      const vel = Number((n.vel || 100) / 127);
+      const atPpq = songStep * ppqPerStep;
+      const durSteps = Math.max(1, Number(n.len || 1));
+      const durPpq = durSteps * ppqPerStep;
+
+      if (channelPreset === "Sample Paterne") {
+        const samplePath = effectiveParams.samplePath || effectiveParams.path || effectiveParams.file || (effectiveParams.sample && effectiveParams.sample.path) || effectiveParams.url;
+        if (!samplePath) continue;
+        const resolvedPatternSteps = Math.max(1, Math.floor(Number(effectiveParams.patternSteps || (Number(effectiveParams.patternBeats || 0) * 16) || patSteps || 16) || 0));
+        events.push({
+          atPpq,
+          type: "sampler.trigger",
+          mixCh,
+          samplePath,
+          startNorm: Number(effectiveParams.startNorm ?? 0),
+          endNorm: Number(effectiveParams.endNorm ?? 1),
+          rootMidi: Number(effectiveParams.rootMidi ?? 60),
+          note,
+          velocity: vel,
+          gain: Number(effectiveParams.gain ?? 1),
+          pan: Number(effectiveParams.pan ?? 0),
+          mode: String((effectiveParams.pitchMode === "fixed") ? "vinyl" : (effectiveParams.pitchMode === "stretch") ? "fit_duration" : "fit_duration_vinyl"),
+          patternSteps: resolvedPatternSteps,
+          patternBeats: resolvedPatternSteps / STEPS_PER_BEAT_SP,
+          bpm: Number(state.bpm || 120),
+        });
+        continue;
+      }
+
+      if (channelPreset.toLowerCase().includes("touski")) {
+        const instId = String(ch.id || `touski-${trackHint || 'track'}`);
+        const programPath = effectiveParams.programPath || effectiveParams.path || "";
+        const samples = Array.isArray(effectiveParams.samples)
+          ? effectiveParams.samples
+          : (effectiveParams.samplePath ? [{ note: Number(effectiveParams.rootMidi ?? 60), samplePath: String(effectiveParams.samplePath) }] : []);
+        const touskiParams = {
+          posAction: Number.isFinite(+effectiveParams.posAction) ? +effectiveParams.posAction : undefined,
+          posLoopStart: Number.isFinite(+effectiveParams.posLoopStart) ? +effectiveParams.posLoopStart : undefined,
+          posLoopEnd: Number.isFinite(+effectiveParams.posLoopEnd) ? +effectiveParams.posLoopEnd : undefined,
+          posRelease: Number.isFinite(+effectiveParams.posRelease) ? +effectiveParams.posRelease : undefined,
+          keyActionPct: Number.isFinite(+effectiveParams.keyActionPct) ? +effectiveParams.keyActionPct : undefined,
+          loopStartPct: Number.isFinite(+effectiveParams.loopStartPct) ? +effectiveParams.loopStartPct : undefined,
+          loopEndPct: Number.isFinite(+effectiveParams.loopEndPct) ? +effectiveParams.loopEndPct : undefined,
+          releasePct: Number.isFinite(+effectiveParams.releasePct) ? +effectiveParams.releasePct : undefined,
+        };
+        events.push({ atPpq, type: "touski.note.on", instId, mixCh, note, vel, programPath, samples, touskiParams });
+        events.push({ atPpq: atPpq + durPpq, type: "touski.note.off", instId, mixCh, note, vel: 0 });
+        continue;
+      }
+
+      const instId = String(ch.id || `inst-${trackHint || 'track'}`);
+      events.push({ atPpq, type: "note.on", instId, mixCh, note, vel, durPpq });
+      events.push({ atPpq: atPpq + durPpq, type: "note.off", instId, mixCh, note, vel: 0, durPpq: 0 });
+    }
+  };
+
+  if (isPatternMode) {
+    const pat = activePattern();
+    if (!pat || !Array.isArray(pat.channels)) return events;
+    const patSteps = Math.max(1, Math.round(patternLengthBars(pat) * state.stepsPerBar));
+    for (let songStep = start; songStep < end; songStep += 1) {
+      const local = (songStep - start) % patSteps;
+      for (const ch of pat.channels) emitChannelNoteEvents({ pat, ch, songStep, localStep: local, trackHint: pat.id || 'pattern' });
+    }
+    events.sort((a, b) => Number(a.atPpq || 0) - Number(b.atPpq || 0));
+    return events;
+  }
+
+  for (let songStep = start; songStep < end; songStep += 1) {
+    for (const tr of (project.playlist?.tracks || [])) {
+      for (const clip of (tr.clips || [])) {
+        const pat = project.patterns.find((x) => x.id === clip.patternId);
+        if (!pat || !Array.isArray(pat.channels)) continue;
+        const clipStartStep = Number(clip.startBar || 0) * state.stepsPerBar;
+        const clipEndStep = (Number(clip.startBar || 0) + Number(clip.lenBars || 1)) * state.stepsPerBar;
+        if (songStep < clipStartStep || songStep >= clipEndStep) continue;
+        const patSteps = Math.max(1, Math.round(patternLengthBars(pat) * state.stepsPerBar));
+        const local = (songStep - clipStartStep) % patSteps;
+        for (const ch of pat.channels) emitChannelNoteEvents({ pat, ch, songStep, localStep: local, trackHint: tr.id || 'track' });
+      }
+    }
+  }
+
+  events.sort((a, b) => Number(a.atPpq || 0) - Number(b.atPpq || 0));
+  return events;
+}
+
+async function _pushEngineScheduleRange(juce, startStep, endStep){
+  const events = _collectEngineEventsForRange(startStep, endStep);
+  console.debug("[SLS][schedule.window]", { startStep, endStep, events: events.length });
+  if (!events.length) return;
+
+  await _preloadEngineAssets(events, juce);
+
+  const chunks = 128;
+  for (let i = 0; i < events.length; i += chunks) {
+    const batch = events.slice(i, i + chunks);
+    const res = await juce._request("schedule.push", { events: batch });
+    console.debug("[SLS][schedule.push]", { batch: batch.length, ok: !!res?.ok });
+  }
+}
+
+
+async function _preloadEngineAssets(events, juce){
+  const samplePathToId = new Map();
+  const touskiLoads = new Set();
+
+  for (const ev of events) {
+    if (ev.type === "sampler.trigger" && ev.samplePath) {
+      const pth = String(ev.samplePath);
+      if (!samplePathToId.has(pth)) {
+        const sampleId = await juce.ensureSampleLoaded(pth);
+        samplePathToId.set(pth, sampleId);
+      }
+      ev.sampleId = samplePathToId.get(pth);
+      delete ev.samplePath;
+    }
+
+    if (ev.type === "touski.note.on") {
+      const pth = String(ev.programPath || "").trim();
+      const sam = Array.isArray(ev.samples) ? ev.samples : [];
+      const tp = (ev.touskiParams && typeof ev.touskiParams === "object") ? ev.touskiParams : {};
+      const sig = JSON.stringify(tp);
+      const key = `${ev.instId}::${pth}::${sam.length}::${sig}`;
+      if (!touskiLoads.has(key)) {
+        const res = await juce.touskiProgramLoad({ instId: ev.instId, programPath: pth, samples: sam });
+        if (!res?.ok) console.warn("[SLS][touski.preload.fail]", { instId: ev.instId, programPath: pth, samples: sam.length, res });
+        const pset = await juce._request("touski.param.set", { instId: ev.instId, params: tp });
+        if (!pset?.ok) console.warn("[SLS][touski.param.set.fail]", { instId: ev.instId, params: tp, pset });
+        touskiLoads.add(key);
+      }
+      delete ev.programPath;
+      if (!sam.length) delete ev.samples;
+      delete ev.touskiParams;
+    }
+  }
+}
+
+function buildProjectSnapshotForEngine(){
+  const ppqResolution = 960;
+  const trackMap = new Map();
+  for (const pat of (project.patterns || [])) {
+    if (!Array.isArray(pat.channels)) continue;
+    for (const ch of pat.channels) {
+      const trackId = String(ch.id || gid("t"));
+      if (!trackMap.has(trackId)) {
+        trackMap.set(trackId, {
+          trackId,
+          name: String(ch.name || `Channel ${trackId}`),
+          instrument: {
+            type: "internal",
+            preset: String(ch.preset || "default"),
+            params: (ch && typeof ch.params === "object" && ch.params) ? JSON.parse(JSON.stringify(ch.params)) : {}
+          }
+        });
+      }
+    }
+  }
+  const tracks = Array.from(trackMap.values());
+  (project.playlist?.tracks || []).forEach((tr) => {
+    tracks.push({
+    trackId: `playlist:${String(tr.id || gid("t"))}`,
+    name: String(tr.name || "Track"),
+    instrument: { type: "internal", preset: "default" }
+  });
+  });
+  tracks.push({ trackId: "master", name: "Master" });
+
+  const patterns = [];
+  for (const pat of (project.patterns || [])) {
+    if (!Array.isArray(pat.channels)) continue;
+    for (const ch of pat.channels) {
+      const notes = (ch.notes || []).map((n) => ({
+        startPpq: Number(n.step || 0) * (ppqResolution / 4),
+        lenPpq: Math.max(1, Number(n.len || 1)) * (ppqResolution / 4),
+        note: Number(n.midi || 60),
+        vel: Number((n.vel || 100) / 127),
+        ch: 0
+      }));
+      patterns.push({ patternId: `${pat.id}:${ch.id}`, trackId: String(ch.id), notes });
+    }
+  }
+
+  const arrangement = [];
+  for (const tr of (project.playlist?.tracks || [])) {
+    for (const clip of (tr.clips || [])) {
+      const pat = project.patterns.find((p) => p.id === clip.patternId);
+      if (!pat || !Array.isArray(pat.channels)) continue;
+      for (const ch of pat.channels) {
+        arrangement.push({
+          clipId: `${clip.id || gid("c")}:${ch.id}`,
+          patternId: `${pat.id}:${ch.id}`,
+          startPpq: Number(clip.startBar || 0) * 4 * ppqResolution,
+          lenPpq: Math.max(1, Number(clip.lenBars || 1)) * 4 * ppqResolution,
+          loop: false
+        });
+      }
+    }
+  }
+
+  return {
+    playbackMode: String(state.mode || "song"),
+    activePatternId: String(activePattern()?.id || ""),
+    projectId: "main-project",
+    tempo: { bpm: state.bpm },
+    ppqResolution,
+    tracks,
+    patterns,
+    arrangement
+  };
+}
+
+function audioTriggerNote(payload){
+  if (window.audioBackend) {
+    window.audioBackend.triggerNote(payload);
+    return;
+  }
+  if (typeof payload.trigger === "function") payload.trigger();
+}
+
+function audioTriggerSample(payload){
+  if (window.audioBackend && typeof window.audioBackend.triggerSample === "function") {
+    window.audioBackend.triggerSample(payload);
+    return;
+  }
+  if (typeof payload.trigger === "function") payload.trigger();
+}
+
+function scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps }) {
+  if (presetName === "Sample Paterne") {
+    const p = effectiveParams || ch.params || {};
+    const samplePath = p.samplePath || p.path || p.file || (p.sample && p.sample.path) || p.url;
+
+    if (!samplePath) {
+      console.warn("[Sample Paterne] Missing samplePath", { channelId: ch && ch.id, presetName, p, effectiveParams });
+      return;
+    }
+
+    const resolvedPatternSteps = Math.max(1, Math.floor(Number(p.patternSteps || (Number(p.patternBeats || 0) * 16) || patternSteps || 16) || 0));
+    const stretchDurationSec = samplePatternStepsToSeconds(resolvedPatternSteps, state.bpm);
+
+    audioTriggerSample({
+      trigger: () => inst.trigger(t, n.midi, vv, stretchDurationSec),
+      trackId: String((ch && ch.id) || "sample-pattern"),
+      samplePath,
+      startNorm: p.startNorm,
+      endNorm: p.endNorm,
+      rootMidi: p.rootMidi,
+      pitchMode: p.pitchMode,
+      gain: p.gain,
+      note: n.midi,
+      velocity: vv,
+      durationSec: stretchDurationSec,
+      patternSteps: resolvedPatternSteps,
+      patternBeats: resolvedPatternSteps / STEPS_PER_BEAT_SP,
+      bpm: Number(state.bpm || 120),
+      mixCh: Number(ch?.mixOut || 1),
+    });
+    return;
+  }
+
+  // Default route for non-sample instruments
+  audioTriggerNote({
+    trigger: () => inst.trigger(t, n.midi, vv, dur),
+    trackId: String((ch && ch.id) || "track"),
+    instId: String(inst?.instId || `inst-${String(ch?.id || "track")}`),
+    instType: String(inst?.type || presetName || "piano"),
+    params: (effectiveParams || ch?.params || {}),
+    mixCh: Number(ch?.mixOut || 1),
+    note: n.midi,
+    velocity: vv,
+    durationSec: dur,
+  });
+}
+
 function secPerStep() { return (60 / state.bpm) / 4; }
+
+function resolveSamplePatternParams(pattern, channel){
+  const chParams = (channel && typeof channel.params === "object" && channel.params) ? channel.params : null;
+  if (chParams && chParams.samplePath) return chParams;
+  const patCfg = (pattern && typeof pattern.samplePatternConfig === "object" && pattern.samplePatternConfig) ? pattern.samplePatternConfig : null;
+  if (patCfg && patCfg.samplePath) {
+    channel.params = Object.assign({}, patCfg, chParams || {});
+    return channel.params;
+  }
+  return chParams;
+}
 
 function playlistEndBar() {
   let end = 1;
@@ -476,14 +840,16 @@ function playlistEndBar() {
 function scheduleStep_PATTERN(step, t) {
   const p = activePattern(); if (!p) return;
   const patBars = patternLengthBars(p);
-  const patSteps = patBars * state.stepsPerBar;
+  const patSteps = Math.max(1, Math.round(patBars * state.stepsPerBar));
   const local = step % patSteps;
 
   for (const ch of p.channels) {
     if (ch.muted) continue;
-    const presetName = presetOverride.value || ch.preset;
+    const channelPreset = String(ch.preset || "");
+    const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
     const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
-    const inst = presets.get(presetName, ch.params, outBus);
+    const effectiveParams = resolveSamplePatternParams(p, ch);
+    const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
     for (const n of ch.notes) {
       if (n.step === local) {
@@ -498,13 +864,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  inst.trigger(t, n.midi, vv, dur);
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps: patSteps });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  inst.trigger(t, n.midi, vv, dur);
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps: patSteps });
 }}
     }
   }
@@ -522,7 +888,9 @@ function scheduleStep_SONG(step, t) {
       const clipEndStep = (clip.startBar + clip.lenBars) * state.stepsPerBar;
       if (stepInSong < clipStartStep || stepInSong >= clipEndStep) continue;
 
-      const local = stepInSong - clipStartStep; // play once
+      const patBars = patternLengthBars(pat);
+      const patSteps = Math.max(1, Math.round(patBars * state.stepsPerBar));
+      const local = (stepInSong - clipStartStep) % patSteps;
 
 
       // Skip non-notes patterns (e.g., LFO patterns have no channels)
@@ -530,9 +898,11 @@ function scheduleStep_SONG(step, t) {
 
       for (const ch of pat.channels) {
         if (ch.muted) continue;
-        const presetName = presetOverride.value || ch.preset;
+        const channelPreset = String(ch.preset || "");
+        const presetName = (channelPreset === "Sample Paterne") ? channelPreset : (presetOverride.value || channelPreset);
         const outBus = (ae.getMixerInput ? ae.getMixerInput(ch.mixOut || 1) : ae.master);
-        const inst = presets.get(presetName, ch.params, outBus);
+        const effectiveParams = resolveSamplePatternParams(pat, ch);
+        const inst = presets.get(presetName, effectiveParams || ch.params, outBus);
 
         for (const n of ch.notes) {
           if (n.step === local) {
@@ -547,13 +917,13 @@ if (np && typeof ch.params === "object" && ch.params) {
     prev[k] = ch.params[k];
     ch.params[k] = np[k];
   }
-  inst.trigger(t, n.midi, vv, dur);
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps: patSteps });
   for (const k in np) {
     if (prev[k] === undefined) delete ch.params[k];
     else ch.params[k] = prev[k];
   }
 } else {
-  inst.trigger(t, n.midi, vv, dur);
+  scheduleInstrumentTrigger({ presetName, inst, t, n, vv, dur, ch, effectiveParams, patternSteps: patSteps });
 }// Glow (safe)
             try {
               if (project.activePatternId === pat.id) {
@@ -591,7 +961,7 @@ function tick() {
   const now = ctx.currentTime;
   const sp = secPerStep();
 
-  const safetyLead = 0.06;         // 60ms anti-stall UI
+  const safetyLead = 0.0;         // engine-authoritative start, no artificial offset
   const minT = now + safetyLead;
 
   // Jump nextStep to first step scheduled >= minT
@@ -619,8 +989,10 @@ function tick() {
       ? (pb.rangeStartStep + (pb.nextStep % rangeLen))
       : (pb.rangeStartStep + pb.nextStep);
 
-    if (state.mode === "pattern") scheduleStep_PATTERN(stepForSeq, t);
-    else scheduleStep_SONG(stepForSeq, t);
+    if (!_isJuceTransportScheduling()) {
+      if (state.mode === "pattern") scheduleStep_PATTERN(stepForSeq, t);
+      else scheduleStep_SONG(stepForSeq, t);
+    }
 
     pb.nextStep++;
 
@@ -628,14 +1000,7 @@ function tick() {
   }
 
   // UI readhead
-  const elapsed = Math.max(0, now - pb.startT);
-  const absStep = Math.floor(elapsed / sp);
-  const rangeLen = Math.max(1, pb.rangeEndStep - pb.rangeStartStep);
-  const relUiStep = (state.loop && pb.endStep > 0) ? (absStep % pb.endStep) : absStep;
-  const uiStep = pb.rangeStartStep + relUiStep;
-
-  pb.uiAbsStep = absStep;
-  pb.uiSongStep = uiStep;
+  _syncUiFromTransportState();
 
   __lfoVisualRT.fxByKey.clear();
 
@@ -650,21 +1015,42 @@ function tick() {
     const p = activePattern();
     const bars = p ? patternLengthBars(p) : 1;
     const patSteps = Math.max(1, bars * state.stepsPerBar);
-    pb.uiRollStep = (pb.rangeStartStep + absStep) % patSteps;
+    pb.uiRollStep = Math.max(0, pb.uiSongStep) % patSteps;
   } catch (_) {
-    pb.uiRollStep = uiStep;
+    pb.uiRollStep = pb.uiSongStep;
   }
 
-  pb.uiStep = uiStep;
+  pb.uiStep = pb.uiSongStep;
 }
 
+
+function _playlistTimeOriginX(){
+  try{
+    const el = document.getElementById("playlistTrackColumn") || document.querySelector(".playlist-track-column") || document.querySelector("#playlistLeftCol") || document.querySelector(".playlist-left");
+    if (el) return Math.max(0, Math.round(el.getBoundingClientRect().width || el.clientWidth || 0));
+  }catch(_){ }
+  return Math.max(0, cssNum("--track-col"));
+}
+
+function _pianoTimeOriginX(){
+  try{
+    if (typeof pianoKeys !== "undefined" && pianoKeys) return Math.max(0, Math.round(pianoKeys.getBoundingClientRect().width || pianoKeys.clientWidth || 0));
+  }catch(_){ }
+  return 0;
+}
+
+function _enginePpq(){
+  try{
+    return Number(window.audioBackend?.backends?.juce?.transportState?.ppq || 0);
+  }catch(_){ return 0; }
+}
 function _autoScrollFollow() {
   if (!state.playing || state.autoScroll === false) return;
 
   // Piano Roll follow
   try {
     const stepW = cssNum("--roll-step-w");
-    const x = (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * stepW;
+    const x = _pianoTimeOriginX() + (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * stepW;
     const vw = gridScroll.clientWidth;
     const marginL = vw * 0.30, marginR = vw * 0.70;
     const left = gridScroll.scrollLeft;
@@ -677,7 +1063,7 @@ function _autoScrollFollow() {
   // Playlist follow
   try {
     const stepW2 = cssNum("--plist-step-w");
-    const trackCol2 = cssNum("--track-col");
+    const trackCol2 = _playlistTimeOriginX();
     const x2 = trackCol2 + (pb.uiSongStep != null ? pb.uiSongStep : pb.uiStep) * stepW2;
     const vw2 = tracks.clientWidth;
     const marginL2 = vw2 * 0.30, marginR2 = vw2 * 0.70;
@@ -693,13 +1079,14 @@ let _uiRAF = 0;
 function _uiLoop() {
   if (state.playing) {
     try {
-      const xRoll = (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * cssNum("--roll-step-w");
-      playhead.style.left = `${xRoll}px`;
+      const rollOrigin = _pianoTimeOriginX();
+      const xRoll = rollOrigin + (pb.uiRollStep != null ? pb.uiRollStep : pb.uiStep) * cssNum("--roll-step-w");
+      playhead.style.left = `${Math.max(rollOrigin, xRoll)}px`;
 
-      const trackCol = cssNum("--track-col");
+      const trackCol = _playlistTimeOriginX();
       const xPl = trackCol + (pb.uiSongStep != null ? pb.uiSongStep : pb.uiStep) * cssNum("--plist-step-w");
       if (typeof plistPlayhead !== "undefined" && plistPlayhead) {
-        plistPlayhead.style.left = `${xPl}px`;
+        plistPlayhead.style.left = `${Math.max(trackCol, xPl)}px`;
         plistPlayhead.style.height = `${tracks.scrollHeight}px`;
       }
 
@@ -709,17 +1096,24 @@ function _uiLoop() {
   _uiRAF = requestAnimationFrame(_uiLoop);
 }
 
+const SCHEDULER_MIN_LOOKAHEAD = 1.5;
+const ENGINE_WINDOW_PAD_STEPS = 2;
+const ENGINE_WINDOW_MIN_PPQ = 4;
+
 async function start() {
   await ae.ensure();
+  if (window.audioBackend) {
+    await window.audioBackend.setBpm(state.bpm);
+  }
 
   // CRITICAL: avoid double scheduler
   if (pb.timer) { clearInterval(pb.timer); pb.timer = null; }
 
-  state.playing = true;
-  playBtn.textContent = "⏸ Pause";
+  _setTransportUiPlaying(true);
 
-  pb.startT = ae.ctx.currentTime + 0.06;   // match safetyLead
+  pb.startT = ae.ctx.currentTime;   // strict start at pattern/song origin
   pb.nextStep = 0;
+  pb.lookahead = Math.max(Number(pb.lookahead || 0), SCHEDULER_MIN_LOOKAHEAD);
 
   const selected = _selectedRangeSteps();
   pb.forceSongFromSelection = !!selected;
@@ -727,11 +1121,12 @@ async function start() {
     pb.rangeStartStep = Math.max(0, Math.floor(selected.startStep||0));
     pb.rangeEndStep = Math.max(pb.rangeStartStep+1, Math.floor(selected.endStep||0));
     try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
-  }else{
-    // Smart play: no selection => full song playback
-    try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
+  }else if(state.mode === "song") {
     pb.rangeStartStep = 0;
     pb.rangeEndStep = playlistEndBar() * state.stepsPerBar;
+  } else {
+    pb.rangeStartStep = 0;
+    pb.rangeEndStep = Math.max(1, (activePattern() ? patternLengthBars(activePattern()) : 1) * state.stepsPerBar);
   }
 
   if (state.mode === "pattern") {
@@ -748,20 +1143,59 @@ async function start() {
 
   pb.timer = setInterval(tick, pb.intervalMs);
 
+  if (window.audioBackend?.backends?.juce) {
+    const juce = window.audioBackend.backends.juce;
+    const snapshot = buildProjectSnapshotForEngine();
+    await juce._request("project.sync", snapshot);
+    await juce._request("schedule.clear", {});
+
+    const startStep = Math.max(0, Math.floor(pb.rangeStartStep || 0));
+    const rawEndStep = Math.max(startStep + 1, Math.floor(pb.rangeEndStep || (pb.endStep || 64)));
+    const engineStartStep = startStep;
+    const engineEndStep = Math.max(engineStartStep + 1, rawEndStep + Math.max(1, ENGINE_WINDOW_PAD_STEPS));
+    await _pushEngineScheduleRange(juce, engineStartStep, engineEndStep);
+
+    const ppqPerStep = _ppqPerStep();
+    const fromPpq = Math.max(0, engineStartStep * ppqPerStep);
+    const toPpq = Math.max(fromPpq + ENGINE_WINDOW_MIN_PPQ, engineEndStep * ppqPerStep);
+    await juce._request("schedule.setWindow", { fromPpq, toPpq });
+    try{
+      if (typeof juce.setTransportRange === "function") {
+        await juce.setTransportRange({
+          mode: pb.forceSongFromSelection ? "selection" : String(state.mode || "song"),
+          fromPpq,
+          toPpq,
+          loop: !!state.loop,
+          stopAtEnd: !state.loop,
+          returnToStartOnStop: !state.loop
+        });
+      }
+    }catch(err){
+      console.warn("[transport.range.set] failed", err);
+    }
+    await juce._request("transport.seek", { ppq: fromPpq });
+    _syncUiFromTransportState({ ...(window.audioBackend?.backends?.juce?.transportState || {}), ppq: fromPpq, playing: true });
+
+    // prewarm guardrail: avoid first-block compression on first play
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    await window.audioBackend.play(() => snapshot);
+  }
+
   if (!_uiRAF) _uiRAF = requestAnimationFrame(_uiLoop);
 }
 
-function pause() {
-  state.playing = false;
-  playBtn.textContent = "▶ Play";
+async function pause() {
+  _setTransportUiPlaying(false);
   clearInterval(pb.timer); pb.timer = null;
+  if (window.audioBackend) await window.audioBackend.stop();
   try{ __lfoVisualRT.fxByKey.clear(); __lfoVisualPublish(); }catch(_){ }
 }
 
-function stop() {
-  pause();
-  try { playhead.style.left = "0px"; } catch (_) {}
-  try { if (plistPlayhead) plistPlayhead.style.left = "0px"; } catch (_) {}
+async function stop() {
+  await pause();
+  pb.uiAbsStep = 0; pb.uiSongStep = 0; pb.uiRollStep = 0; pb.uiStep = 0;
+  try { const k = _pianoTimeOriginX(); playhead.style.left = `${k}px`; } catch (_) {}
+  try { if (plistPlayhead) { const x = _playlistTimeOriginX(); plistPlayhead.style.left = `${x}px`; } } catch (_) {}
 }
 
 // Make sure wiring.js can call these even if scripts are modules
