@@ -181,6 +181,12 @@
         return;
       }
       if (msg.op === "meter.level") return;
+      if (msg.op === "ipc.pong") {
+        try {
+          window.dispatchEvent(new CustomEvent("sls:ipc-pong", { detail: msg.data || {} }));
+        } catch (_) {}
+        return;
+      }
       console.warn("[JUCE][UNKNOWN EVT OP]", msg.op, msg);
     }
 

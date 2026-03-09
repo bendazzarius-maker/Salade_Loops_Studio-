@@ -6,6 +6,9 @@ class AudioEngine{
     this._timer = null;
     this._meterByCh = new Map();
     this._backendUnsub = null;
+    this._mixerFlushTimer = null;
+    this._pendingMixerModel = null;
+    this._lastMixerSnapshot = null;
   }
 
   async ensure(){
@@ -32,45 +35,121 @@ class AudioEngine{
     await window.audioBackend?.backends?.juce?._request?.("mixer.init", { channels: 16 }).catch(()=>{});
   }
 
-  async applyMixerModel(model){
+  _requestNoThrow(op, data){
+    return window.audioBackend.backends.juce._request(op, data).catch(()=>{});
+  }
+
+  _normalizeFxChain(fxList = []){
+    return fxList.map((fx, idx) => ({
+      id: String(fx.id || `${fx.type||"fx"}-${idx}`),
+      type: String(fx.type || "eq3"),
+      enabled: fx.enabled !== false,
+      params: fx.params || {},
+      source: fx,
+      idx,
+    }));
+  }
+
+  _xAssignToNumber(xAssign){
+    // Engine enum: 0=A, 1=B, 2=OFF
+    if (xAssign === "A") return 0;
+    if (xAssign === "B") return 1;
+    return 2;
+  }
+
+  _flushMixerModel(){
+    const model = this._pendingMixerModel;
+    this._pendingMixerModel = null;
+    this._mixerFlushTimer = null;
     if (!window.audioBackend?.backends?.juce || !model) return;
-    const req = (op, data) => window.audioBackend.backends.juce._request(op, data).catch(()=>{});
-    const m = model.master || {};
+
+    const req = (op, data) => this._requestNoThrow(op, data);
     const mixerSpec = window.JuceInstructionLibrary?.buildMixerSpec?.(model) || null;
-    req("mixer.master.set", { gain: Number(m.gain ?? 0.85), pan: Number(m.pan ?? 0), cross: Number(m.cross ?? 0.5), eqLow: Number(m.eqLow ?? 0), eqMid: Number(m.eqMid ?? 0), eqHigh: Number(m.eqHigh ?? 0), limiterEnabled: true, juceSpec: mixerSpec });
+    const prev = this._lastMixerSnapshot;
+
+    const m = model.master || {};
+    const master = {
+      gain: Number(m.gain ?? 0.85), pan: Number(m.pan ?? 0), cross: Number(m.cross ?? 0.5),
+      eqLow: Number(m.eqLow ?? 0), eqMid: Number(m.eqMid ?? 0), eqHigh: Number(m.eqHigh ?? 0),
+    };
+    if (!prev || JSON.stringify(prev.master) !== JSON.stringify(master)) {
+      if (!prev) {
+        req("mixer.master.set", { ...master, limiterEnabled: true, juceSpec: mixerSpec });
+      } else {
+        Object.entries(master).forEach(([param, value]) => {
+          if (prev.master?.[param] !== value) req("mixer.param.set", { scope: "master", param, value });
+        });
+      }
+    }
 
     const channels = Array.isArray(model.channels) ? model.channels : [];
+    const nextChannels = [];
     channels.forEach((ch, i) => {
-      req("mixer.channel.set", {
-        ch: i,
-        gain: Number(ch.gain ?? 0.85),
-        pan: Number(ch.pan ?? 0),
-        mute: !!ch.mute,
-        solo: !!ch.solo,
-        eqLow: Number(ch.eqLow ?? 0),
-        eqMid: Number(ch.eqMid ?? 0),
-        eqHigh: Number(ch.eqHigh ?? 0),
+      const normalized = {
+        gain: Number(ch.gain ?? 0.85), pan: Number(ch.pan ?? 0), mute: !!ch.mute, solo: !!ch.solo,
+        eqLow: Number(ch.eqLow ?? 0), eqMid: Number(ch.eqMid ?? 0), eqHigh: Number(ch.eqHigh ?? 0),
         xAssign: ch.xAssign ?? "OFF",
-        juceSpec: mixerSpec,
-      });
-      const fxChain = Array.isArray(ch.fx) ? ch.fx : [];
-      req("fx.chain.set", {
-        target: { scope: "channel", ch: i },
-        chain: fxChain.map((fx, idx) => ({ id: String(fx.id || `${fx.type||'fx'}-${idx}`), type: String(fx.type||"eq3"), enabled: fx.enabled !== false }))
-      });
-      fxChain.forEach((fx, idx) => {
-        req("fx.param.set", { target: { scope: "channel", ch: i }, id: String(fx.id || `${fx.type||'fx'}-${idx}`), params: fx.params || {}, juceSpec: window.JuceInstructionLibrary?.buildFxSpec?.({ scope: "channel", ch: i }, fx, idx) || null });
+      };
+      nextChannels.push(normalized);
+      const prevCh = prev?.channels?.[i];
+      if (!prevCh) {
+        req("mixer.channel.set", { ch: i, ...normalized, juceSpec: mixerSpec });
+      } else {
+        Object.entries(normalized).forEach(([param, value]) => {
+          if (prevCh[param] === value) return;
+          const sendValue = param === "xAssign" ? this._xAssignToNumber(value) : (typeof value === "boolean" ? Number(value) : value);
+          req("mixer.param.set", { scope: "channel", ch: i, param, value: sendValue });
+        });
+      }
+
+      const fxChain = this._normalizeFxChain(Array.isArray(ch.fx) ? ch.fx : []);
+      const chainSig = fxChain.map((fx) => `${fx.id}:${fx.type}:${fx.enabled ? 1 : 0}`).join("|");
+      const prevSig = prev?.channelFx?.[i]?.chainSig;
+      if (!prev || chainSig !== prevSig) {
+        req("fx.chain.set", { target: { scope: "channel", ch: i }, chain: fxChain.map(({ id, type, enabled }) => ({ id, type, enabled })) });
+      }
+      fxChain.forEach((fx) => {
+        const prevParams = prev?.channelFx?.[i]?.paramsById?.[fx.id];
+        if (!prevParams || JSON.stringify(prevParams) !== JSON.stringify(fx.params)) {
+          req("fx.param.set", { target: { scope: "channel", ch: i }, id: fx.id, params: fx.params, juceSpec: window.JuceInstructionLibrary?.buildFxSpec?.({ scope: "channel", ch: i }, fx.source, fx.idx) || null });
+        }
       });
     });
 
-    const masterFx = Array.isArray(m.fx) ? m.fx : [];
-    req("fx.chain.set", {
-      target: { scope: "master" },
-      chain: masterFx.map((fx, idx) => ({ id: String(fx.id || `${fx.type||'fx'}-${idx}`), type: String(fx.type||"eq3"), enabled: fx.enabled !== false }))
+    const masterFx = this._normalizeFxChain(Array.isArray(m.fx) ? m.fx : []);
+    const masterChainSig = masterFx.map((fx) => `${fx.id}:${fx.type}:${fx.enabled ? 1 : 0}`).join("|");
+    if (!prev || masterChainSig !== prev?.masterFx?.chainSig) {
+      req("fx.chain.set", { target: { scope: "master" }, chain: masterFx.map(({ id, type, enabled }) => ({ id, type, enabled })) });
+    }
+    masterFx.forEach((fx) => {
+      const prevParams = prev?.masterFx?.paramsById?.[fx.id];
+      if (!prevParams || JSON.stringify(prevParams) !== JSON.stringify(fx.params)) {
+        req("fx.param.set", { target: { scope: "master" }, id: fx.id, params: fx.params, juceSpec: window.JuceInstructionLibrary?.buildFxSpec?.({ scope: "master" }, fx.source, fx.idx) || null });
+      }
     });
-    masterFx.forEach((fx, idx) => {
-      req("fx.param.set", { target: { scope: "master" }, id: String(fx.id || `${fx.type||'fx'}-${idx}`), params: fx.params || {}, juceSpec: window.JuceInstructionLibrary?.buildFxSpec?.({ scope: "master" }, fx, idx) || null });
-    });
+
+    this._lastMixerSnapshot = {
+      master,
+      channels: nextChannels,
+      channelFx: channels.map((ch) => {
+        const chain = this._normalizeFxChain(Array.isArray(ch.fx) ? ch.fx : []);
+        return {
+          chainSig: chain.map((fx) => `${fx.id}:${fx.type}:${fx.enabled ? 1 : 0}`).join("|"),
+          paramsById: Object.fromEntries(chain.map((fx) => [fx.id, fx.params]))
+        };
+      }),
+      masterFx: {
+        chainSig: masterChainSig,
+        paramsById: Object.fromEntries(masterFx.map((fx) => [fx.id, fx.params]))
+      }
+    };
+  }
+
+  async applyMixerModel(model){
+    if (!window.audioBackend?.backends?.juce || !model) return;
+    this._pendingMixerModel = model;
+    if (this._mixerFlushTimer) return;
+    this._mixerFlushTimer = setTimeout(() => this._flushMixerModel(), 12);
   }
 
   getMixerInput(){ return null; }

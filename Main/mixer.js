@@ -7,10 +7,59 @@ const __mixUi = {
   meterEntries: [],
   controlSync: [],
   debug: false,
-  lastDebugTs: 0
+  lastDebugTs: 0,
+  pongBound: false
 };
 
+function __xAssignFromAny(v){
+  if (v === "A" || v === "B" || v === "OFF") return v;
+  const n = Number(v);
+  if (n === 0) return "A";
+  if (n === 1) return "B";
+  return "OFF";
+}
+
+function __bindIpcPongSync(){
+  if (__mixUi.pongBound) return;
+  __mixUi.pongBound = true;
+  window.addEventListener("sls:ipc-pong", (ev)=>{
+    const d = ev?.detail || {};
+    const op = String(d.op || "");
+    const req = d.requestData || {};
+    if (!project?.mixer || !op) return;
+
+    if (op === "mixer.param.set") {
+      if (req.scope === "master") {
+        if (typeof req.param === "string") project.mixer.master[req.param] = req.value;
+      } else {
+        const ch = Number(req.ch);
+        if (Number.isFinite(ch) && project.mixer.channels?.[ch] && typeof req.param === "string") {
+          project.mixer.channels[ch][req.param] = (req.param === "xAssign") ? __xAssignFromAny(req.value) : req.value;
+        }
+      }
+      return;
+    }
+
+    if (op === "mixer.master.set") {
+      Object.assign(project.mixer.master, req || {});
+      return;
+    }
+
+    if (op === "mixer.channel.set") {
+      const ch = Number(req.ch);
+      if (Number.isFinite(ch) && project.mixer.channels?.[ch]) {
+        const payload = { ...(req || {}) };
+        if (Object.prototype.hasOwnProperty.call(payload, "xAssign")) {
+          payload.xAssign = __xAssignFromAny(payload.xAssign);
+        }
+        Object.assign(project.mixer.channels[ch], payload);
+      }
+    }
+  });
+}
+
 function renderMixerUI(){
+  __bindIpcPongSync();
   if(typeof mixerMaster==="undefined" || !mixerMaster) return;
   if(typeof project==="undefined" || !project.mixer) return;
 

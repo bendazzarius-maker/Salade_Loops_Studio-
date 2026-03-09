@@ -983,8 +983,12 @@ if (!anyAB) {
   L = offL; R = offR;
 } else {
   const float c = juce::jlimit(0.0f, 1.0f, masterCrossSmoothed.getNextValue());
-  const float gA = std::cos(c * juce::MathConstants<float>::halfPi);
-  const float gB = std::sin(c * juce::MathConstants<float>::halfPi);
+  // DJ-style additive crossfader law expected by UI:
+  // c=0.0  => A=1.0, B=0.0
+  // c=0.5  => A=1.0, B=1.0
+  // c=1.0  => A=0.0, B=1.0
+  const float gA = (c <= 0.5f) ? 1.0f : juce::jlimit(0.0f, 1.0f, (1.0f - c) * 2.0f);
+  const float gB = (c >= 0.5f) ? 1.0f : juce::jlimit(0.0f, 1.0f, c * 2.0f);
   L = offL + (aL * gA) + (bL * gB);
   R = offR + (aR * gA) + (bR * gB);
 }
