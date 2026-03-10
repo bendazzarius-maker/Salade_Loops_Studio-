@@ -102,6 +102,129 @@ function resolveAudioEnginePath() {
   return pkgBin;
 }
 
+
+function resolveVstHostPath() {
+  const devBin =
+    process.platform === "win32"
+      ? path.join(__dirname, "native", "sls-vst-host.exe")
+      : path.join(__dirname, "native", "sls-vst-host");
+
+  if (fsSync.existsSync(devBin)) return devBin;
+
+  const resBase = process.resourcesPath || __dirname;
+  return process.platform === "win32"
+    ? path.join(resBase, "native", "sls-vst-host.exe")
+    : path.join(resBase, "native", "sls-vst-host");
+}
+
+async function requestVstHost(op, data = {}, timeoutMs = 20000) {
+  const bin = resolveVstHostPath();
+  if (!fsSync.existsSync(bin)) {
+    return {
+      v: 1,
+      type: "res",
+      op,
+      id: `vst-host-${nowMs()}`,
+      ts: nowMs(),
+      ok: false,
+      err: { code: "E_NOT_READY", message: `VST host binary not found: ${bin}`, details: {} },
+    };
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let stdoutBuf = "";
+
+    const req = buildEngineRequest(op, data, `vst-host-${nowMs()}`);
+    const child = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      try { child.kill(); } catch (_) {}
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      finish({
+        v: 1,
+        type: "res",
+        op,
+        id: req.id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_TIMEOUT", message: "vst-host request timed out", details: {} },
+      });
+    }, Math.max(1000, Number(timeoutMs) || 20000));
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      finish({
+        v: 1,
+        type: "res",
+        op,
+        id: req.id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_SPAWN", message: err?.message || String(err), details: {} },
+      });
+    });
+
+    child.stderr.on("data", (d) => {
+      console.warn("[VST-HOST][stderr]", d.toString("utf8"));
+    });
+
+    child.stdout.on("data", (d) => {
+      stdoutBuf += d.toString("utf8");
+      const idx = stdoutBuf.indexOf("\n");
+      if (idx < 0) return;
+      const line = stdoutBuf.slice(0, idx).trim();
+      clearTimeout(timer);
+      if (!line) {
+        finish({
+          v: 1,
+          type: "res",
+          op,
+          id: req.id,
+          ts: nowMs(),
+          ok: false,
+          err: { code: "E_EMPTY", message: "vst-host returned empty response", details: {} },
+        });
+        return;
+      }
+      try {
+        finish(JSON.parse(line));
+      } catch (err) {
+        finish({
+          v: 1,
+          type: "res",
+          op,
+          id: req.id,
+          ts: nowMs(),
+          ok: false,
+          err: { code: "E_BAD_JSON", message: err?.message || String(err), details: { line } },
+        });
+      }
+    });
+
+    try {
+      child.stdin.write(JSON.stringify(req) + "\n");
+      child.stdin.end();
+    } catch (err) {
+      clearTimeout(timer);
+      finish({
+        v: 1,
+        type: "res",
+        op,
+        id: req.id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_STDIN", message: err?.message || String(err), details: {} },
+      });
+    }
+  });
+}
+
 function sendRawToAudio(message) {
   if (!audioProc?.stdin) return false;
   try {
@@ -670,8 +793,14 @@ ipcMain.handle("vst:pickDirectories", async () => {
 
 ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
   const directories = Array.isArray(payload.directories) ? payload.directories : [];
-  const indexed = [];
 
+  const hostRes = await requestVstHost("vst.scan", { directories }, 45000);
+  if (hostRes?.ok) {
+    const roots = Array.isArray(hostRes?.data?.roots) ? hostRes.data.roots : [];
+    return { ok: true, roots, source: "sls-vst-host" };
+  }
+
+  const indexed = [];
   for (const dirPath of directories) {
     try {
       const files = await scanVstDirectory(dirPath);
@@ -690,7 +819,7 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
     }
   }
 
-  return { ok: true, roots: indexed };
+  return { ok: true, roots: indexed, source: "fallback", warning: hostRes?.err?.message || "vst-host unavailable" };
 });
 ipcMain.handle("sampler:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;

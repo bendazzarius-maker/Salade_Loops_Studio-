@@ -622,6 +622,11 @@ public:
     // Instruments (synth)
     if (op == "inst.create")     { std::scoped_lock lk(audioMutex); return handleInstCreate(op, id, d); }
     if (op == "inst.param.set")  { std::scoped_lock lk(audioMutex); return handleInstParamSet(op, id, d); }
+    if (op == "vst.inst.ensure") return handleVstInstEnsure(op, id, d);
+    if (op == "vst.inst.param.set") return handleVstInstParamSet(op, id, d);
+    if (op == "vst.note.on") return handleVstNoteOn(op, id, d);
+    if (op == "vst.note.off") return handleVstNoteOff(op, id, d);
+    if (op == "vst.ui.open") return handleVstUiOpen(op, id, d);
 
     // Note events (synth by default)
     if (op == "note.on" || op == "midi.noteOn") {
@@ -1841,6 +1846,26 @@ void refreshMasterEq() {
     resOk(op, id, juce::var());
   }
 
+  void handleVstInstEnsure(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST host backend is not enabled in this JUCE engine build");
+  }
+
+  void handleVstInstParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST host backend is not enabled in this JUCE engine build");
+  }
+
+  void handleVstNoteOn(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST host backend is not enabled in this JUCE engine build");
+  }
+
+  void handleVstNoteOff(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST host backend is not enabled in this JUCE engine build");
+  }
+
+  void handleVstUiOpen(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST UI hosting is not enabled in this JUCE engine build");
+  }
+
   void handleInstParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
     if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
     const auto instId = getStringProp(d, "instId", "");
@@ -2349,6 +2374,7 @@ void refreshMasterEq() {
     caps->setProperty("meters", true);
     caps->setProperty("touski", true);
     caps->setProperty("sampler", true);
+    caps->setProperty("vstHost", false);
 
     juce::DynamicObject::Ptr d = new juce::DynamicObject();
     d->setProperty("protocol", "SLS-IPC/1.0");
