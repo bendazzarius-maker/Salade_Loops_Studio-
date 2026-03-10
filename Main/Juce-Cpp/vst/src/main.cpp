@@ -382,6 +382,7 @@ int main() {
     auto out = host.handleReq(in);
     std::cout << juce::JSON::toString(out, false).toStdString() << "\n";
     std::cout.flush();
+    if (auto* mm = juce::MessageManager::getInstanceWithoutCreating(); mm != nullptr) mm->runDispatchLoopUntil(2);
   }
 
   return 0;
