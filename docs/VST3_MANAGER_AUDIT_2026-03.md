@@ -1,69 +1,54 @@
 # Audit — Pipeline VST3 complet (SL Studio)
 
 ## Résumé exécutif
-Le pipeline VST3 est partiellement câblé côté UI (scan, bibliothèque, boutons d'ouverture), mais **non opérationnel** pour l'hébergement runtime (instanciation audio + UI flottante) tant que le binaire `sls-vst-host` n'implémente pas les opcodes runtime (`vst.inst.ensure`, `vst.note.on/off`, `vst.ui.open`).
+Le pipeline VST3 est désormais câblé de bout en bout avec un **runtime implémenté dans `sls-vst-host`** et un **bridge IPC persistant** côté Electron.
 
-Dans l'état initial:
-- Le moteur audio JUCE (`sls-audio-engine`) expose des opcodes VST, mais retourne explicitement `E_NOT_SUPPORTED`.
-- L'UI appelait uniquement ce moteur pour `vst.ui.open`, donc le bouton d'UI VST échouait systématiquement.
-- Les instruments VST du piano roll tombaient en fallback instrument natif.
+Concrètement:
+- Les opcodes runtime sont maintenant pris en charge par le host VST dédié (`vst.inst.ensure`, `vst.inst.param.set`, `vst.note.on`, `vst.note.off`, `vst.ui.open`, `vst.release`).
+- Le process `sls-vst-host` est maintenu vivant dans Electron (au lieu d'un spawn one-shot par requête), ce qui permet de conserver l'état des instances plugins.
+- Les boutons UI VST et le chemin instrument VST piano roll passent par ce host en priorité.
 
-## Causes racines identifiées
-1. **Backend VST runtime absent dans le moteur audio principal**:
-   - `vst.inst.ensure`, `vst.inst.param.set`, `vst.note.on`, `vst.note.off`, `vst.ui.open` sont stubbés en `E_NOT_SUPPORTED`.
-2. **Capability explicite désactivée**:
-   - `capabilities.vstHost = false` dans `engine.hello`.
-3. **Binaire VST dédié limité au scan**:
-   - `sls-vst-host` gère `vst.host.hello` et `vst.scan`, mais pas l'instanciation/lecture/UI.
-4. **Chemin UI bouton VST trop strict (avant correctif)**:
-   - la logique bloquait sur `vstHost=false` du moteur JUCE, sans tenter le host dédié.
+## Causes racines (avant correctif)
+1. Le moteur JUCE principal renvoyait `E_NOT_SUPPORTED` pour les opcodes VST runtime.
+2. Le host VST dédié n'implémentait initialement que le scan.
+3. Le bridge main process exécutait le host en mode one-shot, empêchant toute persistance d'instances.
 
-## Correctifs appliqués dans ce patch
-### 1) Bridge IPC Electron vers `sls-vst-host` généralisé
-- Ajout de:
-  - `vst:hostHello`
-  - `vst:hostRequest`
+## Correctifs implémentés
 
-### 2) Exposition preload du bridge runtime VST
-- Ajout de:
-  - `window.vstFS.hostHello()`
-  - `window.vstFS.hostRequest(op, data, timeoutMs)`
-
-### 3) UI VST (bouton "Ouvrir interface VST")
-- La fonction `openVstUi()` tente désormais:
-  1) `sls-vst-host` via `vst.ui.open`
-  2) fallback sur moteur JUCE (compatibilité)
-- Ajout d'un audit détaillé asynchrone `auditPipelineDetailed()` pour diagnostiquer `hostHello`.
-
-### 4) Runtime instruments VST piano roll
-- Le driver instrument tente désormais les opcodes VST via host dédié en priorité, puis fallback JUCE.
-- Si non supporté, fallback natif conservé (comportement robuste, pas de crash).
-
-## État actuel après audit
-### Fonctionnel
-- Scan VST3 + classification + librairie UI.
-- Routage IPC vers host dédié prêt pour extension runtime.
-- Boutons UI VST passent par la bonne couche d'abstraction (host dédié prioritaire).
-
-### Encore bloquant pour "VST3 full support"
-- `sls-vst-host` n'implémente pas encore:
-  - `vst.instantiate`/`vst.inst.ensure`
-  - `vst.release`
-  - `vst.note.on`, `vst.note.off`
+### 1) Runtime VST implémenté dans `Main/Juce-Cpp/vst/src/main.cpp`
+- Ajout d'un gestionnaire d'instances plugin en mémoire (`instId -> AudioPluginInstance`).
+- Implémentation des opcodes:
+  - `vst.inst.ensure` / `vst.instantiate`
   - `vst.inst.param.set`
-  - `vst.ui.open` (fenêtre flottante / editor natif)
-- Sans ces opcodes, instruments VST ne peuvent pas réellement jouer dans le piano roll.
+  - `vst.note.on`
+  - `vst.note.off`
+  - `vst.ui.open` (fenêtre flottante via `DocumentWindow`)
+  - `vst.release`
+- `vst.host.hello` expose désormais des capabilities runtime (`vstRuntime`, `vstUi`).
 
-## Plan recommandé (prochain patch)
-1. Implémenter un host long-vivant (process persistant) côté `Main/Juce-Cpp/vst/`.
-2. Ajouter un registry d'instances (`instId -> AudioPluginInstance`) + routing MIDI/audio.
-3. Implémenter une fenêtre editor dédiée par instance (UI flottante).
-4. Ajouter opcodes runtime ci-dessus + gestion de cycle de vie.
-5. Ajouter tests d'intégration IPC:
-   - instantiate -> note.on/off -> audio activity
-   - ui.open -> opened=true
-   - release -> cleanup
+### 2) Bridge IPC persistant dans `Main/main.js`
+- Passage d'un modèle spawn-per-request à un process `sls-vst-host` persistant.
+- Routage par `id` de requête avec table `pending` + timeout.
+- Nettoyage propre à l'arrêt de l'application.
 
-## Conclusion
-Le problème signalé est confirmé: la UI VST et les instruments VST ne sont pas réellement opérationnels à cause d'un backend runtime incomplet.
-Le patch prépare la bonne architecture de communication (host dédié prioritaire) et fiabilise le diagnostic, mais le support VST3 complet nécessite l'implémentation runtime dans `sls-vst-host`.
+### 3) Renderer bridge + usage UI/runtime
+- `preload.js` expose `vstFS.hostHello()` et `vstFS.hostRequest()`.
+- `vstManager.js` ouvre l'UI plugin via host dédié en priorité.
+- `bank.js` route les opcodes runtime instrument VST vers le host dédié en priorité.
+
+## État actuel
+### Fonctionnel
+- Scan VST3 + classification.
+- Instanciation runtime persistante.
+- Ouverture de fenêtre UI plugin (si editor disponible).
+- Note on/off dispatché au plugin.
+
+### Limites connues
+- Le mapping générique des paramètres JS DAW vers les paramètres natifs plugin n'est pas finalisé (`vst.inst.param.set` retourne `applied=false`).
+- Le rendu audio est déclenché par blocs internes runtime pour faire vivre l'instance plugin, mais l'intégration complète de mixage multi-instance avec routage avancé reste à étendre.
+
+## Prochaines étapes recommandées
+1. Mapping robuste des paramètres plugin (ID/index, automation).
+2. Cycle audio continu par instance (si nécessaire selon plugin) et supervision CPU.
+3. Gestion multi-instance avancée (bus, sidechain, offline render).
+4. Persist project state VST (preset/chunk).
