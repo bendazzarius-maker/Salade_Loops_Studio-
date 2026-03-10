@@ -371,6 +371,26 @@
     _showTab(state.activeTab);
   }
 
+  function formatScanError(result) {
+    const err = result?.err || {};
+    const code = String(err?.code || "").trim();
+    const message = String(err?.message || err || "scan VST échoué");
+
+    if (code === "E_NO_DIRECTORIES") {
+      const defaults = Array.isArray(err?.details?.defaults) ? err.details.defaults : [];
+      if (defaults.length > 0) {
+        return `${message}. Dossiers par défaut détectés: ${defaults.join(" | ")}`;
+      }
+      return `${message}. Configure un dossier VST manuellement via "+ Ajouter dossier VST".`;
+    }
+
+    if (code === "E_NOT_READY") {
+      return `${message}. Vérifie la présence du binaire sls-vst-host dans Main/native.`;
+    }
+
+    return message;
+  }
+
   async function scan(paths) {
     if (!global.vstFS?.scanDirectories) {
       setInfo("Scan indisponible: bridge VST non chargé.");
@@ -380,7 +400,7 @@
     const wantedPaths = Array.isArray(paths) ? paths.filter((p) => typeof p === "string" && p.trim()) : [];
     const result = await global.vstFS.scanDirectories(wantedPaths);
     if (!result?.ok) {
-      const errMessage = result?.err?.message || result?.err || "scan VST échoué";
+      const errMessage = formatScanError(result);
       setInfo(`Erreur scan VST: ${errMessage}`);
       return result || { ok: false, err: "scan VST échoué" };
     }
@@ -388,6 +408,12 @@
     state.activeRootPath = state.roots[0]?.rootPath || null;
     saveRoots();
     render();
+
+    const scannedDirs = Array.isArray(result?.scannedDirectories) ? result.scannedDirectories : [];
+    if (state.roots.length === 0 && scannedDirs.length > 0) {
+      setInfo(`Scan terminé (0 plugin). Dossiers scannés: ${scannedDirs.join(" | ")}`);
+    }
+
     return result;
   }
 
