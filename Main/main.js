@@ -610,6 +610,88 @@ async function scanSamplerDirectory(rootDir) {
   return files;
 }
 
+
+async function scanVstDirectory(rootDir) {
+  const files = [];
+  const SUPPORTED_VST_EXTENSIONS = new Set([".vst3", ".dll", ".so", ".component"]);
+
+  function classifyVstPlugin(fileName = "") {
+    const n = String(fileName || "").toLowerCase();
+    const instrumentHints = ["synth", "piano", "keys", "instrument", "bass", "drum", "sampler", "organ", "lead", "pad"];
+    const fxHints = ["reverb", "delay", "chorus", "flanger", "compress", "eq", "limiter", "dist", "satur", "fx", "gate", "phaser"];
+    if (instrumentHints.some((x) => n.includes(x))) return "instrument";
+    if (fxHints.some((x) => n.includes(x))) return "fx";
+    return "unknown";
+  }
+
+  async function walk(currentDir) {
+    let entries = [];
+    try {
+      entries = await fs.readdir(currentDir, { withFileTypes: true });
+    } catch (err) {
+      console.warn("[VST] cannot read directory:", currentDir, err?.message || err);
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!SUPPORTED_VST_EXTENSIONS.has(ext)) continue;
+
+      files.push({
+        name: entry.name,
+        ext,
+        path: fullPath,
+        relativePath: path.relative(rootDir, fullPath),
+        category: classifyVstPlugin(entry.name),
+      });
+    }
+  }
+
+  await walk(rootDir);
+  return files;
+}
+
+ipcMain.handle("vst:pickDirectories", async () => {
+  const win = BrowserWindow.getFocusedWindow() || mainWindow;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: "Sélectionner un ou plusieurs dossiers VST",
+    properties: ["openDirectory", "multiSelections"],
+  });
+  if (canceled) return { ok: false, canceled: true };
+  return { ok: true, directories: filePaths || [] };
+});
+
+ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
+  const directories = Array.isArray(payload.directories) ? payload.directories : [];
+  const indexed = [];
+
+  for (const dirPath of directories) {
+    try {
+      const files = await scanVstDirectory(dirPath);
+      indexed.push({
+        rootPath: dirPath,
+        rootName: path.basename(dirPath),
+        files,
+      });
+    } catch (err) {
+      indexed.push({
+        rootPath: dirPath,
+        rootName: path.basename(dirPath),
+        files: [],
+        error: err?.message || String(err),
+      });
+    }
+  }
+
+  return { ok: true, roots: indexed };
+});
 ipcMain.handle("sampler:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
