@@ -919,19 +919,16 @@ ipcMain.handle("vst:pickDirectories", async () => {
 ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
   const requested = Array.isArray(payload.directories) ? payload.directories : [];
   const cleanedRequested = requested.filter((p) => typeof p === "string" && p.trim()).map((p) => p.trim());
-  const usedDefaultDirectories = cleanedRequested.length === 0;
-  const resolvedDirectories = usedDefaultDirectories ? getDefaultVstScanDirectories() : cleanedRequested;
-  const directories = [...new Set(resolvedDirectories.filter((p) => p && fsSync.existsSync(p)))];
+  const directories = [...new Set(cleanedRequested.filter((p) => p && fsSync.existsSync(p)))];
 
   if (directories.length === 0) {
     return {
       ok: false,
       err: {
         code: "E_NO_DIRECTORIES",
-        message: "No existing VST directories available to scan",
+        message: "No configured VST directories available to scan",
         details: {
           requested: cleanedRequested,
-          defaults: getDefaultVstScanDirectories(),
           platform: process.platform,
         },
       },
@@ -953,9 +950,6 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
     };
   }
 
-  // VST scan must be handled by the JUCE host process (sls-vst-host).
-  // Do not silently fallback to extension-based JS scanning, because that
-  // produces incomplete/heuristic results and masks host availability issues.
   return {
     ok: false,
     err: hostRes?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },

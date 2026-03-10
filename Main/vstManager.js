@@ -377,11 +377,7 @@
     const message = String(err?.message || err || "scan VST échoué");
 
     if (code === "E_NO_DIRECTORIES") {
-      const defaults = Array.isArray(err?.details?.defaults) ? err.details.defaults : [];
-      if (defaults.length > 0) {
-        return `${message}. Dossiers par défaut détectés: ${defaults.join(" | ")}`;
-      }
-      return `${message}. Configure un dossier VST manuellement via "+ Ajouter dossier VST".`;
+      return `${message}. Configure un dossier via "+ Ajouter dossier VST".`;
     }
 
     if (code === "E_NOT_READY") {
@@ -479,24 +475,15 @@
 
   rescanBtn.addEventListener("click", async () => {
     const existingRoots = state.roots.map((r) => r.rootPath).filter(Boolean);
-    if (existingRoots.length > 0) {
-      await scan(existingRoots);
+    const persistedRoots = loadRoots().filter(Boolean);
+    const rootsToScan = existingRoots.length > 0 ? existingRoots : persistedRoots;
+
+    if (rootsToScan.length === 0) {
+      setInfo("Aucun dossier VST configuré. Clique sur + Ajouter dossier VST.");
       return;
     }
 
-    const picked = await global.vstFS?.pickDirectories?.();
-    if (!picked?.ok) {
-      setInfo("Aucun dossier VST sélectionné.");
-      return;
-    }
-
-    const selected = Array.isArray(picked.directories) ? picked.directories.filter(Boolean) : [];
-    if (selected.length === 0) {
-      setInfo("Aucun dossier VST sélectionné.");
-      return;
-    }
-
-    await scan(selected);
+    await scan(rootsToScan);
   });
 
   tabFxBtn?.addEventListener("click", () => _showTab("fx"));
