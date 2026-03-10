@@ -260,6 +260,44 @@ function renderInstrumentPanel(){
 
   // Use channel preset (not override) to edit channel params
   const presetName = ch.preset || "Piano";
+  if(_isVstInstrumentPreset(presetName)){
+    instrumentPanel.innerHTML = "";
+
+    const routeWrap=document.createElement("div");
+    routeWrap.className="panel-section";
+    const rtTitle=document.createElement("div");
+    rtTitle.className="panel-section-title";
+    rtTitle.textContent="Routing";
+    routeWrap.appendChild(rtTitle);
+
+    const row=document.createElement("div");
+    row.className="ctrl-row";
+    const lab=document.createElement("label");
+    lab.className="ctrl-label";
+    lab.textContent="Mixer Out";
+    row.appendChild(lab);
+
+    const sel=document.createElement("select");
+    sel.className="mixSmallSel";
+    const max = (project && project.mixer && project.mixer.channels) ? project.mixer.channels.length : 16;
+    for(let i=1;i<=max;i++){
+      const o=document.createElement("option");
+      o.value=String(i);
+      o.textContent=`CH ${i}`;
+      sel.appendChild(o);
+    }
+    sel.value = String(Math.max(1, Math.min(max, ch.mixOut||1)));
+    sel.addEventListener("change",()=>{
+      ch.mixOut = parseInt(sel.value,10)||1;
+    });
+    row.appendChild(sel);
+    routeWrap.appendChild(row);
+    instrumentPanel.appendChild(routeWrap);
+
+    _renderVstInstrumentSection(instrumentPanel, ch);
+    return;
+  }
+
   const def = presets && presets.def ? presets.def(presetName) : null;
   if(!def){
     instrumentPanel.innerHTML = "<div class='small'>Instrument introuvable.</div>";
@@ -302,11 +340,6 @@ function renderInstrumentPanel(){
   row.appendChild(sel);
   routeWrap.appendChild(row);
   instrumentPanel.appendChild(routeWrap);
-
-  if(_isVstInstrumentPreset(presetName)){
-    _renderVstInstrumentSection(instrumentPanel, ch);
-    return;
-  }
 
   if(_isDrumInstrumentChannel(ch)){
     try{ _renderDrumMachineLauncher(instrumentPanel, ch); }catch(_){ }
