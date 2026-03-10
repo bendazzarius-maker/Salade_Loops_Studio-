@@ -873,6 +873,39 @@ async function scanVstDirectory(rootDir) {
   return files;
 }
 
+function getDefaultVstScanDirectories() {
+  const defaults = [];
+
+  if (process.platform === "win32") {
+    const pf = process.env.ProgramFiles || "C:\\Program Files";
+    const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    const common = process.env.CommonProgramFiles || path.join(pf, "Common Files");
+    defaults.push(
+      path.join(common, "VST3"),
+      path.join(pf, "VstPlugins"),
+      path.join(pf86, "VstPlugins")
+    );
+  } else if (process.platform === "darwin") {
+    defaults.push(
+      "/Library/Audio/Plug-Ins/VST3",
+      "/Library/Audio/Plug-Ins/Components",
+      path.join(os.homedir(), "Library/Audio/Plug-Ins/VST3"),
+      path.join(os.homedir(), "Library/Audio/Plug-Ins/Components")
+    );
+  } else {
+    defaults.push(
+      "/usr/lib/vst3",
+      "/usr/local/lib/vst3",
+      "/usr/lib/vst",
+      "/usr/local/lib/vst",
+      path.join(os.homedir(), ".vst3"),
+      path.join(os.homedir(), ".vst")
+    );
+  }
+
+  return [...new Set(defaults.filter((p) => p && fsSync.existsSync(p)))];
+}
+
 ipcMain.handle("vst:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -884,12 +917,19 @@ ipcMain.handle("vst:pickDirectories", async () => {
 });
 
 ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
-  const directories = Array.isArray(payload.directories) ? payload.directories : [];
+  const requested = Array.isArray(payload.directories) ? payload.directories : [];
+  const directories = requested.length > 0 ? requested : getDefaultVstScanDirectories();
 
   const hostRes = await requestVstHost("vst.scan", { directories }, 45000);
   if (hostRes?.ok) {
     const roots = Array.isArray(hostRes?.data?.roots) ? hostRes.data.roots : [];
-    return { ok: true, roots, source: "sls-vst-host" };
+    return {
+      ok: true,
+      roots,
+      source: "sls-vst-host",
+      usedDefaultDirectories: requested.length === 0,
+      scannedDirectories: directories,
+    };
   }
 
   // VST scan must be handled by the JUCE host process (sls-vst-host).
