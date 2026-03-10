@@ -873,6 +873,39 @@ async function scanVstDirectory(rootDir) {
   return files;
 }
 
+function getDefaultVstScanDirectories() {
+  const defaults = [];
+
+  if (process.platform === "win32") {
+    const pf = process.env.ProgramFiles || "C:\\Program Files";
+    const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    const common = process.env.CommonProgramFiles || path.join(pf, "Common Files");
+    defaults.push(
+      path.join(common, "VST3"),
+      path.join(pf, "VstPlugins"),
+      path.join(pf86, "VstPlugins")
+    );
+  } else if (process.platform === "darwin") {
+    defaults.push(
+      "/Library/Audio/Plug-Ins/VST3",
+      "/Library/Audio/Plug-Ins/Components",
+      path.join(os.homedir(), "Library/Audio/Plug-Ins/VST3"),
+      path.join(os.homedir(), "Library/Audio/Plug-Ins/Components")
+    );
+  } else {
+    defaults.push(
+      "/usr/lib/vst3",
+      "/usr/local/lib/vst3",
+      "/usr/lib/vst",
+      "/usr/local/lib/vst",
+      path.join(os.homedir(), ".vst3"),
+      path.join(os.homedir(), ".vst")
+    );
+  }
+
+  return [...new Set(defaults.filter((p) => p && fsSync.existsSync(p)))];
+}
+
 ipcMain.handle("vst:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -900,6 +933,7 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
         },
       },
       source: "sls-vst-host",
+      usedDefaultDirectories,
       scannedDirectories: [],
     };
   }
@@ -911,6 +945,7 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
       ok: true,
       roots,
       source: "sls-vst-host",
+      usedDefaultDirectories,
       scannedDirectories: directories,
     };
   }
@@ -919,6 +954,7 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
     ok: false,
     err: hostRes?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
     source: "sls-vst-host",
+    usedDefaultDirectories,
     scannedDirectories: directories,
   };
 });
