@@ -379,28 +379,27 @@
       capabilities,
       hasScanBridge: !!global.vstFS?.scanDirectories,
       hasPickBridge: !!global.vstFS?.pickDirectories,
+      hasHostBridge: !!global.vstFS?.hostRequest,
+      hasHostHello: !!global.vstFS?.hostHello,
     };
   }
 
   async function openVstUi(kind, pluginPath, meta = {}) {
     const path = _normPath(pluginPath);
     if (!path) return { ok: false, err: "Chemin plugin vide" };
+
+    const payload = { kind, pluginPath: path, ...meta };
+
+    if (global.vstFS?.hostRequest) {
+      const hostRes = await global.vstFS.hostRequest("vst.ui.open", payload, 20000).catch((err) => ({ ok: false, err: err?.message || String(err) }));
+      if (hostRes?.ok) return hostRes;
+      const hostCode = hostRes?.err?.code || "";
+      if (hostCode && hostCode !== "E_UNKNOWN_OP" && hostCode !== "E_NOT_SUPPORTED") return hostRes;
+    }
+
     const juce = window.audioBackend?.backends?.juce;
     if (!juce?._request) return { ok: false, err: "Backend JUCE indisponible" };
 
-    const pipeline = getVstPipelineStatus();
-    if (!pipeline.vstHostCapable) {
-      return {
-        ok: false,
-        err: {
-          code: "E_NOT_SUPPORTED",
-          message: "Le moteur JUCE courant ne supporte pas l'hébergement VST (capability vstHost=false)."
-        },
-        data: { pipeline }
-      };
-    }
-
-    const payload = { kind, pluginPath: path, ...meta };
     const res = await juce._request("vst.ui.open", payload).catch((err) => ({ ok: false, err: err?.message || String(err) }));
     if (!res?.ok) return res;
     if (res?.data?.hosted === false || res?.data?.opened === false) {
@@ -470,6 +469,14 @@
     clear: clearLibrary,
     auditPipeline() {
       return getVstPipelineStatus();
+    },
+    async auditPipelineDetailed() {
+      const pipeline = getVstPipelineStatus();
+      let hostHello = null;
+      if (global.vstFS?.hostHello) {
+        hostHello = await global.vstFS.hostHello().catch((err) => ({ ok: false, err: err?.message || String(err) }));
+      }
+      return { pipeline, hostHello };
     },
   };
 
