@@ -10,6 +10,15 @@ function _safeToast(msg){
   try{ if(typeof toast==="function") return toast(msg); }catch(_e){}
   console.warn("[toast]", msg);
 }
+
+function _presetDisplayName(preset){
+  const raw = String(preset||"");
+  const path = window.vstLibrary?.parseInstrumentValue?.(raw);
+  if(!path) return raw;
+  const found = window.vstLibrary?.findInstrumentByPresetValue?.(raw);
+  return found?.name ? `VST • ${found.name}` : "VST Instrument";
+}
+
 function _lfoPatternType(p){
   return String(p?.type||p?.kind||p?.patternType||"").toLowerCase();
 }
@@ -515,7 +524,7 @@ function refreshUI(){
     const names = _instrumentPresetChoices();
     for(const n of names){
       const o=document.createElement("option");
-      o.value=n; o.textContent=n;
+      o.value=n.value; o.textContent=n.label;
       presetOverride.appendChild(o);
     }
     presetOverride.value = cur;
@@ -524,7 +533,7 @@ function refreshUI(){
   if(p && _hasChannels(p)){
     for(const ch of p.channels){
       const opt=document.createElement("option");
-      opt.value=ch.id; opt.textContent=`${ch.name} (${ch.preset})`;
+      opt.value=ch.id; opt.textContent=`${ch.name} (${_presetDisplayName(ch.preset)})`;
       channelSelect.appendChild(opt);
 
       const row=document.createElement("div");
@@ -539,7 +548,7 @@ function refreshUI(){
         <span style="display:flex;align-items:center;gap:10px">
           <span class="mini-dot" style="background:${ch.color}"></span>
           ${ch.name}
-          <span class="small">(${ch.preset})</span>
+          <span class="small">(${_presetDisplayName(ch.preset)})</span>
         </span>
         <span class="small">${ch.muted?"MUTE":""}</span>
       `;
@@ -572,7 +581,7 @@ function refreshUI(){
       presetSel.style.width="140px";
       _instrumentPresetChoices().forEach(n=>{
         const o=document.createElement("option");
-        o.value=n; o.textContent=n;
+        o.value=n.value; o.textContent=n.label;
         presetSel.appendChild(o);
       });
       presetSel.value=ch.preset;
@@ -976,14 +985,10 @@ function updateLfoCurvePatternEditor(){
   }
 }
 
-function _vstValidatedInstrumentNames(){
+function _vstInstrumentChoices(){
   try{
-    const lib = window.vstLibrary?.getAll?.();
-    const list = Array.isArray(lib?.instruments) ? lib.instruments : [];
-    return list
-      .map((it)=> String(it?.name||"" ).trim())
-      .filter(Boolean)
-      .map((name)=> `VST • ${name}`);
+    const list = window.vstLibrary?.getInstrumentChoices?.();
+    return Array.isArray(list) ? list.filter((x)=>x && x.value && x.label) : [];
   }catch(_e){
     return [];
   }
@@ -991,11 +996,18 @@ function _vstValidatedInstrumentNames(){
 
 function _instrumentPresetChoices(){
   const builtins = (presets && presets.list) ? presets.list() : ["Piano","Bass","Lead","Pad","Drums"];
-  const vst = _vstValidatedInstrumentNames();
-  return [...new Set([...(builtins||[]), ...(vst||[])])];
+  const builtinsOpts = (builtins||[]).map((name)=>({ value:name, label:name }));
+  const vst = _vstInstrumentChoices();
+  const out = [];
+  const seen = new Set();
+  [...builtinsOpts, ...vst].forEach((it)=>{
+    const key = String(it?.value||"");
+    if(!key || seen.has(key)) return;
+    seen.add(key);
+    out.push({ value:key, label:String(it?.label||key) });
+  });
+  return out;
 }
-
-
 
 window.addEventListener("sls:vst-library-changed", ()=>{
   try{ refreshUI(); }catch(_e){}

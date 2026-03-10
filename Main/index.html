@@ -390,10 +390,13 @@
   .vstContextItem{all:unset;cursor:pointer;padding:8px 10px;border-radius:8px;font-size:12px;color:var(--text)}
   .vstContextItem:hover{background:rgba(255,255,255,.1)}
   .vstContextItem.danger{color:#ff9a9a}
-  .vstGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:0}
+  .vstTabs{display:flex;gap:8px;flex-wrap:wrap}
+  .vstTabBtn{width:auto;margin:0;padding:6px 10px;font-size:12px}
+  .vstTabBtn.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(39,224,163,.45) inset}
+  .vstPanel{display:none;min-height:0}
+  .vstPanel.active{display:block}
   @media (max-width: 980px){
     .vstLayout{grid-template-columns:minmax(0,1fr);overflow:auto}
-    .vstGrid{grid-template-columns:minmax(0,1fr)}
   }
 
   @media (max-width: 1200px){
@@ -630,20 +633,21 @@
           <div class="vstBlock">
             <div class="title">📚 Bibliothèque plugins</div>
             <div class="small" id="vstCounts">0 plugin</div>
-            <div class="vstGrid">
-              <div>
-                <div class="small">🎚️ FX (Mixer)</div>
-                <div id="vstFxList" class="vstList"></div>
-              </div>
-              <div>
-                <div class="small">🎹 Instruments (Piano Roll)</div>
-                <div id="vstInstrumentList" class="vstList"></div>
-              </div>
+            <div class="vstTabs">
+              <button class="btn2 vstTabBtn active" id="vstTabFx">🎚️ FX (Mixer)</button>
+              <button class="btn2 vstTabBtn" id="vstTabInstrument">🎹 Instruments (Piano Roll)</button>
+              <button class="btn2 vstTabBtn" id="vstTabUnknown">❓ Non classés</button>
             </div>
-          </div>
-          <div class="vstBlock">
-            <div class="title">❓ Non classés</div>
-            <div id="vstUnknownList" class="vstList"></div>
+            <div id="vstFxPanel" class="vstPanel active">
+              <div id="vstFxList" class="vstList"></div>
+            </div>
+            <div id="vstInstrumentPanel" class="vstPanel">
+              <div id="vstInstrumentList" class="vstList"></div>
+            </div>
+            <div id="vstUnknownPanel" class="vstPanel">
+              <div class="small">Les plugins non classés peuvent être affectés manuellement à FX ou Instrument.</div>
+              <div id="vstUnknownList" class="vstList"></div>
+            </div>
           </div>
         </section>
       </div>
