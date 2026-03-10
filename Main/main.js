@@ -837,13 +837,26 @@ async function scanVstDirectory(rootDir) {
 
     for (const entry of entries) {
       const fullPath = path.join(currentDir, entry.name);
+      const ext = path.extname(entry.name).toLowerCase();
+
+      // On macOS, VST3/AU plugins are often bundle directories (.vst3/.component)
+      // and would be missed by a file-only scanner.
+      if (entry.isDirectory() && SUPPORTED_VST_EXTENSIONS.has(ext)) {
+        files.push({
+          name: entry.name,
+          ext,
+          path: fullPath,
+          relativePath: path.relative(rootDir, fullPath),
+          category: classifyVstPlugin(entry.name),
+        });
+        continue;
+      }
+
       if (entry.isDirectory()) {
         await walk(fullPath);
         continue;
       }
       if (!entry.isFile()) continue;
-
-      const ext = path.extname(entry.name).toLowerCase();
       if (!SUPPORTED_VST_EXTENSIONS.has(ext)) continue;
 
       files.push({
