@@ -512,7 +512,7 @@ function refreshUI(){
     const o0=document.createElement("option");
     o0.value=""; o0.textContent="(utiliser le preset du channel)";
     presetOverride.appendChild(o0);
-    const names = (presets.list ? presets.list() : ["Piano","Bass","Lead","Pad","Drums"]);
+    const names = _instrumentPresetChoices();
     for(const n of names){
       const o=document.createElement("option");
       o.value=n; o.textContent=n;
@@ -570,7 +570,7 @@ function refreshUI(){
 
       const presetSel=document.createElement("select");
       presetSel.style.width="140px";
-      ( (presets && presets.list) ? presets.list() : ["Piano","Bass","Lead","Pad","Drums"] ).forEach(n=>{
+      _instrumentPresetChoices().forEach(n=>{
         const o=document.createElement("option");
         o.value=n; o.textContent=n;
         presetSel.appendChild(o);
@@ -975,3 +975,28 @@ function updateLfoCurvePatternEditor(){
     }
   }
 }
+
+function _vstValidatedInstrumentNames(){
+  try{
+    const lib = window.vstLibrary?.getAll?.();
+    const list = Array.isArray(lib?.instruments) ? lib.instruments : [];
+    return list
+      .map((it)=> String(it?.name||"" ).trim())
+      .filter(Boolean)
+      .map((name)=> `VST • ${name}`);
+  }catch(_e){
+    return [];
+  }
+}
+
+function _instrumentPresetChoices(){
+  const builtins = (presets && presets.list) ? presets.list() : ["Piano","Bass","Lead","Pad","Drums"];
+  const vst = _vstValidatedInstrumentNames();
+  return [...new Set([...(builtins||[]), ...(vst||[])])];
+}
+
+
+
+window.addEventListener("sls:vst-library-changed", ()=>{
+  try{ refreshUI(); }catch(_e){}
+});
