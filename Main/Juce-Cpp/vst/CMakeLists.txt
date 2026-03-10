@@ -37,6 +37,8 @@ target_link_libraries(sls-vst-host PRIVATE
     juce::juce_core
     juce::juce_data_structures
     juce::juce_events
+    juce::juce_gui_basics
+    juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
