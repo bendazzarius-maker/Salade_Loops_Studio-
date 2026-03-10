@@ -50,8 +50,18 @@ class JuceInstrumentRuntime {
     return juce._request(op, data).catch(()=>{});
   }
 
+  async _vstReq(op, data){
+    if (window.vstFS?.hostRequest) {
+      const hostRes = await window.vstFS.hostRequest(op, data, 20000).catch(()=>null);
+      if (hostRes?.ok) return hostRes;
+      const code = hostRes?.err?.code || "";
+      if (code && code !== "E_UNKNOWN_OP" && code !== "E_NOT_SUPPORTED") return hostRes;
+    }
+    return this._req(op, data);
+  }
+
   _isVstBackendCapable(){
-    return !!window.audioBackend?.backends?.juce?.capabilities?.vstHost;
+    return !!window.vstFS?.hostRequest || !!window.audioBackend?.backends?.juce?.capabilities?.vstHost;
   }
 
   _vstFallbackType(){
@@ -95,8 +105,8 @@ class JuceInstrumentRuntime {
       let paramRes = null;
 
       if (this._isVstBackendCapable()) {
-        ensureRes = await this._req("vst.inst.ensure", { instId: this.instId, pluginPath, presetValue });
-        paramRes = await this._req("vst.inst.param.set", { instId: this.instId, pluginPath, presetValue, params: this.paramsRef || {} });
+        ensureRes = await this._vstReq("vst.inst.ensure", { instId: this.instId, pluginPath, presetValue });
+        paramRes = await this._vstReq("vst.inst.param.set", { instId: this.instId, pluginPath, presetValue, params: this.paramsRef || {} });
       }
       const hosted = !!(ensureRes?.data?.hosted || paramRes?.data?.hosted);
       if (ensureRes?.ok && paramRes?.ok && hosted) {
@@ -127,9 +137,9 @@ class JuceInstrumentRuntime {
     this._ensureCreate().then((state) => {
       if (state?.mode === "vst" && this._vstReady) {
         const pluginPath = window.vstLibrary?.parseInstrumentValue?.(String(this.name || "")) || "";
-        this._req("vst.note.on", { instId: this.instId, pluginPath, note: Number(midi), vel: Number(vel), when: "now" });
+        this._vstReq("vst.note.on", { instId: this.instId, pluginPath, note: Number(midi), vel: Number(vel), when: "now" });
         setTimeout(() => {
-          this._req("vst.note.off", { instId: this.instId, pluginPath, note: Number(midi), when: "now" });
+          this._vstReq("vst.note.off", { instId: this.instId, pluginPath, note: Number(midi), when: "now" });
         }, Math.max(20, Math.floor(Number(dur || 0.25) * 1000)));
         return;
       }
