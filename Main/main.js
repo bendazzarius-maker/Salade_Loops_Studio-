@@ -821,6 +821,28 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
 
   return { ok: true, roots: indexed, source: "fallback", warning: hostRes?.err?.message || "vst-host unavailable" };
 });
+
+ipcMain.handle("vst:hostHello", async () => {
+  const res = await requestVstHost("vst.host.hello", {}, 5000);
+  if (!res?.ok) {
+    return {
+      ok: false,
+      err: res?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
+      data: { bin: resolveVstHostPath() },
+    };
+  }
+  return { ok: true, data: { ...(res.data || {}), bin: resolveVstHostPath() } };
+});
+
+ipcMain.handle("vst:hostRequest", async (_evt, payload = {}) => {
+  const op = String(payload?.op || "").trim();
+  const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
+  const timeoutMs = Math.max(1000, Math.min(120000, Number(payload?.timeoutMs) || 20000));
+  if (!op) return { ok: false, err: { code: "E_BAD_REQUEST", message: "op required" } };
+  const res = await requestVstHost(op, data, timeoutMs);
+  if (res?.ok) return { ok: true, data: res.data || {} };
+  return { ok: false, err: res?.err || { code: "E_UNKNOWN", message: "vst-host request failed" } };
+});
 ipcMain.handle("sampler:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {

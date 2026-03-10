@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld("samplerFS", {
 contextBridge.exposeInMainWorld("vstFS", {
   pickDirectories: () => ipcRenderer.invoke("vst:pickDirectories"),
   scanDirectories: (directories) => ipcRenderer.invoke("vst:scanDirectories", { directories }),
+  hostHello: () => ipcRenderer.invoke("vst:hostHello"),
+  hostRequest: (op, data, timeoutMs) => ipcRenderer.invoke("vst:hostRequest", { op, data, timeoutMs }),
 });
 
 contextBridge.exposeInMainWorld("samplePattern", {
