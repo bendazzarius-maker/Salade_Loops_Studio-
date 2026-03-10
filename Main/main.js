@@ -121,6 +121,59 @@ let vstHostProc = null;
 let vstHostBuffer = "";
 const vstHostPending = new Map();
 
+function extractJsonObjectsFromBuffer(input) {
+  const objects = [];
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let start = -1;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+
+    if (ch === "}") {
+      if (depth === 0) continue;
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(input.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  if (depth > 0 && start >= 0) {
+    return { objects, rest: input.slice(start) };
+  }
+
+  return { objects, rest: "" };
+}
+
 function stopVstHostProcess() {
   if (!vstHostProc) return;
   try { vstHostProc.kill(); } catch (_) {}
@@ -163,18 +216,15 @@ function ensureVstHostProcess() {
 
   vstHostProc.stdout.on("data", (d) => {
     vstHostBuffer += d.toString("utf8");
-    while (true) {
-      const idx = vstHostBuffer.indexOf("\n");
-      if (idx < 0) break;
-      const line = vstHostBuffer.slice(0, idx).trim();
-      vstHostBuffer = vstHostBuffer.slice(idx + 1);
-      if (!line) continue;
+    const { objects, rest } = extractJsonObjectsFromBuffer(vstHostBuffer);
+    vstHostBuffer = rest;
 
+    for (const chunk of objects) {
       let msg = null;
       try {
-        msg = JSON.parse(line);
+        msg = JSON.parse(chunk);
       } catch (err) {
-        console.warn("[VST-HOST] bad json:", err?.message || err, line);
+        console.warn("[VST-HOST] bad json:", err?.message || err, chunk);
         continue;
       }
 
