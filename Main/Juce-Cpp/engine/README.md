@@ -42,6 +42,10 @@ Verify in logs that backend active is `juce` and audio responds to transport/ins
 
 Le front envoie bien les opérations VST suivantes:
 
+## VST bridge backend status
+
+Le moteur JUCE accepte désormais les opérations backend suivantes pour faire le pont avec la bibliothèque VST du front:
+
 - `vst.inst.ensure`
 - `vst.inst.param.set`
 - `vst.note.on`

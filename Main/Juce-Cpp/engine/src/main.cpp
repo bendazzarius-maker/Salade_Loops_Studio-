@@ -233,6 +233,16 @@ static int positiveModuloInt(int value, int mod) {
 
 using InstrumentState = sls::inst::InstrumentState;
 
+struct VstRuntimeState {
+  juce::String instId;
+  juce::String pluginPath;
+  juce::String pluginName;
+  juce::String presetValue;
+  juce::var lastParams;
+  std::unordered_set<int> activeNotes;
+  juce::int64 lastTouchedMs = 0;
+};
+
 struct FmRuntime {
   juce::String instId;
   juce::String type;
@@ -1129,6 +1139,7 @@ private:
   sls::inst::InstrumentRegistry instrumentRegistry;
   sls::inst::SampleTouskiInstrument touskiInstrument;
   std::unordered_map<std::string, FmRuntime> fmRuntimes;
+  std::unordered_map<std::string, VstRuntimeState> vstRuntimes;
 
   // ------------------------------ Mixer & FX ------------------------------
 
