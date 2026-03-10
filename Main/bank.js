@@ -50,6 +50,10 @@ class JuceInstrumentRuntime {
     return juce._request(op, data).catch(()=>{});
   }
 
+  _isVstBackendCapable(){
+    return !!window.audioBackend?.backends?.juce?.capabilities?.vstHost;
+  }
+
   _vstFallbackType(){
     const found = window.vstLibrary?.findInstrumentByPresetValue?.(String(this.name || ""));
     const seed = `${String(found?.name || "")} ${String(found?.path || "")} ${String(this.name || "")}`.toLowerCase();
@@ -87,8 +91,13 @@ class JuceInstrumentRuntime {
       const presetValue = String(this.name || "");
       const pluginPath = window.vstLibrary?.parseInstrumentValue?.(presetValue) || "";
       if (!pluginPath) return { ok: false, mode: "vst", err: "pluginPath missing" };
-      const ensureRes = await this._req("vst.inst.ensure", { instId: this.instId, pluginPath, presetValue });
-      const paramRes = await this._req("vst.inst.param.set", { instId: this.instId, pluginPath, presetValue, params: this.paramsRef || {} });
+      let ensureRes = null;
+      let paramRes = null;
+
+      if (this._isVstBackendCapable()) {
+        ensureRes = await this._req("vst.inst.ensure", { instId: this.instId, pluginPath, presetValue });
+        paramRes = await this._req("vst.inst.param.set", { instId: this.instId, pluginPath, presetValue, params: this.paramsRef || {} });
+      }
       const hosted = !!(ensureRes?.data?.hosted || paramRes?.data?.hosted);
       if (ensureRes?.ok && paramRes?.ok && hosted) {
         this._vstReady = true;
@@ -98,7 +107,9 @@ class JuceInstrumentRuntime {
       this._vstReady = false;
       if (!JuceInstrumentRuntime._vstUnavailableWarned) {
         JuceInstrumentRuntime._vstUnavailableWarned = true;
-        const errMsg = ensureRes?.err?.message || paramRes?.err?.message || "VST host JUCE indisponible: fallback instrument natif activé.";
+        const errMsg = this._isVstBackendCapable()
+          ? (ensureRes?.err?.message || paramRes?.err?.message || "VST host JUCE indisponible: fallback instrument natif activé.")
+          : "Ce build du moteur JUCE n'active pas vstHost: fallback instrument natif activé.";
         try { toast(errMsg); } catch (_) { console.warn(errMsg); }
       }
 

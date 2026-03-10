@@ -367,11 +367,39 @@
     render();
   }
 
+
+  function getVstPipelineStatus() {
+    const juce = window.audioBackend?.backends?.juce;
+    const capabilities = juce?.capabilities || {};
+    const engineReady = !!juce?.ready;
+    const vstHostCapable = !!capabilities.vstHost;
+    return {
+      engineReady,
+      vstHostCapable,
+      capabilities,
+      hasScanBridge: !!global.vstFS?.scanDirectories,
+      hasPickBridge: !!global.vstFS?.pickDirectories,
+    };
+  }
+
   async function openVstUi(kind, pluginPath, meta = {}) {
     const path = _normPath(pluginPath);
     if (!path) return { ok: false, err: "Chemin plugin vide" };
     const juce = window.audioBackend?.backends?.juce;
     if (!juce?._request) return { ok: false, err: "Backend JUCE indisponible" };
+
+    const pipeline = getVstPipelineStatus();
+    if (!pipeline.vstHostCapable) {
+      return {
+        ok: false,
+        err: {
+          code: "E_NOT_SUPPORTED",
+          message: "Le moteur JUCE courant ne supporte pas l'hébergement VST (capability vstHost=false)."
+        },
+        data: { pipeline }
+      };
+    }
+
     const payload = { kind, pluginPath: path, ...meta };
     const res = await juce._request("vst.ui.open", payload).catch((err) => ({ ok: false, err: err?.message || String(err) }));
     if (!res?.ok) return res;
@@ -440,6 +468,9 @@
       return openVstUi("fx", found?.path || _parseVstValue(typeValue, "VSTFX::"), { pluginName: found?.name || "", ...meta });
     },
     clear: clearLibrary,
+    auditPipeline() {
+      return getVstPipelineStatus();
+    },
   };
 
   emitLibraryChange();
