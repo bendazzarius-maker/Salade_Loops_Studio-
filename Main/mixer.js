@@ -11,6 +11,18 @@ const __mixUi = {
   pongBound: false
 };
 
+
+function _fxTypesForPicker(){
+  const base = Array.isArray(FX_TYPES) ? FX_TYPES.slice() : [];
+  try{
+    const lib = window.vstLibrary?.getAll?.();
+    const fx = Array.isArray(lib?.fx) ? lib.fx : [];
+    const names = fx.map((it)=> String(it?.name||"").trim()).filter(Boolean).map((n)=>`VST • ${n}`);
+    return [...new Set([...base, ...names])];
+  }catch(_){
+    return base;
+  }
+}
 function __xAssignFromAny(v){
   if (v === "A" || v === "B" || v === "OFF") return v;
   const n = Number(v);
@@ -354,7 +366,7 @@ function _fxBlock(scope, chIndex1, fxList, onUpdate, lfoBadgeEl){
   addSel.className="mixSmallSel";
   const o0=document.createElement("option"); o0.value=""; o0.textContent="+ Ajouter";
   addSel.appendChild(o0);
-  FX_TYPES.forEach(t=>{
+  _fxTypesForPicker().forEach(t=>{
     const o=document.createElement("option"); o.value=t; o.textContent=t;
     addSel.appendChild(o);
   });
