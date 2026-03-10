@@ -364,7 +364,7 @@ class VstRuntimeHost {
 int main() {
   juce::ScopedJuceInitialiser_GUI juceInit;
   juce::AudioPluginFormatManager formatManager;
-  formatManager.addFormat(new juce::VST3PluginFormat());
+  formatManager.addFormat(std::make_unique<juce::VST3PluginFormat>());
   VstRuntimeHost host(formatManager);
 
   std::string line;
