@@ -892,26 +892,14 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
     return { ok: true, roots, source: "sls-vst-host" };
   }
 
-  const indexed = [];
-  for (const dirPath of directories) {
-    try {
-      const files = await scanVstDirectory(dirPath);
-      indexed.push({
-        rootPath: dirPath,
-        rootName: path.basename(dirPath),
-        files,
-      });
-    } catch (err) {
-      indexed.push({
-        rootPath: dirPath,
-        rootName: path.basename(dirPath),
-        files: [],
-        error: err?.message || String(err),
-      });
-    }
-  }
-
-  return { ok: true, roots: indexed, source: "fallback", warning: hostRes?.err?.message || "vst-host unavailable" };
+  // VST scan must be handled by the JUCE host process (sls-vst-host).
+  // Do not silently fallback to extension-based JS scanning, because that
+  // produces incomplete/heuristic results and masks host availability issues.
+  return {
+    ok: false,
+    err: hostRes?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
+    source: "sls-vst-host",
+  };
 });
 
 ipcMain.handle("vst:hostHello", async () => {
