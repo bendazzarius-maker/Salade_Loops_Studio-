@@ -15,7 +15,11 @@ const pb = {
   uiRollStep: 0,
   rangeStartStep: 0,
   rangeEndStep: 0,
-  forceSongFromSelection: false
+  forceSongFromSelection: false,
+  contentDirty: false,
+  lastUiSongStep: 0,
+  resyncInFlight: false,
+  syncedLoopSignature: ""
 };
 
 
@@ -522,6 +526,139 @@ function _ppqPerStep(){
   return 4 / Math.max(1, Number(state.stepsPerBar || 16));
 }
 
+function _refreshPlaybackRangeFromProject(){
+  const selected = _selectedRangeSteps();
+  pb.forceSongFromSelection = !!selected;
+  if(selected){
+    pb.rangeStartStep = Math.max(0, Math.floor(selected.startStep||0));
+    pb.rangeEndStep = Math.max(pb.rangeStartStep+1, Math.floor(selected.endStep||0));
+    return;
+  }
+
+  if(String(state.mode||"song") === "song"){
+    pb.rangeStartStep = 0;
+    pb.rangeEndStep = playlistEndBar() * state.stepsPerBar;
+    return;
+  }
+
+  const p = activePattern();
+  const bars = p ? patternLengthBars(p) : 1;
+  pb.rangeStartStep = 0;
+  pb.rangeEndStep = Math.max(1, bars * state.stepsPerBar);
+}
+
+function _buildLoopContentSignature(){
+  const mode = String(state.mode || "song");
+  const rangeStart = Math.max(0, Math.floor(pb.rangeStartStep || 0));
+  const rangeEnd = Math.max(rangeStart + 1, Math.floor(pb.rangeEndStep || 1));
+
+  if(mode === "pattern" && !pb.forceSongFromSelection){
+    const pat = activePattern();
+    const chData = Array.isArray(pat?.channels)
+      ? pat.channels.map((ch)=>({
+          id: ch?.id,
+          muted: !!ch?.muted,
+          preset: ch?.preset,
+          mixOut: ch?.mixOut,
+          params: ch?.params,
+          notes: (ch?.notes||[]).map((n)=>({ step:n.step, len:n.len, midi:n.midi, vel:n.vel, autoParams:n.autoParams }))
+        }))
+      : [];
+    return JSON.stringify({ mode, activePatternId: pat?.id || null, rangeStart, rangeEnd, chData });
+  }
+
+  const tracks = (project.playlist?.tracks || []).map((tr)=>({
+    id: tr?.id,
+    clips: (tr?.clips||[])
+      .map((c)=>({ patternId:c?.patternId, startBar:c?.startBar, lenBars:c?.lenBars }))
+      .sort((a,b)=>(a.startBar-b.startBar) || String(a.patternId).localeCompare(String(b.patternId)))
+  }));
+
+  const patterns = (project.patterns || []).map((p)=>({
+    id: p?.id,
+    lenBars: patternLengthBars(p),
+    channels: Array.isArray(p?.channels)
+      ? p.channels.map((ch)=>({
+          id: ch?.id,
+          muted: !!ch?.muted,
+          preset: ch?.preset,
+          mixOut: ch?.mixOut,
+          params: ch?.params,
+          notes: (ch?.notes||[]).map((n)=>({ step:n.step, len:n.len, midi:n.midi, vel:n.vel, autoParams:n.autoParams }))
+        }))
+      : []
+  }));
+
+  return JSON.stringify({ mode, rangeStart, rangeEnd, tracks, patterns });
+}
+
+async function _syncJuceScheduleForCurrentRange({ seekToStart = false } = {}){
+  if(!window.audioBackend?.backends?.juce) return;
+  const juce = window.audioBackend.backends.juce;
+
+  _refreshPlaybackRangeFromProject();
+  pb.endStep = _recalcEndStepForMode();
+
+  const snapshot = buildProjectSnapshotForEngine();
+  await juce._request("project.sync", snapshot);
+  await juce._request("schedule.clear", {});
+
+  const startStep = Math.max(0, Math.floor(pb.rangeStartStep || 0));
+  const rawEndStep = Math.max(startStep + 1, Math.floor(pb.rangeEndStep || (pb.endStep || 64)));
+  const engineStartStep = startStep;
+  const engineEndStep = Math.max(engineStartStep + 1, rawEndStep + Math.max(1, ENGINE_WINDOW_PAD_STEPS));
+  await _pushEngineScheduleRange(juce, engineStartStep, engineEndStep);
+
+  const ppqPerStep = _ppqPerStep();
+  const fromPpq = Math.max(0, engineStartStep * ppqPerStep);
+  const scheduleToPpq = Math.max(fromPpq + ENGINE_WINDOW_MIN_PPQ, engineEndStep * ppqPerStep);
+  const loopToPpq = Math.max(fromPpq + ppqPerStep, rawEndStep * ppqPerStep);
+
+  await juce._request("schedule.setWindow", { fromPpq, toPpq: scheduleToPpq });
+  try{
+    if (typeof juce.setTransportRange === "function") {
+      await juce.setTransportRange({
+        mode: pb.forceSongFromSelection ? "selection" : String(state.mode || "song"),
+        fromPpq,
+        toPpq: loopToPpq,
+        loop: !!state.loop,
+        stopAtEnd: !state.loop,
+        returnToStartOnStop: !state.loop
+      });
+    }
+  }catch(err){
+    console.warn("[transport.range.set] failed", err);
+  }
+
+  if(seekToStart){
+    await juce._request("transport.seek", { ppq: fromPpq });
+    _syncUiFromTransportState({ ...(window.audioBackend?.backends?.juce?.transportState || {}), ppq: fromPpq, playing: true });
+  }
+
+  pb.syncedLoopSignature = _buildLoopContentSignature();
+  pb.contentDirty = false;
+}
+
+async function _maybeResyncJuceLoopOnBoundary(){
+  if(!_isJuceTransportScheduling()) return;
+  if(!state.playing || !state.loop || pb.resyncInFlight) return;
+
+  _refreshPlaybackRangeFromProject();
+  const signature = _buildLoopContentSignature();
+  const shouldResync = pb.contentDirty || !pb.syncedLoopSignature || signature !== pb.syncedLoopSignature;
+  if(!shouldResync) return;
+
+  pb.resyncInFlight = true;
+  try{
+    await _syncJuceScheduleForCurrentRange({ seekToStart: false });
+    console.debug("[SLS][loop.resync] schedule updated for next loop");
+  }catch(err){
+    console.warn("[SLS][loop.resync] failed", err);
+  }finally{
+    pb.resyncInFlight = false;
+  }
+}
+
 function _collectEngineEventsForRange(startStep, endStep){
   const events = [];
   const ppqPerStep = _ppqPerStep();
@@ -1002,6 +1139,15 @@ function tick() {
   // UI readhead
   _syncUiFromTransportState();
 
+  if(state.loop && state.playing){
+    const prevUiSongStep = Math.max(0, Math.floor(pb.lastUiSongStep || 0));
+    const currUiSongStep = Math.max(0, Math.floor(pb.uiSongStep || 0));
+    if(currUiSongStep < prevUiSongStep){
+      void _maybeResyncJuceLoopOnBoundary();
+    }
+    pb.lastUiSongStep = currUiSongStep;
+  }
+
   __lfoVisualRT.fxByKey.clear();
 
   // LFO preset overrides must be aligned to playhead (NOT scheduling lookahead)
@@ -1115,18 +1261,10 @@ async function start() {
   pb.lookahead = Math.max(Number(pb.lookahead || 0), SCHEDULER_MIN_LOOKAHEAD);
 
   const selected = _selectedRangeSteps();
-  pb.forceSongFromSelection = !!selected;
   if(selected){
-    pb.rangeStartStep = Math.max(0, Math.floor(selected.startStep||0));
-    pb.rangeEndStep = Math.max(pb.rangeStartStep+1, Math.floor(selected.endStep||0));
     try{ if(state.mode !== "song") setMode("song"); }catch(_){ state.mode = "song"; }
-  }else if(state.mode === "song") {
-    pb.rangeStartStep = 0;
-    pb.rangeEndStep = playlistEndBar() * state.stepsPerBar;
-  } else {
-    pb.rangeStartStep = 0;
-    pb.rangeEndStep = Math.max(1, (activePattern() ? patternLengthBars(activePattern()) : 1) * state.stepsPerBar);
   }
+  _refreshPlaybackRangeFromProject();
 
   if (state.mode === "pattern") {
     const p = activePattern();
@@ -1139,47 +1277,13 @@ async function start() {
   }
 
   pb.pendingEndStep = 0;
+  pb.lastUiSongStep = 0;
 
   pb.timer = setInterval(tick, pb.intervalMs);
 
   if (window.audioBackend?.backends?.juce) {
-    const juce = window.audioBackend.backends.juce;
     const snapshot = buildProjectSnapshotForEngine();
-    await juce._request("project.sync", snapshot);
-    await juce._request("schedule.clear", {});
-
-    const startStep = Math.max(0, Math.floor(pb.rangeStartStep || 0));
-    const rawEndStep = Math.max(startStep + 1, Math.floor(pb.rangeEndStep || (pb.endStep || 64)));
-    const engineStartStep = startStep;
-    const engineEndStep = Math.max(engineStartStep + 1, rawEndStep + Math.max(1, ENGINE_WINDOW_PAD_STEPS));
-    await _pushEngineScheduleRange(juce, engineStartStep, engineEndStep);
-
-    const ppqPerStep = _ppqPerStep();
-    const fromPpq = Math.max(0, engineStartStep * ppqPerStep);
-
-    // IMPORTANT: keep a larger scheduler window for preloading, but keep the
-    // musical transport range strictly on the real loop boundaries.
-    // Otherwise the loop length is extended by the preload pad.
-    const scheduleToPpq = Math.max(fromPpq + ENGINE_WINDOW_MIN_PPQ, engineEndStep * ppqPerStep);
-    const loopToPpq = Math.max(fromPpq + ppqPerStep, rawEndStep * ppqPerStep);
-
-    await juce._request("schedule.setWindow", { fromPpq, toPpq: scheduleToPpq });
-    try{
-      if (typeof juce.setTransportRange === "function") {
-        await juce.setTransportRange({
-          mode: pb.forceSongFromSelection ? "selection" : String(state.mode || "song"),
-          fromPpq,
-          toPpq: loopToPpq,
-          loop: !!state.loop,
-          stopAtEnd: !state.loop,
-          returnToStartOnStop: !state.loop
-        });
-      }
-    }catch(err){
-      console.warn("[transport.range.set] failed", err);
-    }
-    await juce._request("transport.seek", { ppq: fromPpq });
-    _syncUiFromTransportState({ ...(window.audioBackend?.backends?.juce?.transportState || {}), ppq: fromPpq, playing: true });
+    await _syncJuceScheduleForCurrentRange({ seekToStart: true });
 
     // prewarm guardrail: avoid first-block compression on first play
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -1209,3 +1313,9 @@ window.start = start;
 window.pause = pause;
 window.stop = stop;
 window.tick = tick;
+
+try{
+  const _markSchedulerContentDirty = () => { pb.contentDirty = true; };
+  window.addEventListener("daw:refresh", _markSchedulerContentDirty);
+  document.addEventListener("daw:refresh", _markSchedulerContentDirty);
+}catch(_){ }
