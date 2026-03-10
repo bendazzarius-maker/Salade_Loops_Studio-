@@ -186,8 +186,17 @@
   function classify(plugin) {
     const overridden = state.overrides[_pluginKey(plugin)];
     if (overridden === "fx" || overridden === "instrument") return overridden;
-    const c = String(plugin?.category || "unknown");
+
+    const c = String(plugin?.category || "").trim().toLowerCase();
     if (c === "fx" || c === "instrument") return c;
+
+    const raw = `${String(plugin?.categoryRaw || "")} ${String(plugin?.pluginFormat || "")}`.toLowerCase();
+    if (plugin?.isInstrument === true || raw.includes("instrument") || raw.includes("synth")) return "instrument";
+    if (raw.includes("effect") || raw.includes("fx")) return "fx";
+
+    const seed = `${String(plugin?.name || "")} ${String(plugin?.path || "")}`.toLowerCase();
+    if (/(synth|piano|keys|instrument|bass|drum|sampler|organ|lead|pad)/.test(seed)) return "instrument";
+    if (/(reverb|delay|chorus|flanger|compress|eq|limiter|dist|satur|gate|phaser|effect|fx)/.test(seed)) return "fx";
     return "unknown";
   }
 
@@ -358,13 +367,14 @@
   }
 
   async function scan(paths) {
-    if (!global.vstFS?.scanDirectories) return;
+    if (!global.vstFS?.scanDirectories) return { ok: false, err: "vstFS.scanDirectories indisponible" };
     const result = await global.vstFS.scanDirectories(paths);
-    if (!result?.ok) return;
+    if (!result?.ok) return result || { ok: false, err: "scan VST échoué" };
     state.roots = Array.isArray(result.roots) ? result.roots : [];
     state.activeRootPath = state.roots[0]?.rootPath || null;
     saveRoots();
     render();
+    return result;
   }
 
 
@@ -476,7 +486,8 @@
       if (global.vstFS?.hostHello) {
         hostHello = await global.vstFS.hostHello().catch((err) => ({ ok: false, err: err?.message || String(err) }));
       }
-      return { pipeline, hostHello };
+      const scanProbe = await scan(state.roots.map((r) => r.rootPath)).catch((err) => ({ ok: false, err: err?.message || String(err) }));
+      return { pipeline, hostHello, scanProbe };
     },
   };
 
