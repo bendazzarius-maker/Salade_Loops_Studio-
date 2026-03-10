@@ -19,3 +19,23 @@ cmake --build Main/Juce-Cpp/vst/build -j
 3. Alimenter les bibliothèques DAW:
    - FX -> Mixer FX library
    - Instrument -> PianoRoll instrument library
+
+
+## IPC (stdin/stdout JSON)
+
+Le binaire `sls-vst-host` accepte des requêtes JSON ligne par ligne.
+
+### `vst.host.hello`
+Retourne le protocole et les capacités.
+
+### `vst.scan`
+Entrée:
+```json
+{ "v":1, "type":"req", "op":"vst.scan", "id":"x1", "data": { "directories": ["/path/vst"] } }
+```
+
+Sortie:
+- `data.roots[]` avec `rootPath`, `rootName`, `files[]`
+- chaque plugin inclut notamment `name`, `path`, `manufacturer`, `pluginFormat`, `categoryRaw`, `category`, `isInstrument`
+
+L'app Electron (`Main/main.js`) utilise ce binaire en priorité pour `vst:scanDirectories`, avec fallback sur le scan simple par extensions si le binaire n'est pas disponible.

@@ -373,7 +373,12 @@
     const juce = window.audioBackend?.backends?.juce;
     if (!juce?._request) return { ok: false, err: "Backend JUCE indisponible" };
     const payload = { kind, pluginPath: path, ...meta };
-    return juce._request("vst.ui.open", payload).catch((err) => ({ ok: false, err: err?.message || String(err) }));
+    const res = await juce._request("vst.ui.open", payload).catch((err) => ({ ok: false, err: err?.message || String(err) }));
+    if (!res?.ok) return res;
+    if (res?.data?.hosted === false || res?.data?.opened === false) {
+      return { ok: false, err: "Hébergement UI VST indisponible dans ce build JUCE." };
+    }
+    return res;
   }
 
   function findInstrumentByPresetValue(presetValue) {

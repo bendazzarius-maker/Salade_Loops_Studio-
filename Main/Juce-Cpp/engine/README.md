@@ -38,6 +38,9 @@ npm start
 
 Verify in logs that backend active is `juce` and audio responds to transport/instrument actions.
 
+## VST bridge backend status
+
+Le front envoie bien les opérations VST suivantes:
 
 ## VST bridge backend status
 
@@ -49,7 +52,10 @@ Le moteur JUCE accepte désormais les opérations backend suivantes pour faire l
 - `vst.note.off`
 - `vst.ui.open`
 
-Ces opérations sont actuellement branchées sur une **couche runtime backend (stub)** qui valide et stocke l'état des instances/plugins, puis renvoie des réponses `ok`.
-La sortie UI est exposée via l'événement `vst.ui.state`.
+Dans ce build moteur JUCE, ces opérations répondent explicitement `E_NOT_SUPPORTED` car l'hébergement natif VST n'est pas encore activé.
 
-> Note: l'hébergement natif VST (chargement DSP réel + fenêtre plugin native) reste l'étape suivante.
+Cela évite les faux positifs (`ok` sans chargement réel) et permet au front d'afficher un message clair + fallback instrument natif.
+
+Capacité exposée par `engine.hello`:
+- `capabilities.vstHost = false`
+

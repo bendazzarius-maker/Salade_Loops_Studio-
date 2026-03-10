@@ -1857,144 +1857,24 @@ void refreshMasterEq() {
     resOk(op, id, juce::var());
   }
 
-  void touchVstRuntime(VstRuntimeState& rt) {
-    rt.lastTouchedMs = nowMs();
+  void handleVstInstEnsure(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST host backend is not enabled in this JUCE engine build");
   }
 
-  VstRuntimeState* findOrCreateVstRuntime(const juce::String& instId,
-                                          const juce::String& pluginPath,
-                                          const juce::String& pluginName,
-                                          const juce::String& presetValue) {
-    if (instId.isEmpty()) return nullptr;
-    auto [it, inserted] = vstRuntimes.try_emplace(instId.toStdString());
-    auto& rt = it->second;
-    if (inserted) rt.instId = instId;
-    if (pluginPath.isNotEmpty()) rt.pluginPath = pluginPath;
-    if (pluginName.isNotEmpty()) rt.pluginName = pluginName;
-    if (presetValue.isNotEmpty()) rt.presetValue = presetValue;
-    touchVstRuntime(rt);
-    return &rt;
+  void handleVstInstParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST host backend is not enabled in this JUCE engine build");
   }
 
-  void handleVstInstEnsure(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
-    const auto instId = getStringProp(d, "instId", "");
-    const auto pluginPath = getStringProp(d, "pluginPath", "");
-    const auto pluginName = getStringProp(d, "pluginName", "");
-    const auto presetValue = getStringProp(d, "presetValue", "");
-    if (instId.isEmpty()) return resErr(op, id, "E_BAD_REQUEST", "instId required");
-    if (pluginPath.isEmpty()) return resErr(op, id, "E_BAD_REQUEST", "pluginPath required");
-
-    auto* rt = findOrCreateVstRuntime(instId, pluginPath, pluginName, presetValue);
-    if (!rt) return resErr(op, id, "E_INTERNAL", "Cannot create VST runtime state");
-
-    juce::DynamicObject::Ptr out = new juce::DynamicObject();
-    out->setProperty("instId", rt->instId);
-    out->setProperty("pluginPath", rt->pluginPath);
-    out->setProperty("pluginName", rt->pluginName);
-    out->setProperty("hosted", false);
-    out->setProperty("bridge", "juce-vst-runtime-stub");
-    resOk(op, id, juce::var(out.get()));
+  void handleVstNoteOn(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST host backend is not enabled in this JUCE engine build");
   }
 
-  void handleVstInstParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
-    const auto instId = getStringProp(d, "instId", "");
-    if (instId.isEmpty()) return resErr(op, id, "E_BAD_REQUEST", "instId required");
-
-    auto* rt = findOrCreateVstRuntime(instId,
-                                      getStringProp(d, "pluginPath", ""),
-                                      getStringProp(d, "pluginName", ""),
-                                      getStringProp(d, "presetValue", ""));
-    if (!rt) return resErr(op, id, "E_INTERNAL", "Cannot create VST runtime state");
-
-    const auto params = d->hasProperty("params") ? d->getProperty("params") : juce::var();
-    rt->lastParams = cloneVar(params);
-    touchVstRuntime(*rt);
-
-    juce::DynamicObject::Ptr out = new juce::DynamicObject();
-    out->setProperty("instId", rt->instId);
-    out->setProperty("pluginPath", rt->pluginPath);
-    out->setProperty("paramKeys", params.isObject() ? params.getDynamicObject()->getProperties().size() : 0);
-    out->setProperty("hosted", false);
-    resOk(op, id, juce::var(out.get()));
+  void handleVstNoteOff(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST host backend is not enabled in this JUCE engine build");
   }
 
-  void handleVstNoteOn(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
-    const auto instId = getStringProp(d, "instId", "");
-    if (instId.isEmpty()) return resErr(op, id, "E_BAD_REQUEST", "instId required");
-
-    auto* rt = findOrCreateVstRuntime(instId,
-                                      getStringProp(d, "pluginPath", ""),
-                                      getStringProp(d, "pluginName", ""),
-                                      getStringProp(d, "presetValue", ""));
-    if (!rt) return resErr(op, id, "E_INTERNAL", "Cannot create VST runtime state");
-
-    const int note = juce::jlimit(0, 127, getIntProp(d, "note", 60));
-    rt->activeNotes.insert(note);
-    touchVstRuntime(*rt);
-
-    juce::DynamicObject::Ptr out = new juce::DynamicObject();
-    out->setProperty("instId", rt->instId);
-    out->setProperty("pluginPath", rt->pluginPath);
-    out->setProperty("note", note);
-    out->setProperty("activeNotes", static_cast<int>(rt->activeNotes.size()));
-    out->setProperty("forwarded", false);
-    resOk(op, id, juce::var(out.get()));
-  }
-
-  void handleVstNoteOff(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
-    const auto instId = getStringProp(d, "instId", "");
-    if (instId.isEmpty()) return resErr(op, id, "E_BAD_REQUEST", "instId required");
-
-    auto* rt = findOrCreateVstRuntime(instId,
-                                      getStringProp(d, "pluginPath", ""),
-                                      getStringProp(d, "pluginName", ""),
-                                      getStringProp(d, "presetValue", ""));
-    if (!rt) return resErr(op, id, "E_INTERNAL", "Cannot create VST runtime state");
-
-    const int note = juce::jlimit(0, 127, getIntProp(d, "note", 60));
-    rt->activeNotes.erase(note);
-    touchVstRuntime(*rt);
-
-    juce::DynamicObject::Ptr out = new juce::DynamicObject();
-    out->setProperty("instId", rt->instId);
-    out->setProperty("pluginPath", rt->pluginPath);
-    out->setProperty("note", note);
-    out->setProperty("activeNotes", static_cast<int>(rt->activeNotes.size()));
-    out->setProperty("forwarded", false);
-    resOk(op, id, juce::var(out.get()));
-  }
-
-  void handleVstUiOpen(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
-    if (!d) return resErr(op, id, "E_BAD_REQUEST", "Missing data");
-    const auto pluginPath = getStringProp(d, "pluginPath", "");
-    const auto pluginName = getStringProp(d, "pluginName", "");
-    const auto kind = getStringProp(d, "kind", "unknown");
-    if (pluginPath.isEmpty()) return resErr(op, id, "E_BAD_REQUEST", "pluginPath required");
-
-    if (d->hasProperty("instId")) {
-      auto* rt = findOrCreateVstRuntime(getStringProp(d, "instId", ""), pluginPath, pluginName, getStringProp(d, "presetValue", ""));
-      if (rt) touchVstRuntime(*rt);
-    }
-
-    juce::DynamicObject::Ptr evt = new juce::DynamicObject();
-    evt->setProperty("kind", kind);
-    evt->setProperty("pluginPath", pluginPath);
-    evt->setProperty("pluginName", pluginName);
-    evt->setProperty("hosted", false);
-    evt->setProperty("bridge", "juce-vst-runtime-stub");
-    emitEvt("vst.ui.state", juce::var(evt.get()));
-
-    juce::DynamicObject::Ptr out = new juce::DynamicObject();
-    out->setProperty("opened", false);
-    out->setProperty("hosted", false);
-    out->setProperty("pluginPath", pluginPath);
-    out->setProperty("pluginName", pluginName);
-    out->setProperty("bridge", "juce-vst-runtime-stub");
-    resOk(op, id, juce::var(out.get()));
+  void handleVstUiOpen(const juce::String& op, const juce::String& id, const juce::DynamicObject* /*d*/) {
+    return resErr(op, id, "E_NOT_SUPPORTED", "VST UI hosting is not enabled in this JUCE engine build");
   }
 
   void handleInstParamSet(const juce::String& op, const juce::String& id, const juce::DynamicObject* d) {
@@ -2505,6 +2385,7 @@ void refreshMasterEq() {
     caps->setProperty("meters", true);
     caps->setProperty("touski", true);
     caps->setProperty("sampler", true);
+    caps->setProperty("vstHost", false);
 
     juce::DynamicObject::Ptr d = new juce::DynamicObject();
     d->setProperty("protocol", "SLS-IPC/1.0");
