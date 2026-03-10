@@ -873,39 +873,6 @@ async function scanVstDirectory(rootDir) {
   return files;
 }
 
-function getDefaultVstScanDirectories() {
-  const defaults = [];
-
-  if (process.platform === "win32") {
-    const pf = process.env.ProgramFiles || "C:\\Program Files";
-    const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-    const common = process.env.CommonProgramFiles || path.join(pf, "Common Files");
-    defaults.push(
-      path.join(common, "VST3"),
-      path.join(pf, "VstPlugins"),
-      path.join(pf86, "VstPlugins")
-    );
-  } else if (process.platform === "darwin") {
-    defaults.push(
-      "/Library/Audio/Plug-Ins/VST3",
-      "/Library/Audio/Plug-Ins/Components",
-      path.join(os.homedir(), "Library/Audio/Plug-Ins/VST3"),
-      path.join(os.homedir(), "Library/Audio/Plug-Ins/Components")
-    );
-  } else {
-    defaults.push(
-      "/usr/lib/vst3",
-      "/usr/local/lib/vst3",
-      "/usr/lib/vst",
-      "/usr/local/lib/vst",
-      path.join(os.homedir(), ".vst3"),
-      path.join(os.homedir(), ".vst")
-    );
-  }
-
-  return [...new Set(defaults.filter((p) => p && fsSync.existsSync(p)))];
-}
-
 ipcMain.handle("vst:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -919,24 +886,20 @@ ipcMain.handle("vst:pickDirectories", async () => {
 ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
   const requested = Array.isArray(payload.directories) ? payload.directories : [];
   const cleanedRequested = requested.filter((p) => typeof p === "string" && p.trim()).map((p) => p.trim());
-  const usedDefaultDirectories = cleanedRequested.length === 0;
-  const resolvedDirectories = usedDefaultDirectories ? getDefaultVstScanDirectories() : cleanedRequested;
-  const directories = [...new Set(resolvedDirectories.filter((p) => p && fsSync.existsSync(p)))];
+  const directories = [...new Set(cleanedRequested.filter((p) => p && fsSync.existsSync(p)))];
 
   if (directories.length === 0) {
     return {
       ok: false,
       err: {
         code: "E_NO_DIRECTORIES",
-        message: "No existing VST directories available to scan",
+        message: "No configured VST directories available to scan",
         details: {
           requested: cleanedRequested,
-          defaults: getDefaultVstScanDirectories(),
           platform: process.platform,
         },
       },
       source: "sls-vst-host",
-      usedDefaultDirectories,
       scannedDirectories: [],
     };
   }
@@ -948,38 +911,14 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
       ok: true,
       roots,
       source: "sls-vst-host",
-      usedDefaultDirectories,
       scannedDirectories: directories,
     };
   }
 
-  // Backend host unavailable/error: fallback to local extension scan so the
-  // VST Manager remains usable (with heuristic classification) instead of dead.
-  const indexed = [];
-  for (const dirPath of directories) {
-    try {
-      const files = await scanVstDirectory(dirPath);
-      indexed.push({
-        rootPath: dirPath,
-        rootName: path.basename(dirPath),
-        files,
-      });
-    } catch (err) {
-      indexed.push({
-        rootPath: dirPath,
-        rootName: path.basename(dirPath),
-        files: [],
-        error: err?.message || String(err),
-      });
-    }
-  }
-
   return {
-    ok: true,
-    roots: indexed,
-    source: "js-fallback",
-    warning: hostRes?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
-    usedDefaultDirectories,
+    ok: false,
+    err: hostRes?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
+    source: "sls-vst-host",
     scannedDirectories: directories,
   };
 });
