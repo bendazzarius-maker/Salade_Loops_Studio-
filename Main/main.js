@@ -117,6 +117,79 @@ function resolveVstHostPath() {
     : path.join(resBase, "native", "sls-vst-host");
 }
 
+let vstHostProc = null;
+let vstHostBuffer = "";
+const vstHostPending = new Map();
+
+function stopVstHostProcess() {
+  if (!vstHostProc) return;
+  try { vstHostProc.kill(); } catch (_) {}
+  vstHostProc = null;
+  vstHostBuffer = "";
+  for (const [id, pending] of vstHostPending.entries()) {
+    clearTimeout(pending.timer);
+    pending.resolve({
+      v: 1,
+      type: "res",
+      op: pending.op,
+      id,
+      ts: nowMs(),
+      ok: false,
+      err: { code: "E_HOST_EXIT", message: "vst-host process exited", details: {} },
+    });
+  }
+  vstHostPending.clear();
+}
+
+function ensureVstHostProcess() {
+  if (vstHostProc && !vstHostProc.killed) return vstHostProc;
+  const bin = resolveVstHostPath();
+  if (!fsSync.existsSync(bin)) return null;
+
+  vstHostProc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+  vstHostBuffer = "";
+
+  vstHostProc.on("error", () => {
+    stopVstHostProcess();
+  });
+
+  vstHostProc.on("exit", () => {
+    stopVstHostProcess();
+  });
+
+  vstHostProc.stderr.on("data", (d) => {
+    console.warn("[VST-HOST][stderr]", d.toString("utf8"));
+  });
+
+  vstHostProc.stdout.on("data", (d) => {
+    vstHostBuffer += d.toString("utf8");
+    while (true) {
+      const idx = vstHostBuffer.indexOf("\n");
+      if (idx < 0) break;
+      const line = vstHostBuffer.slice(0, idx).trim();
+      vstHostBuffer = vstHostBuffer.slice(idx + 1);
+      if (!line) continue;
+
+      let msg = null;
+      try {
+        msg = JSON.parse(line);
+      } catch (err) {
+        console.warn("[VST-HOST] bad json:", err?.message || err, line);
+        continue;
+      }
+
+      const id = String(msg?.id || "");
+      const pending = vstHostPending.get(id);
+      if (!pending) continue;
+      clearTimeout(pending.timer);
+      vstHostPending.delete(id);
+      pending.resolve(msg);
+    }
+  });
+
+  return vstHostProc;
+}
+
 async function requestVstHost(op, data = {}, timeoutMs = 20000) {
   const bin = resolveVstHostPath();
   if (!fsSync.existsSync(bin)) {
@@ -131,22 +204,25 @@ async function requestVstHost(op, data = {}, timeoutMs = 20000) {
     };
   }
 
-  return new Promise((resolve) => {
-    let settled = false;
-    let stdoutBuf = "";
-
-    const req = buildEngineRequest(op, data, `vst-host-${nowMs()}`);
-    const child = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      try { child.kill(); } catch (_) {}
-      resolve(result);
+  const child = ensureVstHostProcess();
+  if (!child?.stdin) {
+    return {
+      v: 1,
+      type: "res",
+      op,
+      id: `vst-host-${nowMs()}`,
+      ts: nowMs(),
+      ok: false,
+      err: { code: "E_NOT_READY", message: "vst-host process unavailable", details: {} },
     };
+  }
 
+  const req = buildEngineRequest(op, data, `vst-host-${nowMs()}-${Math.random().toString(36).slice(2, 8)}`);
+
+  return new Promise((resolve) => {
     const timer = setTimeout(() => {
-      finish({
+      vstHostPending.delete(req.id);
+      resolve({
         v: 1,
         type: "res",
         op,
@@ -157,62 +233,14 @@ async function requestVstHost(op, data = {}, timeoutMs = 20000) {
       });
     }, Math.max(1000, Number(timeoutMs) || 20000));
 
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      finish({
-        v: 1,
-        type: "res",
-        op,
-        id: req.id,
-        ts: nowMs(),
-        ok: false,
-        err: { code: "E_SPAWN", message: err?.message || String(err), details: {} },
-      });
-    });
-
-    child.stderr.on("data", (d) => {
-      console.warn("[VST-HOST][stderr]", d.toString("utf8"));
-    });
-
-    child.stdout.on("data", (d) => {
-      stdoutBuf += d.toString("utf8");
-      const idx = stdoutBuf.indexOf("\n");
-      if (idx < 0) return;
-      const line = stdoutBuf.slice(0, idx).trim();
-      clearTimeout(timer);
-      if (!line) {
-        finish({
-          v: 1,
-          type: "res",
-          op,
-          id: req.id,
-          ts: nowMs(),
-          ok: false,
-          err: { code: "E_EMPTY", message: "vst-host returned empty response", details: {} },
-        });
-        return;
-      }
-      try {
-        finish(JSON.parse(line));
-      } catch (err) {
-        finish({
-          v: 1,
-          type: "res",
-          op,
-          id: req.id,
-          ts: nowMs(),
-          ok: false,
-          err: { code: "E_BAD_JSON", message: err?.message || String(err), details: { line } },
-        });
-      }
-    });
+    vstHostPending.set(req.id, { resolve, timer, op });
 
     try {
       child.stdin.write(JSON.stringify(req) + "\n");
-      child.stdin.end();
     } catch (err) {
       clearTimeout(timer);
-      finish({
+      vstHostPending.delete(req.id);
+      resolve({
         v: 1,
         type: "res",
         op,
@@ -573,6 +601,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   stopAudioEngine();
+  stopVstHostProcess();
 });
 
 app.on("window-all-closed", () => {
@@ -820,6 +849,28 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
   }
 
   return { ok: true, roots: indexed, source: "fallback", warning: hostRes?.err?.message || "vst-host unavailable" };
+});
+
+ipcMain.handle("vst:hostHello", async () => {
+  const res = await requestVstHost("vst.host.hello", {}, 5000);
+  if (!res?.ok) {
+    return {
+      ok: false,
+      err: res?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
+      data: { bin: resolveVstHostPath() },
+    };
+  }
+  return { ok: true, data: { ...(res.data || {}), bin: resolveVstHostPath() } };
+});
+
+ipcMain.handle("vst:hostRequest", async (_evt, payload = {}) => {
+  const op = String(payload?.op || "").trim();
+  const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
+  const timeoutMs = Math.max(1000, Math.min(120000, Number(payload?.timeoutMs) || 20000));
+  if (!op) return { ok: false, err: { code: "E_BAD_REQUEST", message: "op required" } };
+  const res = await requestVstHost(op, data, timeoutMs);
+  if (res?.ok) return { ok: true, data: res.data || {} };
+  return { ok: false, err: res?.err || { code: "E_UNKNOWN", message: "vst-host request failed" } };
 });
 ipcMain.handle("sampler:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
