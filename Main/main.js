@@ -102,207 +102,6 @@ function resolveAudioEnginePath() {
   return pkgBin;
 }
 
-
-function resolveVstHostPath() {
-  const devBin =
-    process.platform === "win32"
-      ? path.join(__dirname, "native", "sls-vst-host.exe")
-      : path.join(__dirname, "native", "sls-vst-host");
-
-  if (fsSync.existsSync(devBin)) return devBin;
-
-  const resBase = process.resourcesPath || __dirname;
-  return process.platform === "win32"
-    ? path.join(resBase, "native", "sls-vst-host.exe")
-    : path.join(resBase, "native", "sls-vst-host");
-}
-
-let vstHostProc = null;
-let vstHostBuffer = "";
-const vstHostPending = new Map();
-
-function extractJsonObjectsFromBuffer(input) {
-  const objects = [];
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  let start = -1;
-
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (ch === "\\") {
-        escaped = true;
-        continue;
-      }
-      if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (ch === "{") {
-      if (depth === 0) start = i;
-      depth += 1;
-      continue;
-    }
-
-    if (ch === "}") {
-      if (depth === 0) continue;
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        objects.push(input.slice(start, i + 1));
-        start = -1;
-      }
-    }
-  }
-
-  if (depth > 0 && start >= 0) {
-    return { objects, rest: input.slice(start) };
-  }
-
-  return { objects, rest: "" };
-}
-
-function stopVstHostProcess() {
-  if (!vstHostProc) return;
-  try { vstHostProc.kill(); } catch (_) {}
-  vstHostProc = null;
-  vstHostBuffer = "";
-  for (const [id, pending] of vstHostPending.entries()) {
-    clearTimeout(pending.timer);
-    pending.resolve({
-      v: 1,
-      type: "res",
-      op: pending.op,
-      id,
-      ts: nowMs(),
-      ok: false,
-      err: { code: "E_HOST_EXIT", message: "vst-host process exited", details: {} },
-    });
-  }
-  vstHostPending.clear();
-}
-
-function ensureVstHostProcess() {
-  if (vstHostProc && !vstHostProc.killed) return vstHostProc;
-  const bin = resolveVstHostPath();
-  if (!fsSync.existsSync(bin)) return null;
-
-  vstHostProc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
-  vstHostBuffer = "";
-
-  vstHostProc.on("error", () => {
-    stopVstHostProcess();
-  });
-
-  vstHostProc.on("exit", () => {
-    stopVstHostProcess();
-  });
-
-  vstHostProc.stderr.on("data", (d) => {
-    console.warn("[VST-HOST][stderr]", d.toString("utf8"));
-  });
-
-  vstHostProc.stdout.on("data", (d) => {
-    vstHostBuffer += d.toString("utf8");
-    const { objects, rest } = extractJsonObjectsFromBuffer(vstHostBuffer);
-    vstHostBuffer = rest;
-
-    for (const chunk of objects) {
-      let msg = null;
-      try {
-        msg = JSON.parse(chunk);
-      } catch (err) {
-        console.warn("[VST-HOST] bad json:", err?.message || err, chunk);
-        continue;
-      }
-
-      const id = String(msg?.id || "");
-      const pending = vstHostPending.get(id);
-      if (!pending) continue;
-      clearTimeout(pending.timer);
-      vstHostPending.delete(id);
-      pending.resolve(msg);
-    }
-  });
-
-  return vstHostProc;
-}
-
-async function requestVstHost(op, data = {}, timeoutMs = 20000) {
-  const bin = resolveVstHostPath();
-  if (!fsSync.existsSync(bin)) {
-    return {
-      v: 1,
-      type: "res",
-      op,
-      id: `vst-host-${nowMs()}`,
-      ts: nowMs(),
-      ok: false,
-      err: { code: "E_NOT_READY", message: `VST host binary not found: ${bin}`, details: {} },
-    };
-  }
-
-  const child = ensureVstHostProcess();
-  if (!child?.stdin) {
-    return {
-      v: 1,
-      type: "res",
-      op,
-      id: `vst-host-${nowMs()}`,
-      ts: nowMs(),
-      ok: false,
-      err: { code: "E_NOT_READY", message: "vst-host process unavailable", details: {} },
-    };
-  }
-
-  const req = buildEngineRequest(op, data, `vst-host-${nowMs()}-${Math.random().toString(36).slice(2, 8)}`);
-
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      vstHostPending.delete(req.id);
-      resolve({
-        v: 1,
-        type: "res",
-        op,
-        id: req.id,
-        ts: nowMs(),
-        ok: false,
-        err: { code: "E_TIMEOUT", message: "vst-host request timed out", details: {} },
-      });
-    }, Math.max(1000, Number(timeoutMs) || 20000));
-
-    vstHostPending.set(req.id, { resolve, timer, op });
-
-    try {
-      child.stdin.write(JSON.stringify(req) + "\n");
-    } catch (err) {
-      clearTimeout(timer);
-      vstHostPending.delete(req.id);
-      resolve({
-        v: 1,
-        type: "res",
-        op,
-        id: req.id,
-        ts: nowMs(),
-        ok: false,
-        err: { code: "E_STDIN", message: err?.message || String(err), details: {} },
-      });
-    }
-  });
-}
-
 function sendRawToAudio(message) {
   if (!audioProc?.stdin) return false;
   try {
@@ -651,7 +450,6 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   stopAudioEngine();
-  stopVstHostProcess();
 });
 
 app.on("window-all-closed", () => {
@@ -837,26 +635,13 @@ async function scanVstDirectory(rootDir) {
 
     for (const entry of entries) {
       const fullPath = path.join(currentDir, entry.name);
-      const ext = path.extname(entry.name).toLowerCase();
-
-      // On macOS, VST3/AU plugins are often bundle directories (.vst3/.component)
-      // and would be missed by a file-only scanner.
-      if (entry.isDirectory() && SUPPORTED_VST_EXTENSIONS.has(ext)) {
-        files.push({
-          name: entry.name,
-          ext,
-          path: fullPath,
-          relativePath: path.relative(rootDir, fullPath),
-          category: classifyVstPlugin(entry.name),
-        });
-        continue;
-      }
-
       if (entry.isDirectory()) {
         await walk(fullPath);
         continue;
       }
       if (!entry.isFile()) continue;
+
+      const ext = path.extname(entry.name).toLowerCase();
       if (!SUPPORTED_VST_EXTENSIONS.has(ext)) continue;
 
       files.push({
@@ -873,39 +658,6 @@ async function scanVstDirectory(rootDir) {
   return files;
 }
 
-function getDefaultVstScanDirectories() {
-  const defaults = [];
-
-  if (process.platform === "win32") {
-    const pf = process.env.ProgramFiles || "C:\\Program Files";
-    const pf86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-    const common = process.env.CommonProgramFiles || path.join(pf, "Common Files");
-    defaults.push(
-      path.join(common, "VST3"),
-      path.join(pf, "VstPlugins"),
-      path.join(pf86, "VstPlugins")
-    );
-  } else if (process.platform === "darwin") {
-    defaults.push(
-      "/Library/Audio/Plug-Ins/VST3",
-      "/Library/Audio/Plug-Ins/Components",
-      path.join(os.homedir(), "Library/Audio/Plug-Ins/VST3"),
-      path.join(os.homedir(), "Library/Audio/Plug-Ins/Components")
-    );
-  } else {
-    defaults.push(
-      "/usr/lib/vst3",
-      "/usr/local/lib/vst3",
-      "/usr/lib/vst",
-      "/usr/local/lib/vst",
-      path.join(os.homedir(), ".vst3"),
-      path.join(os.homedir(), ".vst")
-    );
-  }
-
-  return [...new Set(defaults.filter((p) => p && fsSync.existsSync(p)))];
-}
-
 ipcMain.handle("vst:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -917,68 +669,28 @@ ipcMain.handle("vst:pickDirectories", async () => {
 });
 
 ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
-  const requested = Array.isArray(payload.directories) ? payload.directories : [];
-  const cleanedRequested = requested.filter((p) => typeof p === "string" && p.trim()).map((p) => p.trim());
-  const directories = [...new Set(cleanedRequested.filter((p) => p && fsSync.existsSync(p)))];
+  const directories = Array.isArray(payload.directories) ? payload.directories : [];
+  const indexed = [];
 
-  if (directories.length === 0) {
-    return {
-      ok: false,
-      err: {
-        code: "E_NO_DIRECTORIES",
-        message: "No configured VST directories available to scan",
-        details: {
-          requested: cleanedRequested,
-          platform: process.platform,
-        },
-      },
-      source: "sls-vst-host",
-      usedDefaultDirectories,
-      scannedDirectories: [],
-    };
+  for (const dirPath of directories) {
+    try {
+      const files = await scanVstDirectory(dirPath);
+      indexed.push({
+        rootPath: dirPath,
+        rootName: path.basename(dirPath),
+        files,
+      });
+    } catch (err) {
+      indexed.push({
+        rootPath: dirPath,
+        rootName: path.basename(dirPath),
+        files: [],
+        error: err?.message || String(err),
+      });
+    }
   }
 
-  const hostRes = await requestVstHost("vst.scan", { directories }, 45000);
-  if (hostRes?.ok) {
-    const roots = Array.isArray(hostRes?.data?.roots) ? hostRes.data.roots : [];
-    return {
-      ok: true,
-      roots,
-      source: "sls-vst-host",
-      usedDefaultDirectories,
-      scannedDirectories: directories,
-    };
-  }
-
-  return {
-    ok: false,
-    err: hostRes?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
-    source: "sls-vst-host",
-    usedDefaultDirectories,
-    scannedDirectories: directories,
-  };
-});
-
-ipcMain.handle("vst:hostHello", async () => {
-  const res = await requestVstHost("vst.host.hello", {}, 5000);
-  if (!res?.ok) {
-    return {
-      ok: false,
-      err: res?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
-      data: { bin: resolveVstHostPath() },
-    };
-  }
-  return { ok: true, data: { ...(res.data || {}), bin: resolveVstHostPath() } };
-});
-
-ipcMain.handle("vst:hostRequest", async (_evt, payload = {}) => {
-  const op = String(payload?.op || "").trim();
-  const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
-  const timeoutMs = Math.max(1000, Math.min(120000, Number(payload?.timeoutMs) || 20000));
-  if (!op) return { ok: false, err: { code: "E_BAD_REQUEST", message: "op required" } };
-  const res = await requestVstHost(op, data, timeoutMs);
-  if (res?.ok) return { ok: true, data: res.data || {} };
-  return { ok: false, err: res?.err || { code: "E_UNKNOWN", message: "vst-host request failed" } };
+  return { ok: true, roots: indexed };
 });
 ipcMain.handle("sampler:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
