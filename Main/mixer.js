@@ -11,6 +11,30 @@ const __mixUi = {
   pongBound: false
 };
 
+
+function _fxTypesForPicker(){
+  const out = [];
+  const seen = new Set();
+  const add = (value, label)=>{
+    const v = String(value||"");
+    if(!v || seen.has(v)) return;
+    seen.add(v);
+    out.push({ value:v, label:String(label||v) });
+  };
+  (Array.isArray(FX_TYPES) ? FX_TYPES : []).forEach((name)=>add(name, name));
+  try{
+    const list = window.vstLibrary?.getFxChoices?.();
+    (Array.isArray(list)?list:[]).forEach((it)=>add(it?.value, it?.label));
+  }catch(_){ }
+  return out;
+}
+
+function _fxDisplayName(type){
+  const raw = String(type||"");
+  if(!raw.startsWith("VSTFX::")) return raw;
+  const found = window.vstLibrary?.findFxByTypeValue?.(raw);
+  return found?.name ? `VST • ${found.name}` : "VST FX";
+}
 function __xAssignFromAny(v){
   if (v === "A" || v === "B" || v === "OFF") return v;
   const n = Number(v);
@@ -354,8 +378,8 @@ function _fxBlock(scope, chIndex1, fxList, onUpdate, lfoBadgeEl){
   addSel.className="mixSmallSel";
   const o0=document.createElement("option"); o0.value=""; o0.textContent="+ Ajouter";
   addSel.appendChild(o0);
-  FX_TYPES.forEach(t=>{
-    const o=document.createElement("option"); o.value=t; o.textContent=t;
+  _fxTypesForPicker().forEach((it)=>{
+    const o=document.createElement("option"); o.value=it.value; o.textContent=it.label;
     addSel.appendChild(o);
   });
   addSel.addEventListener("change", ()=>{
@@ -383,7 +407,7 @@ function _fxBlock(scope, chIndex1, fxList, onUpdate, lfoBadgeEl){
     const left=document.createElement("div");
     const name=document.createElement("div");
     name.className="fxName";
-    name.textContent = fx.type;
+    name.textContent = _fxDisplayName(fx.type);
     left.appendChild(name);
 
     
@@ -415,6 +439,21 @@ function _fxBlock(scope, chIndex1, fxList, onUpdate, lfoBadgeEl){
 
     const btns=document.createElement("div");
     btns.className="fxBtns";
+
+    if(String(fx?.type||"").startsWith("VSTFX::")){
+      const openUi=document.createElement("button");
+      openUi.className="btnTiny";
+      openUi.textContent="UI";
+      openUi.title="Ouvrir l'interface du plugin VST";
+      openUi.addEventListener("click", async ()=>{
+        const res = await window.vstLibrary?.openFxUI?.(fx.type, { scope, chIndex1, fxIndex: idx }).catch(()=>null);
+        if(!res?.ok){
+          const msg = res?.err?.message || res?.err || "Impossible d'ouvrir l'interface VST.";
+          try{ toast(msg); }catch(_){ console.warn(msg); }
+        }
+      });
+      btns.appendChild(openUi);
+    }
 
     const rem=document.createElement("button");
     rem.className="btnTiny";

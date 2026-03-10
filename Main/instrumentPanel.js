@@ -211,6 +211,48 @@ function _renderPresetManager(host, def, ch){
   host.appendChild(wrap);
 }
 
+function _isVstInstrumentPreset(presetName){
+  return !!window.vstLibrary?.parseInstrumentValue?.(presetName);
+}
+
+function _renderVstInstrumentSection(host, ch){
+  const panel = document.createElement("div");
+  panel.className = "panel-section";
+  const t = document.createElement("div");
+  t.className = "panel-section-title";
+  t.textContent = "VST Instrument";
+  panel.appendChild(t);
+
+  const found = window.vstLibrary?.findInstrumentByPresetValue?.(ch?.preset);
+  const name = String(found?.name || "Instrument VST");
+  const path = String(found?.path || "");
+
+  const info = document.createElement("div");
+  info.className = "small";
+  info.textContent = path ? `${name} • ${path}` : name;
+  panel.appendChild(info);
+
+  const row = document.createElement("div");
+  row.style.display = "flex";
+  row.style.gap = "8px";
+  row.style.marginTop = "8px";
+
+  const uiBtn = document.createElement("button");
+  uiBtn.className = "btn2";
+  uiBtn.textContent = "🧩 Ouvrir interface VST";
+  uiBtn.addEventListener("click", async ()=>{
+    const res = await window.vstLibrary?.openInstrumentUI?.(ch?.preset, { channelId: ch?.id }).catch(()=>null);
+    if(!res?.ok){
+      const msg = res?.err?.message || res?.err || "Impossible d'ouvrir l'interface VST instrument.";
+      try{ toast(msg); }catch(_){ console.warn(msg); }
+    }
+  });
+  row.appendChild(uiBtn);
+
+  panel.appendChild(row);
+  host.appendChild(panel);
+}
+
 function renderInstrumentPanel(){
   if(typeof instrumentPanel === "undefined" || !instrumentPanel) return;
   const ch = activeChannel ? activeChannel() : null;
@@ -260,6 +302,11 @@ function renderInstrumentPanel(){
   row.appendChild(sel);
   routeWrap.appendChild(row);
   instrumentPanel.appendChild(routeWrap);
+
+  if(_isVstInstrumentPreset(presetName)){
+    _renderVstInstrumentSection(instrumentPanel, ch);
+    return;
+  }
 
   if(_isDrumInstrumentChannel(ch)){
     try{ _renderDrumMachineLauncher(instrumentPanel, ch); }catch(_){ }

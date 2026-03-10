@@ -23,7 +23,9 @@ class JuceInstrumentRuntime {
   }
 
   _mapType(name, instrumentDef){
-    const n = String(name||"").toLowerCase();
+    const rawName = String(name||"");
+    const n = rawName.toLowerCase();
+    if(window.vstLibrary?.parseInstrumentValue?.(rawName)) return "vst_instrument";
     const explicitType = String(instrumentDef?.type || "").toLowerCase();
     if (explicitType === "drums") return "drums";
     if (explicitType === "sampler") return n.includes("touski") ? "touski" : "sample_pattern";
@@ -49,6 +51,14 @@ class JuceInstrumentRuntime {
 
   async _ensureCreate(){
     if (this.type === "sample_pattern") return;
+    if (this.type === "vst_instrument") {
+      const presetValue = String(this.name || "");
+      const pluginPath = window.vstLibrary?.parseInstrumentValue?.(presetValue) || "";
+      if (!pluginPath) return;
+      await this._req("vst.inst.ensure", { instId: this.instId, pluginPath, presetValue });
+      await this._req("vst.inst.param.set", { instId: this.instId, params: this.paramsRef || {} });
+      return;
+    }
     if (!JuceInstrumentRuntime._knownInst.has(this.instId)) {
       const createType = this.type === "touski" ? "drums" : this.type;
       await this._req("inst.create", { instId: this.instId, type: createType, ch: 0 });
@@ -68,6 +78,16 @@ class JuceInstrumentRuntime {
 
   trigger(_t, midi, vel=0.85, dur=0.25){
     if (this.type === "sample_pattern") return;
+    if (this.type === "vst_instrument") {
+      this._ensureCreate().then(() => {
+        const pluginPath = window.vstLibrary?.parseInstrumentValue?.(String(this.name || "")) || "";
+        this._req("vst.note.on", { instId: this.instId, pluginPath, note: Number(midi), vel: Number(vel), when: "now" });
+        setTimeout(() => {
+          this._req("vst.note.off", { instId: this.instId, pluginPath, note: Number(midi), when: "now" });
+        }, Math.max(20, Math.floor(Number(dur || 0.25) * 1000)));
+      });
+      return;
+    }
     this._ensureCreate().then(() => {
       const onOp = this.type === "touski" ? "touski.note.on" : "note.on";
       const offOp = this.type === "touski" ? "touski.note.off" : "note.off";
@@ -96,9 +116,18 @@ class PresetBank{
   def(name){
     const defs = this._defs();
     const key = String(name || "Piano");
-    const found = defs[key] || (key === "Sample Touski" ? defs["Touski"] : null) || defs["Piano"];
+    const found = defs[key] || (key === "Sample Touski" ? defs["Touski"] : null);
     if (found) return found;
-    return { name: key, defaultParams: () => ({}) };
+    if (window.vstLibrary?.parseInstrumentValue?.(key)) {
+      return {
+        id: key,
+        name: key,
+        type: "vst_instrument",
+        defaultParams: () => ({ gain: 1.0 }),
+        uiSchema: () => ({ title: "VST Instrument", sections: [] })
+      };
+    }
+    return defs["Piano"] || { name: key, defaultParams: () => ({}) };
   }
 
   defaults(name){
