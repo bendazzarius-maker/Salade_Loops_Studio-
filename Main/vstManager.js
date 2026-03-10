@@ -30,6 +30,11 @@
 
   let rootsMenuEl = null;
 
+  function setInfo(message) {
+    if (!countsEl) return;
+    countsEl.textContent = String(message || "");
+  }
+
   function _normPath(path) {
     return String(path || "").trim();
   }
@@ -367,9 +372,18 @@
   }
 
   async function scan(paths) {
-    if (!global.vstFS?.scanDirectories) return { ok: false, err: "vstFS.scanDirectories indisponible" };
-    const result = await global.vstFS.scanDirectories(paths);
-    if (!result?.ok) return result || { ok: false, err: "scan VST échoué" };
+    if (!global.vstFS?.scanDirectories) {
+      setInfo("Scan indisponible: bridge VST non chargé.");
+      return { ok: false, err: "vstFS.scanDirectories indisponible" };
+    }
+
+    const wantedPaths = Array.isArray(paths) ? paths.filter((p) => typeof p === "string" && p.trim()) : [];
+    const result = await global.vstFS.scanDirectories(wantedPaths);
+    if (!result?.ok) {
+      const errMessage = result?.err?.message || result?.err || "scan VST échoué";
+      setInfo(`Erreur scan VST: ${errMessage}`);
+      return result || { ok: false, err: "scan VST échoué" };
+    }
     state.roots = Array.isArray(result.roots) ? result.roots : [];
     state.activeRootPath = state.roots[0]?.rootPath || null;
     saveRoots();
@@ -438,7 +452,25 @@
   });
 
   rescanBtn.addEventListener("click", async () => {
-    await scan(state.roots.map((r) => r.rootPath));
+    const existingRoots = state.roots.map((r) => r.rootPath).filter(Boolean);
+    if (existingRoots.length > 0) {
+      await scan(existingRoots);
+      return;
+    }
+
+    const picked = await global.vstFS?.pickDirectories?.();
+    if (!picked?.ok) {
+      setInfo("Aucun dossier VST sélectionné.");
+      return;
+    }
+
+    const selected = Array.isArray(picked.directories) ? picked.directories.filter(Boolean) : [];
+    if (selected.length === 0) {
+      setInfo("Aucun dossier VST sélectionné.");
+      return;
+    }
+
+    await scan(selected);
   });
 
   tabFxBtn?.addEventListener("click", () => _showTab("fx"));
