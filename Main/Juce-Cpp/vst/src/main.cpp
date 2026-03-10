@@ -76,7 +76,7 @@ juce::var scanRoot(const juce::String& rootPath, juce::AudioPluginFormatManager&
     juce::PluginDirectoryScanner scanner(
         knownList,
         *format,
-        rootDir,
+        juce::FileSearchPath(rootDir.getFullPathName()),
         true,
         deadMansPedal,
         true);
@@ -85,8 +85,7 @@ juce::var scanRoot(const juce::String& rootPath, juce::AudioPluginFormatManager&
     while (scanner.scanNextFile(true, pluginName)) {}
   }
 
-  juce::Array<juce::PluginDescription> types;
-  knownList.getTypes(types);
+  const auto types = knownList.getTypes();
   for (const auto& pd : types) files.add(pluginToVar(pd, rootPath));
 
   root->setProperty("files", juce::var(files));
@@ -155,17 +154,16 @@ juce::var handleReq(const juce::var& req, juce::AudioPluginFormatManager& fm) {
 int main() {
   juce::ScopedJuceInitialiser_GUI juceInit;
   juce::AudioPluginFormatManager formatManager;
-  formatManager.addDefaultFormats();
+  formatManager.addFormat(new juce::VST3PluginFormat());
 
   std::string line;
   while (std::getline(std::cin, line)) {
     if (line.empty()) continue;
 
     juce::var in;
-    juce::String err;
-    in = juce::JSON::parse(juce::String(line), err);
-    if (err.isNotEmpty()) {
-      auto out = resEnvelope("unknown", "0", false, {}, "E_BAD_JSON", err);
+    const auto parseResult = juce::JSON::parse(juce::String(line), in);
+    if (parseResult.failed()) {
+      auto out = resEnvelope("unknown", "0", false, {}, "E_BAD_JSON", parseResult.getErrorMessage());
       std::cout << juce::JSON::toString(out, false).toStdString() << "\n";
       continue;
     }
