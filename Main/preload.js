@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld("samplerFS", {
   saveProgram: (payload) => ipcRenderer.invoke("sampler:saveProgram", payload),
 });
 
+contextBridge.exposeInMainWorld("vstFS", {
+  pickDirectories: () => ipcRenderer.invoke("vst:pickDirectories"),
+  scanDirectories: (directories) => ipcRenderer.invoke("vst:scanDirectories", { directories }),
+});
+
 contextBridge.exposeInMainWorld("samplePattern", {
   saveProgram: (payload) => ipcRenderer.invoke("samplePattern:saveProgram", payload),
   listPrograms: () => ipcRenderer.invoke("samplePattern:listPrograms"),
