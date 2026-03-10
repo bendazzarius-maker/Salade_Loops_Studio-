@@ -918,7 +918,28 @@ ipcMain.handle("vst:pickDirectories", async () => {
 
 ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
   const requested = Array.isArray(payload.directories) ? payload.directories : [];
-  const directories = requested.length > 0 ? requested : getDefaultVstScanDirectories();
+  const cleanedRequested = requested.filter((p) => typeof p === "string" && p.trim()).map((p) => p.trim());
+  const usedDefaultDirectories = cleanedRequested.length === 0;
+  const resolvedDirectories = usedDefaultDirectories ? getDefaultVstScanDirectories() : cleanedRequested;
+  const directories = [...new Set(resolvedDirectories.filter((p) => p && fsSync.existsSync(p)))];
+
+  if (directories.length === 0) {
+    return {
+      ok: false,
+      err: {
+        code: "E_NO_DIRECTORIES",
+        message: "No existing VST directories available to scan",
+        details: {
+          requested: cleanedRequested,
+          defaults: getDefaultVstScanDirectories(),
+          platform: process.platform,
+        },
+      },
+      source: "sls-vst-host",
+      usedDefaultDirectories,
+      scannedDirectories: [],
+    };
+  }
 
   const hostRes = await requestVstHost("vst.scan", { directories }, 45000);
   if (hostRes?.ok) {
@@ -927,7 +948,7 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
       ok: true,
       roots,
       source: "sls-vst-host",
-      usedDefaultDirectories: requested.length === 0,
+      usedDefaultDirectories,
       scannedDirectories: directories,
     };
   }
@@ -939,6 +960,8 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
     ok: false,
     err: hostRes?.err || { code: "E_NOT_READY", message: "vst-host unavailable" },
     source: "sls-vst-host",
+    usedDefaultDirectories,
+    scannedDirectories: directories,
   };
 });
 
