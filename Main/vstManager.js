@@ -433,25 +433,11 @@
   async function openVstUi(kind, pluginPath, meta = {}) {
     const path = _normPath(pluginPath);
     if (!path) return { ok: false, err: "Chemin plugin vide" };
+    if (!global.vstFS?.hostRequest) return { ok: false, err: "Bridge VST host indisponible" };
 
     const payload = { kind, pluginPath: path, ...meta };
-
-    if (global.vstFS?.hostRequest) {
-      const hostRes = await global.vstFS.hostRequest("vst.ui.open", payload, 20000).catch((err) => ({ ok: false, err: err?.message || String(err) }));
-      if (hostRes?.ok) return hostRes;
-      const hostCode = hostRes?.err?.code || "";
-      if (hostCode && hostCode !== "E_UNKNOWN_OP" && hostCode !== "E_NOT_SUPPORTED") return hostRes;
-    }
-
-    const juce = window.audioBackend?.backends?.juce;
-    if (!juce?._request) return { ok: false, err: "Backend JUCE indisponible" };
-
-    const res = await juce._request("vst.ui.open", payload).catch((err) => ({ ok: false, err: err?.message || String(err) }));
-    if (!res?.ok) return res;
-    if (res?.data?.hosted === false || res?.data?.opened === false) {
-      return { ok: false, err: "Hébergement UI VST indisponible dans ce build JUCE." };
-    }
-    return res;
+    return global.vstFS.hostRequest("vst.ui.open", payload, 20000)
+      .catch((err) => ({ ok: false, err: err?.message || String(err) }));
   }
 
   function findInstrumentByPresetValue(presetValue) {
