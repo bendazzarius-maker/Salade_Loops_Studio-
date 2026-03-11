@@ -67,6 +67,8 @@ function ensureDrumWindow(bounds = {}) {
 let audioProc = null;
 const audioPending = new Map();
 let audioEventSeq = 0;
+let vstProc = null;
+const vstPending = new Map();
 
 function nowMs() {
   return Date.now();
@@ -102,6 +104,20 @@ function resolveAudioEnginePath() {
   return pkgBin;
 }
 
+function resolveVstHostPath() {
+  const devBin =
+    process.platform === "win32"
+      ? path.join(__dirname, "native", "sls-vst-host.exe")
+      : path.join(__dirname, "native", "sls-vst-host");
+
+  if (fsSync.existsSync(devBin)) return devBin;
+
+  const resBase = process.resourcesPath || __dirname;
+  return process.platform === "win32"
+    ? path.join(resBase, "native", "sls-vst-host.exe")
+    : path.join(resBase, "native", "sls-vst-host");
+}
+
 function sendRawToAudio(message) {
   if (!audioProc?.stdin) return false;
   try {
@@ -109,6 +125,17 @@ function sendRawToAudio(message) {
     return true;
   } catch (e) {
     console.warn("[JUCE] send failed:", e);
+    return false;
+  }
+}
+
+function sendRawToVst(message) {
+  if (!vstProc?.stdin) return false;
+  try {
+    vstProc.stdin.write(JSON.stringify(message) + "\n");
+    return true;
+  } catch (e) {
+    console.warn("[VST] send failed:", e);
     return false;
   }
 }
@@ -170,6 +197,69 @@ async function requestAudio(message, timeoutMs = 1200) {
         ts: nowMs(),
         ok: false,
         err: { code: "E_NOT_READY", message: "Audio engine stdin unavailable.", details: {} },
+      });
+    }
+  });
+}
+
+function failAllVstPending(code, message) {
+  for (const [id, pending] of vstPending.entries()) {
+    clearTimeout(pending.timer);
+    pending.resolve({
+      v: 1,
+      type: "res",
+      op: pending.op,
+      id,
+      ts: nowMs(),
+      ok: false,
+      err: { code, message, details: {} },
+    });
+  }
+  vstPending.clear();
+}
+
+async function requestVstHost(op, data = {}, timeoutMs = 15000) {
+  if (!vstProc) {
+    return {
+      v: 1,
+      type: "res",
+      op,
+      id: `vst-${nowMs()}`,
+      ts: nowMs(),
+      ok: false,
+      err: { code: "E_NOT_READY", message: "VST host not running.", details: {} },
+    };
+  }
+
+  const message = buildEngineRequest(op, data, `vst-${nowMs()}-${Math.random().toString(36).slice(2, 8)}`);
+  return new Promise((resolve) => {
+    const id = String(message.id);
+    const timer = setTimeout(() => {
+      vstPending.delete(id);
+      resolve({
+        v: 1,
+        type: "res",
+        op: message.op,
+        id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_TIMEOUT", message: "VST host request timed out.", details: {} },
+      });
+    }, timeoutMs);
+
+    vstPending.set(id, { resolve, timer, op: message.op });
+    const sent = sendRawToVst(message);
+    if (!sent) {
+      clearTimeout(timer);
+      vstPending.delete(id);
+      resolve({
+        v: 1,
+        type: "res",
+        op: message.op,
+        id,
+        ts: nowMs(),
+        ok: false,
+        err: { code: "E_NOT_READY", message: "VST host stdin unavailable.", details: {} },
       });
     }
   });
@@ -314,6 +404,70 @@ function startAudioEngine() {
   });
 }
 
+function startVstHost() {
+  const bin = resolveVstHostPath();
+  if (!fsSync.existsSync(bin)) {
+    console.warn("[VST] Host binary not found:", bin);
+    return;
+  }
+
+  if (process.platform !== "win32") {
+    try {
+      const st = fsSync.statSync(bin);
+      if ((st.mode & 0o111) === 0) {
+        fsSync.chmodSync(bin, st.mode | 0o755);
+      }
+    } catch (e) {
+      console.warn("[VST] chmod/stat failed:", e?.message || e);
+    }
+  }
+
+  try {
+    vstProc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+  } catch (e) {
+    console.warn("[VST] spawn failed:", e?.message || e);
+    vstProc = null;
+    return;
+  }
+
+  console.log("[VST] spawned:", bin, "pid=", vstProc?.pid);
+  let buf = "";
+  vstProc.stdout.on("data", (d) => {
+    buf += d.toString("utf8");
+    let idx;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line) continue;
+      try {
+        const msg = JSON.parse(line);
+        if (msg?.type === "res" && msg.id && vstPending.has(String(msg.id))) {
+          const pendingId = String(msg.id);
+          const pending = vstPending.get(pendingId);
+          clearTimeout(pending.timer);
+          vstPending.delete(pendingId);
+          pending.resolve(msg);
+        }
+      } catch {
+        console.warn("[VST] stdout non-JSON:", line);
+      }
+    }
+  });
+
+  vstProc.stderr.on("data", (d) => console.warn("[VST][stderr]", d.toString("utf8")));
+  vstProc.on("error", (err) => {
+    console.warn("[VST] process error:", err?.message || err);
+    failAllVstPending("E_NOT_READY", "VST host process error.");
+    vstProc = null;
+  });
+
+  vstProc.on("exit", (code, signal) => {
+    console.warn("[VST] host exited with:", { code, signal });
+    failAllVstPending("E_NOT_READY", "VST host exited.");
+    vstProc = null;
+  });
+}
+
 function stopAudioEngine() {
   if (!audioProc) return;
   try {
@@ -323,6 +477,14 @@ function stopAudioEngine() {
     audioProc.kill();
   } catch (_) {}
   audioProc = null;
+}
+
+function stopVstHost() {
+  if (!vstProc) return;
+  try {
+    vstProc.kill();
+  } catch (_) {}
+  vstProc = null;
 }
 
 // Renderer -> Engine
@@ -442,6 +604,7 @@ app.whenReady().then(() => {
   readSamplerConfig().catch(() => {});
   createWindow();
   startAudioEngine();
+  startVstHost();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -450,6 +613,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   stopAudioEngine();
+  stopVstHost();
 });
 
 app.on("window-all-closed", () => {
@@ -670,6 +834,12 @@ ipcMain.handle("vst:pickDirectories", async () => {
 
 ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
   const directories = Array.isArray(payload.directories) ? payload.directories : [];
+
+  const hostScan = await requestVstHost("vst.scan", { directories }, 60000);
+  if (hostScan?.ok && Array.isArray(hostScan?.data?.roots)) {
+    return { ok: true, roots: hostScan.data.roots, via: "sls-vst-host" };
+  }
+
   const indexed = [];
 
   for (const dirPath of directories) {
@@ -691,6 +861,21 @@ ipcMain.handle("vst:scanDirectories", async (_evt, payload = {}) => {
   }
 
   return { ok: true, roots: indexed };
+});
+
+ipcMain.handle("vst:hostHello", async () => {
+  const res = await requestVstHost("vst.host.hello", {}, 3000);
+  if (!res?.ok) return { ok: false, err: res?.err || { code: "E_NOT_READY", message: "VST host unavailable" } };
+  return { ok: true, data: res.data || {} };
+});
+
+ipcMain.handle("vst:hostRequest", async (_evt, payload = {}) => {
+  const op = String(payload?.op || "").trim();
+  if (!op) return { ok: false, err: { code: "E_BAD_REQUEST", message: "Missing op" } };
+  const timeoutMs = Math.max(300, Math.min(120000, Number(payload?.timeoutMs) || 15000));
+  const res = await requestVstHost(op, payload?.data || {}, timeoutMs);
+  if (!res?.ok) return { ok: false, err: res?.err || { code: "E_UNKNOWN", message: "Host request failed" } };
+  return { ok: true, data: res.data || {} };
 });
 ipcMain.handle("sampler:pickDirectories", async () => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow;
